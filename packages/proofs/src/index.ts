@@ -1,26 +1,20 @@
 import { canonicalJson, commitValue } from "@attest/core";
-import {
-  boundConfigFromJSON,
-  boundConfigToJSON,
-  gpcArtifactDownloadURL,
-  gpcBindConfig,
-  type GPCBoundConfig,
-  type GPCProof,
-  type GPCProofConfig,
-  type GPCProofInputs,
-  type JSONBoundConfig,
-  type JSONRevealedClaims,
-  gpcProve,
-  gpcVerify,
-  proofConfigToJSON,
-  revealedClaimsFromJSON,
-  revealedClaimsToJSON
+import type {
+  GPCBoundConfig,
+  GPCProof,
+  GPCProofConfig,
+  GPCProofInputs,
+  JSONBoundConfig,
+  JSONRevealedClaims
 } from "@pcd/gpc";
 import { encodePublicKey, POD, POD_INT_MAX, type PODEntries } from "@pcd/pod";
 import { Identity } from "@semaphore-protocol/core";
 import { Effect } from "effect";
 
-export const GPC_ARTIFACTS_URL = gpcArtifactDownloadURL("jsdelivr", "prod", undefined);
+export const GPC_ARTIFACTS_URL =
+  "https://cdn.jsdelivr.net/npm/@pcd/proto-pod-gpc-artifacts@0.13.0";
+
+const loadGpcRuntime = () => import("@pcd/gpc");
 
 export class ProofError extends Error {
   readonly _tag = "ProofError";
@@ -141,17 +135,18 @@ export const proveInsuranceRequirement = async (
   requirement: InsuranceRequirement,
   artifactsPathOrUrl = GPC_ARTIFACTS_URL
 ): Promise<GpcProofEnvelope> => {
+  const runtime = await loadGpcRuntime();
   const config = insuranceProofConfig(requirement);
-  const policyCommitment = await commitValue(proofConfigToJSON(config));
-  const { proof, boundConfig, revealedClaims } = await gpcProve(
+  const policyCommitment = await commitValue(runtime.proofConfigToJSON(config));
+  const { proof, boundConfig, revealedClaims } = await runtime.gpcProve(
     config,
     proofInputs(pod, identity, requirement),
     artifactsPathOrUrl
   );
   const serialized = {
     proof,
-    boundConfig: boundConfigToJSON(boundConfig),
-    revealedClaims: revealedClaimsToJSON(revealedClaims)
+    boundConfig: runtime.boundConfigToJSON(boundConfig),
+    revealedClaims: runtime.revealedClaimsToJSON(revealedClaims)
   };
   return {
     version: "attest-gpc-v1",
@@ -168,17 +163,22 @@ export const verifyInsuranceRequirement = async (
   artifactsPathOrUrl = GPC_ARTIFACTS_URL
 ): Promise<boolean> => {
   if (envelope.version !== "attest-gpc-v1") return false;
+
+  const runtime = await loadGpcRuntime();
   const expectedConfig = insuranceProofConfig(requirement);
-  const expectedPolicyCommitment = await commitValue(proofConfigToJSON(expectedConfig));
+  const expectedPolicyCommitment = await commitValue(runtime.proofConfigToJSON(expectedConfig));
   if (expectedPolicyCommitment !== envelope.policyCommitment) return false;
 
-  const boundConfig = boundConfigFromJSON(envelope.boundConfig);
-  const revealedClaims = revealedClaimsFromJSON(envelope.revealedClaims);
-  const expectedBoundConfig = gpcBindConfig({
+  const boundConfig = runtime.boundConfigFromJSON(envelope.boundConfig);
+  const revealedClaims = runtime.revealedClaimsFromJSON(envelope.revealedClaims);
+  const expectedBoundConfig = runtime.gpcBindConfig({
     ...expectedConfig,
     circuitIdentifier: boundConfig.circuitIdentifier
   }).boundConfig;
-  if (canonicalJson(boundConfigToJSON(boundConfig)) !== canonicalJson(boundConfigToJSON(expectedBoundConfig))) return false;
+  if (
+    canonicalJson(runtime.boundConfigToJSON(boundConfig)) !==
+    canonicalJson(runtime.boundConfigToJSON(expectedBoundConfig))
+  ) return false;
 
   const recomputedProofCommitment = await commitValue({
     proof: envelope.proof,
@@ -187,7 +187,7 @@ export const verifyInsuranceRequirement = async (
   });
   if (recomputedProofCommitment !== envelope.proofCommitment) return false;
 
-  return gpcVerify(envelope.proof, boundConfig, revealedClaims, artifactsPathOrUrl);
+  return runtime.gpcVerify(envelope.proof, boundConfig, revealedClaims, artifactsPathOrUrl);
 };
 
 export const proveInsuranceRequirementEffect = (

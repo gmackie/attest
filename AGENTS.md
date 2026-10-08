@@ -13,3 +13,8 @@ Attest is an open assurance protocol and reference implementation. Keep the prot
 - Tests must cover negative joins: mismatched subjects, stale evidence, unauthorized issuers, duplicate evidence, and insufficient hidden values.
 - POD/GPC is a proof-of-concept backend. Its upstream implementation is beta and not audited; do not describe it as production-ready.
 - Domain packs are examples and profiles. They do not speak for ACORD, AICPA, ISO, accreditation bodies, insurers, or regulators.
+
+## Web UI
+
+- Build controls and surfaces with `@cloudflare/kumo` components (Button, InputGroup, Badge, Banner, Collapsible, LayerCard). Use app CSS for layout and illustration, not replacement control implementations.
+- Keep the Kumo Tailwind `@source` path relative to `apps/web/src/styles.css`: `../node_modules/@cloudflare/kumo/dist`.

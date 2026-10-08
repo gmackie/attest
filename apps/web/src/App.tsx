@@ -1,13 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Badge,
+  Banner,
+  Button,
+  Collapsible,
+  InputGroup,
+  LayerCard,
+  LinkButton,
+} from "@cloudflare/kumo";
+import {
   ArrowDownIcon,
   ArrowRightIcon,
   ArrowSquareOutIcon,
   BuildingsIcon,
   CertificateIcon,
-  CheckIcon,
   CheckCircleIcon,
-  CircleNotchIcon,
   EyeIcon,
   EyeSlashIcon,
   FileLockIcon,
@@ -299,7 +306,8 @@ export function App() {
               icon: FingerprintIcon,
             },
           ].map(({ id, label, icon: Icon }) => (
-            <a
+            <LinkButton
+              variant="ghost"
               key={id}
               href={`#${id}`}
               aria-label={label}
@@ -310,7 +318,7 @@ export function App() {
               <Icon size={19} />
               <span>{label}</span>
               {id === "evidence" && <span className="nav-count">3</span>}
-            </a>
+            </LinkButton>
           ))}
         </nav>
         <div className="sidebar-bottom">
@@ -345,10 +353,7 @@ export function App() {
             Workspace<span>/</span>
             <strong>Supplier assurance</strong>
           </div>
-          <span className="demo-tag">
-            <span />
-            Interactive demo
-          </span>
+          <Badge variant="beta">Interactive demo</Badge>
         </header>
         <main id="main" className="main-content">
           <section id="overview" className="overview">
@@ -461,7 +466,11 @@ export function App() {
           </section>
 
           <div className="assurance-grid">
-            <section id="evidence" className="panel evidence-panel">
+            <LayerCard
+              render={<section />}
+              id="evidence"
+              className="panel evidence-panel"
+            >
               <div className="section-heading">
                 <div>
                   <div className="step-label">
@@ -479,8 +488,10 @@ export function App() {
                   <span className="status-dot" />
                   Private to this workspace
                 </span>
-                <button
-                  className="icon-button"
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="vault-reveal"
                   aria-label={
                     revealVault ? "Hide demo values" : "Reveal demo values"
                   }
@@ -493,7 +504,7 @@ export function App() {
                     <EyeIcon size={17} />
                   )}
                   <span>{revealVault ? "Hide values" : "Reveal values"}</span>
-                </button>
+                </Button>
               </div>
               <EvidenceCard
                 kind="insurance"
@@ -538,9 +549,13 @@ export function App() {
                   not add them to the proof.
                 </p>
               </div>
-            </section>
+            </LayerCard>
 
-            <section id="policy" className="panel policy-panel">
+            <LayerCard
+              render={<section />}
+              id="policy"
+              className="panel policy-panel"
+            >
               <div className="section-heading">
                 <div>
                   <div className="step-label">
@@ -549,7 +564,7 @@ export function App() {
                   <h2>Set the standard</h2>
                   <p>Define what you need to know. Nothing more.</p>
                 </div>
-                <span className="subtle-tag">Project 817</span>
+                <Badge variant="outline">Project 817</Badge>
               </div>
               <fieldset className="scenario-fieldset" disabled={isProving}>
                 <legend>TRY A REQUIREMENT</legend>
@@ -571,13 +586,14 @@ export function App() {
                       occurrence: 2_000_000,
                     },
                   ].map((scenario) => (
-                    <button
+                    <Button
                       key={scenario.label}
-                      className={
+                      size="sm"
+                      variant={
                         aggregate === scenario.aggregate &&
                         occurrence === scenario.occurrence
-                          ? "selected"
-                          : ""
+                          ? "primary"
+                          : "secondary"
                       }
                       aria-pressed={
                         aggregate === scenario.aggregate &&
@@ -588,55 +604,55 @@ export function App() {
                       }
                     >
                       {scenario.label}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               </fieldset>
               <div className="threshold-grid">
-                <label htmlFor="aggregate">
-                  CGL aggregate minimum
-                  <div className="currency-input">
-                    <span>$</span>
-                    <input
-                      id="aggregate"
-                      type="number"
-                      min="0"
-                      step="500000"
-                      disabled={isProving}
-                      value={aggregate}
-                      onChange={(event) =>
-                        updateThreshold(
-                          event.target.value,
-                          aggregate,
-                          setAggregate,
-                        )
-                      }
-                    />
-                    <span>USD</span>
-                  </div>
-                </label>
-                <label htmlFor="occurrence">
-                  Per-occurrence minimum
-                  <div className="currency-input">
-                    <span>$</span>
-                    <input
-                      id="occurrence"
-                      type="number"
-                      min="0"
-                      step="500000"
-                      disabled={isProving}
-                      value={occurrence}
-                      onChange={(event) =>
-                        updateThreshold(
-                          event.target.value,
-                          occurrence,
-                          setOccurrence,
-                        )
-                      }
-                    />
-                    <span>USD</span>
-                  </div>
-                </label>
+                <InputGroup
+                  label="CGL aggregate minimum"
+                  disabled={isProving}
+                  size="lg"
+                >
+                  <InputGroup.Addon>$</InputGroup.Addon>
+                  <InputGroup.Input
+                    id="aggregate"
+                    type="number"
+                    min={0}
+                    step={500000}
+                    value={aggregate}
+                    onChange={(event) =>
+                      updateThreshold(
+                        event.target.value,
+                        aggregate,
+                        setAggregate,
+                      )
+                    }
+                  />
+                  <InputGroup.Addon align="end">USD</InputGroup.Addon>
+                </InputGroup>
+                <InputGroup
+                  label="Per-occurrence minimum"
+                  disabled={isProving}
+                  size="lg"
+                >
+                  <InputGroup.Addon>$</InputGroup.Addon>
+                  <InputGroup.Input
+                    id="occurrence"
+                    type="number"
+                    min={0}
+                    step={500000}
+                    value={occurrence}
+                    onChange={(event) =>
+                      updateThreshold(
+                        event.target.value,
+                        occurrence,
+                        setOccurrence,
+                      )
+                    }
+                  />
+                  <InputGroup.Addon align="end">USD</InputGroup.Addon>
+                </InputGroup>
               </div>
               <div className="policy-caption">
                 <GlobeHemisphereWestIcon size={13} />
@@ -655,8 +671,15 @@ export function App() {
                   const matched =
                     leaves.length > 0 && leaves.every((leaf) => leaf.satisfied);
                   return (
-                    <details className="requirement-group" key={name}>
-                      <summary>
+                    <Collapsible.Root className="requirement-group" key={name}>
+                      <Collapsible.Trigger
+                        render={
+                          <Button
+                            variant="ghost"
+                            className="requirement-trigger"
+                          />
+                        }
+                      >
                         <span className="domain-icon">
                           <Icon size={20} />
                         </span>
@@ -664,70 +687,74 @@ export function App() {
                           <strong>{name}</strong>
                           <small>{detail}</small>
                         </span>
-                        <span
-                          className={`domain-result ${evaluation ? (matched ? "matched" : "unmatched") : ""}`}
+                        <Badge
+                          variant={
+                            evaluation
+                              ? matched
+                                ? "success"
+                                : "warning"
+                              : "secondary"
+                          }
+                          className="domain-result"
                         >
-                          {evaluation ? (
-                            matched ? (
-                              <>
-                                <CheckIcon size={13} />
-                                Matched
-                              </>
-                            ) : (
-                              <>
-                                <WarningCircleIcon size={14} />
-                                Not met
-                              </>
-                            )
-                          ) : (
-                            "Checking"
-                          )}
-                        </span>
+                          {evaluation
+                            ? matched
+                              ? "Matched"
+                              : "Not met"
+                            : "Checking"}
+                        </Badge>
                         <span className="disclosure-chevron">⌄</span>
-                      </summary>
-                      <ul>
-                        {leaves.map((leaf) => (
-                          <li key={leaf.id}>
-                            {leaf.satisfied ? (
-                              <CheckCircleIcon size={15} />
-                            ) : (
-                              <WarningCircleIcon size={15} />
-                            )}
-                            <span>{leaf.label}</span>
-                            <span>{leaf.satisfied ? "Met" : "Not met"}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
+                      </Collapsible.Trigger>
+                      <Collapsible.Panel>
+                        <ul>
+                          {leaves.map((leaf) => (
+                            <li key={leaf.id}>
+                              {leaf.satisfied ? (
+                                <CheckCircleIcon size={15} />
+                              ) : (
+                                <WarningCircleIcon size={15} />
+                              )}
+                              <span>{leaf.label}</span>
+                              <span>{leaf.satisfied ? "Met" : "Not met"}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </Collapsible.Panel>
+                    </Collapsible.Root>
                   );
                 })}
               </div>
-              <div
-                className={`policy-outcome ${evaluation && !evaluation.satisfied ? "outcome-warning" : ""}`}
+              <Banner
+                className="policy-outcome"
                 role="status"
-              >
-                {evaluation?.satisfied ? (
-                  <CheckCircleIcon size={20} weight="fill" />
-                ) : (
-                  <WarningCircleIcon size={20} />
-                )}
-                <div>
-                  <strong>
-                    {evaluation
-                      ? evaluation.satisfied
-                        ? "Your evidence meets the requirements"
-                        : "This request exceeds the available evidence"
-                      : "Checking your evidence…"}
-                  </strong>
-                  <p>
-                    {evaluation?.satisfied
-                      ? "Ready to prove your insurance coverage privately."
-                      : "Try a lower threshold. The source values remain hidden."}
-                  </p>
-                </div>
-              </div>
-              <button
-                className="primary-button"
+                variant={
+                  evaluation && !evaluation.satisfied ? "alert" : "secondary"
+                }
+                icon={
+                  evaluation?.satisfied ? (
+                    <CheckCircleIcon size={20} />
+                  ) : (
+                    <WarningCircleIcon size={20} />
+                  )
+                }
+                title={
+                  evaluation
+                    ? evaluation.satisfied
+                      ? "Your evidence meets the requirements"
+                      : "This request exceeds the available evidence"
+                    : "Checking your evidence…"
+                }
+                description={
+                  evaluation?.satisfied
+                    ? "Ready to prove your insurance coverage privately."
+                    : "Try a lower threshold. The source values remain hidden."
+                }
+              />
+              <Button
+                variant="primary"
+                size="lg"
+                loading={isProving}
+                className="proof-action"
                 disabled={isProving || !evaluation?.satisfied}
                 onClick={() => {
                   setActiveSection("presentation");
@@ -737,11 +764,7 @@ export function App() {
                   void generateProof();
                 }}
               >
-                {isProving ? (
-                  <CircleNotchIcon size={20} className="spinning" />
-                ) : (
-                  <FingerprintIcon size={20} />
-                )}
+                <FingerprintIcon size={20} />
                 <span>
                   {isProving
                     ? "Creating your private proof…"
@@ -750,11 +773,11 @@ export function App() {
                       : "Generate private proof"}
                 </span>
                 {!isProving && <ArrowRightIcon size={19} />}
-              </button>
+              </Button>
               <p className="button-note">
                 Insurance proof generated and verified in your browser.
               </p>
-            </section>
+            </LayerCard>
           </div>
 
           <section
@@ -778,10 +801,15 @@ export function App() {
                     : "The buyer gets an answer, without receiving your source files."}
                 </p>
               </div>
-              <span
-                className={`proof-status ${isVerified ? "proof-success" : ""}`}
+              <Badge
+                variant={
+                  isVerified
+                    ? "success"
+                    : proofState === "failed"
+                      ? "error"
+                      : "secondary"
+                }
               >
-                <span />
                 {isVerified
                   ? "Proof verified"
                   : isProving
@@ -789,7 +817,7 @@ export function App() {
                     : proofState === "failed"
                       ? "Needs attention"
                       : "Awaiting proof"}
-              </span>
+              </Badge>
             </div>
             <div aria-live="polite">
               {isProving && (
@@ -810,17 +838,25 @@ export function App() {
                 </div>
               )}
               {proofState === "failed" && (
-                <div className="proof-error" role="alert">
-                  <WarningCircleIcon size={22} />
-                  <div>
-                    <strong>We couldn’t create this proof.</strong>
-                    <p>Check your connection and try again.</p>
-                    <details>
-                      <summary>Technical details</summary>
-                      <p>{proofError}</p>
-                    </details>
-                  </div>
-                </div>
+                <Banner
+                  className="proof-error"
+                  variant="error"
+                  role="alert"
+                  title="We couldn’t create this proof."
+                  description={
+                    <>
+                      Check your connection and try again.
+                      <Collapsible.Root>
+                        <Collapsible.DefaultTrigger>
+                          Technical details
+                        </Collapsible.DefaultTrigger>
+                        <Collapsible.DefaultPanel>
+                          {proofError}
+                        </Collapsible.DefaultPanel>
+                      </Collapsible.Root>
+                    </>
+                  }
+                />
               )}
               {isVerified && (
                 <div className="verified-message">
@@ -836,13 +872,14 @@ export function App() {
                       hidden.
                     </p>
                   </div>
-                  <button
-                    className="secondary-button"
+                  <Button
+                    variant="secondary"
+                    className="receipt-download"
                     onClick={downloadReceipt}
                   >
                     Download receipt
                     <ArrowDownIcon size={16} />
-                  </button>
+                  </Button>
                 </div>
               )}
             </div>
@@ -867,35 +904,41 @@ export function App() {
               </div>
             </div>
             {isVerified && (
-              <details className="receipt-details">
-                <summary>
+              <Collapsible.Root className="receipt-details">
+                <Collapsible.DefaultTrigger>
                   Inspect verification receipt
                   <span>
                     Proof & commitment details{" "}
                     <span aria-hidden="true">↗</span>
                   </span>
-                </summary>
-                <div className="hash-grid">
-                  <HashRow label="Circuit" value={proof.circuitIdentifier} />
-                  <HashRow
-                    label="Proof commitment"
-                    value={proof.proofCommitment}
-                  />
-                  <HashRow label="Evidence root" value={receipt.evidenceRoot} />
-                  <HashRow
-                    label="Request-scoped identifier"
-                    value={receipt.subjectNullifier ?? "—"}
-                  />
-                  <HashRow label="Receipt ID" value={receipt.id} />
-                  <HashRow
-                    label="Policy commitment"
-                    value={receipt.policyCommitment}
-                  />
-                </div>
-                <p>
-                  Prepared locally. No transaction has been submitted on-chain.
-                </p>
-              </details>
+                </Collapsible.DefaultTrigger>
+                <Collapsible.Panel>
+                  <div className="hash-grid">
+                    <HashRow label="Circuit" value={proof.circuitIdentifier} />
+                    <HashRow
+                      label="Proof commitment"
+                      value={proof.proofCommitment}
+                    />
+                    <HashRow
+                      label="Evidence root"
+                      value={receipt.evidenceRoot}
+                    />
+                    <HashRow
+                      label="Request-scoped identifier"
+                      value={receipt.subjectNullifier ?? "—"}
+                    />
+                    <HashRow label="Receipt ID" value={receipt.id} />
+                    <HashRow
+                      label="Policy commitment"
+                      value={receipt.policyCommitment}
+                    />
+                  </div>
+                  <p>
+                    Prepared locally. No transaction has been submitted
+                    on-chain.
+                  </p>
+                </Collapsible.Panel>
+              </Collapsible.Root>
             )}
             <div className="scope-note">
               <span>PROOF SCOPE</span>
@@ -973,7 +1016,7 @@ function EvidenceCard({
   rows: readonly (readonly [string, string])[];
 }) {
   return (
-    <article className={`evidence-card ${kind}`}>
+    <LayerCard render={<article />} className={`evidence-card ${kind}`}>
       <div className="evidence-card-header">
         <span className="document-icon">
           <Icon size={23} />
@@ -982,10 +1025,9 @@ function EvidenceCard({
           <h3>{title}</h3>
           <p>{issuer}</p>
         </div>
-        <span className="record-status">
-          <span />
+        <Badge variant="success" appearance="dot" className="record-status">
           Active
-        </span>
+        </Badge>
       </div>
       <dl>
         {rows.map(([label, value]) => (
@@ -1017,7 +1059,7 @@ function EvidenceCard({
         </span>
         <LockKeyIcon size={12} />
       </div>
-    </article>
+    </LayerCard>
   );
 }
 

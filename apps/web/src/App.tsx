@@ -1,13 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
-import { Badge, Banner, Button, Input } from "@cloudflare/kumo";
 import {
+  ArrowDownIcon,
+  ArrowRightIcon,
+  ArrowSquareOutIcon,
+  BuildingsIcon,
+  CertificateIcon,
+  CheckIcon,
   CheckCircleIcon,
+  CircleNotchIcon,
   EyeIcon,
   EyeSlashIcon,
+  FileLockIcon,
   FingerprintIcon,
+  GlobeHemisphereWestIcon,
+  GridFourIcon,
   LockKeyIcon,
   ShieldCheckIcon,
-  WarningCircleIcon
+  SlidersHorizontalIcon,
+  WarningCircleIcon,
 } from "@phosphor-icons/react";
 import { makeVerificationReceipt } from "@attest/chain-evm";
 import { commitAttestation, commitValue, merkleRoot } from "@attest/core";
@@ -17,7 +27,7 @@ import {
   DEMO_INSURANCE_ISSUER_PRIVATE_KEY,
   DEMO_SUBJECT,
   demoAttestations,
-  demoAuthorityGraph
+  demoAuthorityGraph,
 } from "@attest/domains";
 import type { PolicyEvaluation } from "@attest/policy";
 import {
@@ -27,21 +37,32 @@ import {
   proveInsuranceRequirementEffect,
   verifyInsuranceRequirementEffect,
   type GpcProofEnvelope,
-  type InsuranceRequirement
+  type InsuranceRequirement,
 } from "@attest/proofs";
-import { createPersona, createPresentationContext, PrivateEvidenceWallet } from "@attest/wallet";
+import {
+  createPersona,
+  createPresentationContext,
+  PrivateEvidenceWallet,
+} from "@attest/wallet";
 import { Effect } from "effect";
 
-const money = (value: number) => new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0
-}).format(value);
+const money = (value: number) =>
+  new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(value);
 
 const buildWallet = (): PrivateEvidenceWallet => {
-  let wallet = new PrivateEvidenceWallet("root:acme")
-    .addPersona(createPersona("persona:compliance", "Compliance", ["insurance.*", "soc2.*", "iso9001.*"]));
-  for (const attestation of demoAttestations) wallet = wallet.ingest(attestation, "persona:compliance");
+  let wallet = new PrivateEvidenceWallet("root:acme").addPersona(
+    createPersona("persona:compliance", "Compliance", [
+      "insurance.*",
+      "soc2.*",
+      "iso9001.*",
+    ]),
+  );
+  for (const attestation of demoAttestations)
+    wallet = wallet.ingest(attestation, "persona:compliance");
   return wallet;
 };
 
@@ -49,38 +70,59 @@ const assuranceContext = createPresentationContext(
   "presentation:project-817",
   "Project 817 assurance",
   ["persona:compliance"],
-  ["insurance.*", "soc2.*", "iso9001.*"]
+  ["insurance.*", "soc2.*", "iso9001.*"],
 );
 
 export function App() {
   const wallet = useMemo(buildWallet, []);
   const [identity] = useState(newHolderIdentity);
-  const [aggregate, setAggregate] = useState(Number(defaultThresholds.aggregateMinimumUsd));
-  const [occurrence, setOccurrence] = useState(Number(defaultThresholds.perOccurrenceMinimumUsd));
+  const [aggregate, setAggregate] = useState(
+    Number(defaultThresholds.aggregateMinimumUsd),
+  );
+  const [occurrence, setOccurrence] = useState(
+    Number(defaultThresholds.perOccurrenceMinimumUsd),
+  );
   const [revealVault, setRevealVault] = useState(false);
+  const [activeSection, setActiveSection] = useState("overview");
   const [evaluation, setEvaluation] = useState<PolicyEvaluation | null>(null);
-  const [proofState, setProofState] = useState<"idle" | "proving" | "verified" | "failed">("idle");
+  const [proofState, setProofState] = useState<
+    "idle" | "proving" | "verified" | "failed"
+  >("idle");
   const [proof, setProof] = useState<GpcProofEnvelope | null>(null);
-  const [receipt, setReceipt] = useState<Awaited<ReturnType<typeof makeVerificationReceipt>> | null>(null);
+  const [receipt, setReceipt] = useState<Awaited<
+    ReturnType<typeof makeVerificationReceipt>
+  > | null>(null);
   const [proofError, setProofError] = useState<string | null>(null);
 
-  const thresholds = useMemo(() => ({
-    aggregateMinimumUsd: BigInt(Math.max(0, Math.trunc(aggregate || 0))),
-    perOccurrenceMinimumUsd: BigInt(Math.max(0, Math.trunc(occurrence || 0))),
-    projectEnd: defaultThresholds.projectEnd
-  }), [aggregate, occurrence]);
+  const thresholds = useMemo(
+    () => ({
+      aggregateMinimumUsd: BigInt(Math.max(0, Math.trunc(aggregate || 0))),
+      perOccurrenceMinimumUsd: BigInt(Math.max(0, Math.trunc(occurrence || 0))),
+      projectEnd: defaultThresholds.projectEnd,
+    }),
+    [aggregate, occurrence],
+  );
 
   const profile = useMemo(() => createSupplierPolicy(thresholds), [thresholds]);
-  const insurancePod = useMemo(() => issueInsurancePod({
-    attestationId: "att:insurance:acme:2027",
-    subjectBinding: DEMO_SUBJECT,
-    ownerPublicKey: holderPublicKey(identity),
-    aggregateUsd: 5_000_000n,
-    perOccurrenceUsd: 2_000_000n,
-    validUntilEpochSeconds: BigInt(Math.floor(new Date("2027-12-31T23:59:59.000Z").getTime() / 1000)),
-    additionalInsured: true,
-    waiverOfSubrogation: true
-  }, DEMO_INSURANCE_ISSUER_PRIVATE_KEY), [identity]);
+  const insurancePod = useMemo(
+    () =>
+      issueInsurancePod(
+        {
+          attestationId: "att:insurance:acme:2027",
+          subjectBinding: DEMO_SUBJECT,
+          ownerPublicKey: holderPublicKey(identity),
+          aggregateUsd: 5_000_000n,
+          perOccurrenceUsd: 2_000_000n,
+          validUntilEpochSeconds: BigInt(
+            Math.floor(new Date("2027-12-31T23:59:59.000Z").getTime() / 1000),
+          ),
+          additionalInsured: true,
+          waiverOfSubrogation: true,
+        },
+        DEMO_INSURANCE_ISSUER_PRIVATE_KEY,
+      ),
+    [identity],
+  );
 
   useEffect(() => {
     setProofState("idle");
@@ -88,13 +130,21 @@ export function App() {
     setReceipt(null);
     setProofError(null);
     let active = true;
-    void Effect.runPromise(wallet.plan(assuranceContext, profile, demoAuthorityGraph)).then((result) => {
+    void Effect.runPromise(
+      wallet.plan(assuranceContext, profile, demoAuthorityGraph),
+    ).then((result) => {
       if (active) setEvaluation(result);
     });
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [wallet, profile]);
 
-  const updateThreshold = (value: string, current: number, update: (value: number) => void) => {
+  const updateThreshold = (
+    value: string,
+    current: number,
+    update: (value: number) => void,
+  ) => {
     const next = Number(value);
     if (!Number.isSafeInteger(next) || next < 0 || next === current) return;
     setEvaluation(null);
@@ -115,31 +165,40 @@ export function App() {
         subjectBinding: DEMO_SUBJECT,
         aggregateMinimumUsd: thresholds.aggregateMinimumUsd,
         perOccurrenceMinimumUsd: thresholds.perOccurrenceMinimumUsd,
-        validThroughEpochSeconds: BigInt(Math.floor(new Date(thresholds.projectEnd).getTime() / 1000)),
+        validThroughEpochSeconds: BigInt(
+          Math.floor(new Date(thresholds.projectEnd).getTime() / 1000),
+        ),
         requireAdditionalInsured: true,
         requireWaiverOfSubrogation: true,
         challenge,
-        acceptedIssuerPublicKeys: [insurancePod.signerPublicKey]
+        acceptedIssuerPublicKeys: [insurancePod.signerPublicKey],
       };
       const program = Effect.flatMap(
         proveInsuranceRequirementEffect(insurancePod, identity, requirement),
-        (envelope) => Effect.map(
-          verifyInsuranceRequirementEffect(envelope, requirement),
-          (valid) => ({ envelope, valid })
-        )
+        (envelope) =>
+          Effect.map(
+            verifyInsuranceRequirementEffect(envelope, requirement),
+            (valid) => ({ envelope, valid }),
+          ),
       );
       const { envelope, valid } = await Effect.runPromise(program);
-      if (!valid) throw new Error("Proof did not verify against the expected policy");
+      if (!valid)
+        throw new Error("Proof did not verify against the expected policy");
 
-      const evidenceRoot = await merkleRoot(await Promise.all(demoAttestations.map(commitAttestation)));
-      const pairwiseNullifier = await commitValue({ challenge, holder: holderPublicKey(identity) });
+      const evidenceRoot = await merkleRoot(
+        await Promise.all(demoAttestations.map(commitAttestation)),
+      );
+      const pairwiseNullifier = await commitValue({
+        challenge,
+        holder: holderPublicKey(identity),
+      });
       const anchored = await makeVerificationReceipt({
         policyId: profile.id,
         policyCommitment: envelope.policyCommitment,
         evidenceRoot,
         proofCommitment: envelope.proofCommitment,
         subjectNullifier: pairwiseNullifier,
-        satisfied: true
+        satisfied: true,
       });
       setProof(envelope);
       setReceipt(anchored);
@@ -150,158 +209,823 @@ export function App() {
     }
   };
 
-  const verifiedCount = evaluation?.leaves.filter((leaf) => leaf.satisfied).length ?? 0;
+  const verifiedCount =
+    evaluation?.leaves.filter((leaf) => leaf.satisfied).length ?? 0;
   const totalCount = evaluation?.leaves.length ?? 12;
 
-  return <main className="shell flex flex-col gap-6">
-    <header className="flex flex-wrap items-start justify-between gap-5">
-      <div className="max-w-3xl">
-        <div className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-kumo-subtle">
-          <ShieldCheckIcon className="size-5 text-kumo-brand"/> Attest assurance workbench
-        </div>
-        <h1 className="m-0 text-4xl font-semibold tracking-tight md:text-5xl">Share the answer, not the file cabinet.</h1>
-        <p className="mt-4 max-w-2xl text-lg leading-relaxed text-kumo-subtle">
-          A supplier proves insurance, SOC 2 and ISO 9001 requirements from a private evidence wallet. The buyer receives verifiable predicates—not exact limits or source reports.
-        </p>
-      </div>
-      <div className="flex gap-2">
-        <Badge variant="success">Effect 4</Badge>
-        <Badge variant="neutral">Kumo UI</Badge>
-        <Badge variant="warning">Testnet POC</Badge>
-      </div>
-    </header>
+  const isProving = proofState === "proving";
+  const isVerified =
+    proofState === "verified" && proof !== null && receipt !== null;
+  const groups = [
+    {
+      name: "Insurance",
+      detail: "Limits, endorsements & coverage period",
+      prefix: "insurance.",
+      icon: ShieldCheckIcon,
+    },
+    {
+      name: "SOC 2",
+      detail: "Type II report & security controls",
+      prefix: "soc2.",
+      icon: FileLockIcon,
+    },
+    {
+      name: "ISO 9001",
+      detail: "Certification, scope & validity",
+      prefix: "iso9001.",
+      icon: CertificateIcon,
+    },
+  ];
+  const setScenario = (nextAggregate: number, nextOccurrence: number) => {
+    updateThreshold(String(nextAggregate), aggregate, setAggregate);
+    updateThreshold(String(nextOccurrence), occurrence, setOccurrence);
+  };
+  const downloadReceipt = () => {
+    if (!proof || !receipt) return;
+    const blob = new Blob(
+      [
+        JSON.stringify(
+          {
+            scope: "Insurance proof; SOC 2 and ISO 9001 evaluated locally only",
+            proof,
+            receipt,
+          },
+          null,
+          2,
+        ),
+      ],
+      { type: "application/json" },
+    );
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "attest-project-817.json";
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
 
-    <Banner
-      variant="secondary"
-      size="sm"
-      title="Proof backend boundary"
-      description="The local planner evaluates all three assurance domains. The Generate GPC proof action produces and verifies a real Groth16 proof for the hidden insurance limits. POD/GPC remains beta and unaudited, so this is not production assurance infrastructure."
-    />
-
-    <section className="metric-grid">
-      <Metric label="Evidence records" value="3" detail="carrier, CPA, certifier"/>
-      <Metric label="Authority roots" value="3" detail="scoped trust chains"/>
-      <Metric label="Requirements met" value={`${verifiedCount}/${totalCount}`} detail="without source disclosure"/>
-      <Metric label="On-chain payload" value="4 hashes" detail="no raw evidence"/>
-    </section>
-
-    <div className="grid gap-5 lg:grid-cols-[1.05fr_1.45fr]">
-      <section className="panel p-5">
-        <div className="mb-5 flex items-start justify-between gap-3">
+  return (
+    <div className="workspace">
+      <a className="skip-link" href="#main">
+        Skip to workspace
+      </a>
+      <aside className="sidebar" aria-label="Workspace navigation">
+        <a className="brand" href="#overview" aria-label="Attest home">
+          <span className="brand-mark">
+            <ShieldCheckIcon weight="bold" />
+          </span>
+          attest<span className="brand-period">.</span>
+        </a>
+        <div className="workspace-picker">
+          <span className="workspace-avatar">A</span>
           <div>
-            <h2 className="m-0 text-xl font-semibold">Supplier evidence vault</h2>
-            <p className="mt-1 text-sm text-kumo-subtle">Private source values remain holder-controlled.</p>
+            Acme Industrial<span>Demo workspace</span>
           </div>
-          <Button variant="secondary" size="sm" icon={revealVault ? EyeSlashIcon : EyeIcon} onClick={() => setRevealVault((value) => !value)}>
-            {revealVault ? "Hide demo values" : "Reveal demo values"}
-          </Button>
+          <span className="workspace-dot" />
         </div>
-        <div className="flex flex-col gap-3">
-          <EvidenceCard title="Commercial general liability" issuer="Carrier authority" status="Active" rows={[
-            ["Aggregate limit", revealVault ? "$5,000,000" : "Hidden"],
-            ["Per occurrence", revealVault ? "$2,000,000" : "Hidden"],
-            ["Valid until", revealVault ? "Dec 31, 2027" : "Predicate-only"],
-            ["Evidence", "Committed, not published"]
-          ]}/>
-          <EvidenceCard title="SOC 2 examination" issuer="CPA firm" status="Current" rows={[
-            ["Report", "Type II"],
-            ["Period", revealVault ? "12 months" : "≥ 6 months"],
-            ["Exceptions", revealVault ? "0 material" : "Requirement satisfied"],
-            ["Report body", "Private"]
-          ]}/>
-          <EvidenceCard title="ISO 9001 certificate" issuer="Accredited certifier" status="Current" rows={[
-            ["Scope", revealVault ? "Industrial-controls manufacturing" : "Required scope covered"],
-            ["Valid until", revealVault ? "Aug 31, 2029" : "Through project end"],
-            ["Authority", "Accreditation chain verified"],
-            ["Certificate", "Committed, not published"]
-          ]}/>
-        </div>
-      </section>
-
-      <section className="panel p-5">
-        <div className="mb-5">
-          <h2 className="m-0 text-xl font-semibold">Buyer requirement policy</h2>
-          <p className="mt-1 text-sm text-kumo-subtle">Thresholds are public. The supplier's exact values are not.</p>
-        </div>
-        <div className="mb-5 grid gap-3 sm:grid-cols-2">
-          <Input label="CGL aggregate minimum" type="number" disabled={proofState === "proving"} min={0} step={500000} value={String(aggregate)} onChange={(event) => updateThreshold(event.target.value, aggregate, setAggregate)} description="Buyer-visible threshold, USD"/>
-          <Input label="Per-occurrence minimum" type="number" disabled={proofState === "proving"} min={0} step={500000} value={String(occurrence)} onChange={(event) => updateThreshold(event.target.value, occurrence, setOccurrence)} description="Buyer-visible threshold, USD"/>
-        </div>
-
-        <div className="mb-5 overflow-hidden rounded-lg border border-kumo-line">
-          {(evaluation?.leaves ?? []).map((leaf) => <div key={leaf.id} className="flex items-center gap-3 border-b border-kumo-line px-3 py-2.5 last:border-b-0">
-            {leaf.satisfied
-              ? <CheckCircleIcon className="size-5 shrink-0 text-kumo-success"/>
-              : <WarningCircleIcon className="size-5 shrink-0 text-kumo-danger"/>}
-            <span className="min-w-0 flex-1 text-sm">{leaf.label}</span>
-            <Badge variant={leaf.satisfied ? "success" : "error"}>{leaf.satisfied ? "matched locally" : "not met"}</Badge>
-          </div>)}
-        </div>
-
-        {evaluation !== null && <Banner
-          variant={evaluation.satisfied ? "default" : "error"}
-          size="sm"
-          title={evaluation.satisfied ? "Local evidence plan satisfies the buyer policy" : "The current private evidence does not satisfy the policy"}
-          description={evaluation.satisfied
-            ? `${evaluation.witnessIds.length} authenticated records cover ${evaluation.leaves.length} requirements. Hidden values are absent from the plan result.`
-            : "Raise or change the threshold to see a clean failure without disclosing the supplier's actual limit."}
-        />}
-
-        <div className="mt-5 flex flex-wrap items-center gap-3">
-          <Button variant="primary" icon={FingerprintIcon} disabled={proofState === "proving" || !evaluation?.satisfied} onClick={() => void generateProof()}>
-            {proofState === "proving" ? "Generating Groth16 proof…" : "Generate GPC proof"}
-          </Button>
-          <span className="text-sm text-kumo-subtle">First run downloads proving artifacts.</span>
-        </div>
-
-        {proofState === "failed" && <div className="mt-4"><Banner variant="error" size="sm" title="Proof generation failed" description={proofError ?? "Unknown proof error"}/></div>}
-        {proofState === "verified" && proof !== null && receipt !== null && <div className="mt-5 rounded-lg border border-kumo-success/40 bg-kumo-success/5 p-4">
-          <div className="flex items-center gap-2"><LockKeyIcon className="size-5 text-kumo-success"/><strong>Cryptographic predicate verified</strong><Badge variant="success">ready to anchor</Badge></div>
-          <p className="mb-3 mt-2 text-sm text-kumo-subtle">The verifier learned only that the carrier-signed policy meets the requested limits, endorsements and project date.</p>
-          <div className="grid gap-2 text-xs sm:grid-cols-2">
-            <HashRow label="Circuit" value={proof.circuitIdentifier}/>
-            <HashRow label="Proof commitment" value={proof.proofCommitment}/>
-            <HashRow label="Evidence root" value={receipt.evidenceRoot}/>
-            <HashRow label="Pairwise nullifier" value={receipt.subjectNullifier ?? "—"}/>
-            <HashRow label="Receipt id" value={receipt.id}/>
-            <HashRow label="Policy commitment" value={receipt.policyCommitment}/>
+        <div className="nav-caption">WORKSPACE</div>
+        <nav>
+          {[
+            { id: "overview", label: "Overview", icon: GridFourIcon },
+            { id: "evidence", label: "Evidence vault", icon: FileLockIcon },
+            {
+              id: "policy",
+              label: "Buyer requirements",
+              icon: SlidersHorizontalIcon,
+            },
+            {
+              id: "presentation",
+              label: "Proof & receipt",
+              icon: FingerprintIcon,
+            },
+          ].map(({ id, label, icon: Icon }) => (
+            <a
+              key={id}
+              href={`#${id}`}
+              aria-label={label}
+              className={`nav-item ${activeSection === id ? "active" : ""}`}
+              aria-current={activeSection === id ? "location" : undefined}
+              onClick={() => setActiveSection(id)}
+            >
+              <Icon size={19} />
+              <span>{label}</span>
+              {id === "evidence" && <span className="nav-count">3</span>}
+            </a>
+          ))}
+        </nav>
+        <div className="sidebar-bottom">
+          <div className="privacy-note">
+            <LockKeyIcon size={20} />
+            <strong>Private by design.</strong>
+            <p>
+              Your evidence stays in your browser. Share only what’s needed.
+            </p>
           </div>
-        </div>}
-      </section>
-    </div>
+          <a
+            className="source-link"
+            href="https://github.com/gmackie/attest"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Explore the protocol
+            <ArrowSquareOutIcon size={15} />
+          </a>
+          <div className="sidebar-profile">
+            <span className="profile-avatar">AI</span>
+            <div>
+              Acme Industrial<span>Supplier workspace</span>
+            </div>
+          </div>
+        </div>
+      </aside>
 
-    <section className="panel p-5">
-      <h2 className="m-0 text-xl font-semibold">What the chain records</h2>
-      <p className="mt-1 text-sm text-kumo-subtle">The Solidity registry anchors evidence and verification receipts while the evidence graph remains private.</p>
-      <div className="mt-4 grid gap-3 md:grid-cols-4">
-        {[
-          ["Policy commitment", "Which exact requirement program was verified"],
-          ["Evidence root", "A commitment to the selected authenticated records"],
-          ["Proof commitment", "The verified GPC presentation transcript"],
-          ["Pairwise nullifier", "Replay control scoped to this engagement"]
-        ].map(([title, description]) => <div key={title} className="rounded-lg border border-kumo-line p-3">
-          <div className="mb-1 font-medium">{title}</div><div className="text-sm text-kumo-subtle">{description}</div>
-        </div>)}
+      <div className="workspace-body">
+        <header className="topbar">
+          <div className="breadcrumb">
+            Workspace<span>/</span>
+            <strong>Supplier assurance</strong>
+          </div>
+          <span className="demo-tag">
+            <span />
+            Interactive demo
+          </span>
+        </header>
+        <main id="main" className="main-content">
+          <section id="overview" className="overview">
+            <div className="page-heading">
+              <div>
+                <div className="eyebrow">ASSURANCE, WITHOUT EXPOSURE</div>
+                <h1>Trust, with less disclosure.</h1>
+                <p>Prove you meet the requirements. Keep the evidence yours.</p>
+              </div>
+              <a className="text-link" href="#how-it-works">
+                How it works
+                <ArrowDownIcon size={15} />
+              </a>
+            </div>
+            <div className="engagement-card">
+              <div className="engagement-info">
+                <div className="project-label">
+                  <span className="live-dot" />
+                  PROJECT 817 <span className="project-divider">/</span>{" "}
+                  SUPPLIER ONBOARDING
+                </div>
+                <h2>
+                  A stronger signal.
+                  <br />A smaller footprint.
+                </h2>
+                <p>
+                  One private evidence wallet.
+                  <br />A clear answer to your buyer’s requirements.
+                </p>
+                <div className="engagement-meta">
+                  <BuildingsIcon size={16} />
+                  Acme Industrial Controls<span className="meta-dot">·</span>
+                  <span>Synthetic supplier</span>
+                </div>
+              </div>
+              <div
+                className="trust-illustration"
+                aria-label="Private evidence becomes a proof for the buyer"
+              >
+                <div className="orbit orbit-one" />
+                <div className="orbit orbit-two" />
+                <div className="diagram-node node-evidence">
+                  <FileLockIcon size={24} />
+                  <span>Private evidence</span>
+                  <small>Stays with you</small>
+                </div>
+                <div className="diagram-connector">
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <div className="diagram-seal">
+                  <ShieldCheckIcon size={40} weight="light" />
+                  <span>attest</span>
+                </div>
+                <div className="diagram-connector">
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <div className="diagram-node node-proof">
+                  <FingerprintIcon size={26} />
+                  <span>Verifiable proof</span>
+                  <small>Shared with the buyer</small>
+                </div>
+                <div className="diagram-caption">
+                  <LockKeyIcon size={12} /> Evidence stays private. Confidence
+                  travels.
+                </div>
+              </div>
+            </div>
+            <div className="summary-strip">
+              <div>
+                <span className="summary-icon">
+                  <FileLockIcon />
+                </span>
+                <strong>03</strong>
+                <span>private records</span>
+              </div>
+              <div>
+                <span className="summary-icon">
+                  <ShieldCheckIcon />
+                </span>
+                <strong>03</strong>
+                <span>authority roots</span>
+              </div>
+              <div>
+                <span
+                  className={`summary-icon ${evaluation && !evaluation.satisfied ? "warning" : ""}`}
+                >
+                  <CheckCircleIcon />
+                </span>
+                <strong>
+                  {evaluation ? `${verifiedCount}/${totalCount}` : "—"}
+                </strong>
+                <span>requirements matched</span>
+              </div>
+              <div>
+                <span className="summary-icon">
+                  <EyeSlashIcon />
+                </span>
+                <strong>0</strong>
+                <span>source files shared</span>
+              </div>
+            </div>
+          </section>
+
+          <div className="assurance-grid">
+            <section id="evidence" className="panel evidence-panel">
+              <div className="section-heading">
+                <div>
+                  <div className="step-label">
+                    01 <span>THE SUPPLIER</span>
+                  </div>
+                  <h2>Your evidence vault</h2>
+                  <p>Three records. Always in your control.</p>
+                </div>
+                <span className="icon-tile">
+                  <LockKeyIcon size={21} />
+                </span>
+              </div>
+              <div className="vault-toolbar">
+                <span>
+                  <span className="status-dot" />
+                  Private to this workspace
+                </span>
+                <button
+                  className="icon-button"
+                  aria-label={
+                    revealVault ? "Hide demo values" : "Reveal demo values"
+                  }
+                  aria-pressed={revealVault}
+                  onClick={() => setRevealVault((value) => !value)}
+                >
+                  {revealVault ? (
+                    <EyeSlashIcon size={17} />
+                  ) : (
+                    <EyeIcon size={17} />
+                  )}
+                  <span>{revealVault ? "Hide values" : "Reveal values"}</span>
+                </button>
+              </div>
+              <EvidenceCard
+                kind="insurance"
+                title="General liability"
+                issuer="Carrier-issued insurance"
+                icon={ShieldCheckIcon}
+                reveal={revealVault}
+                rows={[
+                  ["Aggregate limit", "$5,000,000"],
+                  ["Per occurrence", "$2,000,000"],
+                  ["Valid through", "Dec 31, 2027"],
+                ]}
+              />
+              <EvidenceCard
+                kind="audit"
+                title="SOC 2 Type II"
+                issuer="Independent CPA examination"
+                icon={FileLockIcon}
+                reveal={revealVault}
+                rows={[
+                  ["Report period", "12 months"],
+                  ["Material exceptions", "0"],
+                  ["Security controls", "In scope"],
+                ]}
+              />
+              <EvidenceCard
+                kind="certification"
+                title="ISO 9001"
+                issuer="Accredited certification body"
+                icon={CertificateIcon}
+                reveal={revealVault}
+                rows={[
+                  ["Scope", "Industrial controls"],
+                  ["Valid through", "Aug 31, 2029"],
+                  ["Edition", "2015"],
+                ]}
+              />
+              <div className="vault-footnote">
+                <LockKeyIcon size={14} />
+                <p>
+                  These are synthetic demo records. Revealing values here does
+                  not add them to the proof.
+                </p>
+              </div>
+            </section>
+
+            <section id="policy" className="panel policy-panel">
+              <div className="section-heading">
+                <div>
+                  <div className="step-label">
+                    02 <span>THE BUYER</span>
+                  </div>
+                  <h2>Set the standard</h2>
+                  <p>Define what you need to know. Nothing more.</p>
+                </div>
+                <span className="subtle-tag">Project 817</span>
+              </div>
+              <fieldset className="scenario-fieldset" disabled={isProving}>
+                <legend>TRY A REQUIREMENT</legend>
+                <div className="scenario-options">
+                  {[
+                    {
+                      label: "Standard",
+                      aggregate: 2_000_000,
+                      occurrence: 1_000_000,
+                    },
+                    {
+                      label: "Higher coverage",
+                      aggregate: 5_000_000,
+                      occurrence: 2_000_000,
+                    },
+                    {
+                      label: "Beyond coverage",
+                      aggregate: 10_000_000,
+                      occurrence: 2_000_000,
+                    },
+                  ].map((scenario) => (
+                    <button
+                      key={scenario.label}
+                      className={
+                        aggregate === scenario.aggregate &&
+                        occurrence === scenario.occurrence
+                          ? "selected"
+                          : ""
+                      }
+                      aria-pressed={
+                        aggregate === scenario.aggregate &&
+                        occurrence === scenario.occurrence
+                      }
+                      onClick={() =>
+                        setScenario(scenario.aggregate, scenario.occurrence)
+                      }
+                    >
+                      {scenario.label}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+              <div className="threshold-grid">
+                <label htmlFor="aggregate">
+                  CGL aggregate minimum
+                  <div className="currency-input">
+                    <span>$</span>
+                    <input
+                      id="aggregate"
+                      type="number"
+                      min="0"
+                      step="500000"
+                      disabled={isProving}
+                      value={aggregate}
+                      onChange={(event) =>
+                        updateThreshold(
+                          event.target.value,
+                          aggregate,
+                          setAggregate,
+                        )
+                      }
+                    />
+                    <span>USD</span>
+                  </div>
+                </label>
+                <label htmlFor="occurrence">
+                  Per-occurrence minimum
+                  <div className="currency-input">
+                    <span>$</span>
+                    <input
+                      id="occurrence"
+                      type="number"
+                      min="0"
+                      step="500000"
+                      disabled={isProving}
+                      value={occurrence}
+                      onChange={(event) =>
+                        updateThreshold(
+                          event.target.value,
+                          occurrence,
+                          setOccurrence,
+                        )
+                      }
+                    />
+                    <span>USD</span>
+                  </div>
+                </label>
+              </div>
+              <div className="policy-caption">
+                <GlobeHemisphereWestIcon size={13} />
+                Buyer thresholds are public. Exact supplier limits stay private.
+              </div>
+              <div className="requirements-heading">
+                <span>REQUIREMENT CHECK</span>
+                <span>Local evaluation</span>
+              </div>
+              <div className="requirement-groups">
+                {groups.map(({ name, detail, prefix, icon: Icon }) => {
+                  const leaves =
+                    evaluation?.leaves.filter((leaf) =>
+                      leaf.predicate.startsWith(prefix),
+                    ) ?? [];
+                  const matched =
+                    leaves.length > 0 && leaves.every((leaf) => leaf.satisfied);
+                  return (
+                    <details className="requirement-group" key={name}>
+                      <summary>
+                        <span className="domain-icon">
+                          <Icon size={20} />
+                        </span>
+                        <span className="domain-name">
+                          <strong>{name}</strong>
+                          <small>{detail}</small>
+                        </span>
+                        <span
+                          className={`domain-result ${evaluation ? (matched ? "matched" : "unmatched") : ""}`}
+                        >
+                          {evaluation ? (
+                            matched ? (
+                              <>
+                                <CheckIcon size={13} />
+                                Matched
+                              </>
+                            ) : (
+                              <>
+                                <WarningCircleIcon size={14} />
+                                Not met
+                              </>
+                            )
+                          ) : (
+                            "Checking"
+                          )}
+                        </span>
+                        <span className="disclosure-chevron">⌄</span>
+                      </summary>
+                      <ul>
+                        {leaves.map((leaf) => (
+                          <li key={leaf.id}>
+                            {leaf.satisfied ? (
+                              <CheckCircleIcon size={15} />
+                            ) : (
+                              <WarningCircleIcon size={15} />
+                            )}
+                            <span>{leaf.label}</span>
+                            <span>{leaf.satisfied ? "Met" : "Not met"}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  );
+                })}
+              </div>
+              <div
+                className={`policy-outcome ${evaluation && !evaluation.satisfied ? "outcome-warning" : ""}`}
+                role="status"
+              >
+                {evaluation?.satisfied ? (
+                  <CheckCircleIcon size={20} weight="fill" />
+                ) : (
+                  <WarningCircleIcon size={20} />
+                )}
+                <div>
+                  <strong>
+                    {evaluation
+                      ? evaluation.satisfied
+                        ? "Your evidence meets the requirements"
+                        : "This request exceeds the available evidence"
+                      : "Checking your evidence…"}
+                  </strong>
+                  <p>
+                    {evaluation?.satisfied
+                      ? "Ready to prove your insurance coverage privately."
+                      : "Try a lower threshold. The source values remain hidden."}
+                  </p>
+                </div>
+              </div>
+              <button
+                className="primary-button"
+                disabled={isProving || !evaluation?.satisfied}
+                onClick={() => {
+                  setActiveSection("presentation");
+                  document
+                    .getElementById("presentation")
+                    ?.scrollIntoView({ block: "start" });
+                  void generateProof();
+                }}
+              >
+                {isProving ? (
+                  <CircleNotchIcon size={20} className="spinning" />
+                ) : (
+                  <FingerprintIcon size={20} />
+                )}
+                <span>
+                  {isProving
+                    ? "Creating your private proof…"
+                    : isVerified
+                      ? "Generate a new proof"
+                      : "Generate private proof"}
+                </span>
+                {!isProving && <ArrowRightIcon size={19} />}
+              </button>
+              <p className="button-note">
+                Insurance proof generated and verified in your browser.
+              </p>
+            </section>
+          </div>
+
+          <section
+            id="presentation"
+            className={`presentation-panel ${isVerified ? "presentation-verified" : ""}`}
+            aria-busy={isProving}
+          >
+            <div className="section-heading">
+              <div>
+                <div className="step-label">
+                  03 <span>THE PRESENTATION</span>
+                </div>
+                <h2>
+                  {isVerified
+                    ? "Confidence, delivered."
+                    : "Your proof. Their confidence."}
+                </h2>
+                <p>
+                  {isVerified
+                    ? "Your insurance proof was cryptographically verified."
+                    : "The buyer gets an answer, without receiving your source files."}
+                </p>
+              </div>
+              <span
+                className={`proof-status ${isVerified ? "proof-success" : ""}`}
+              >
+                <span />
+                {isVerified
+                  ? "Proof verified"
+                  : isProving
+                    ? "Generating proof"
+                    : proofState === "failed"
+                      ? "Needs attention"
+                      : "Awaiting proof"}
+              </span>
+            </div>
+            <div aria-live="polite">
+              {isProving && (
+                <div className="proof-progress">
+                  <span className="progress-fingerprint">
+                    <FingerprintIcon size={34} />
+                  </span>
+                  <div>
+                    <strong>Building a proof from your private evidence</strong>
+                    <p>
+                      The first run downloads proving files and may take a
+                      moment. Keep this page open.
+                    </p>
+                    <div className="progress-track">
+                      <span />
+                    </div>
+                  </div>
+                </div>
+              )}
+              {proofState === "failed" && (
+                <div className="proof-error" role="alert">
+                  <WarningCircleIcon size={22} />
+                  <div>
+                    <strong>We couldn’t create this proof.</strong>
+                    <p>Check your connection and try again.</p>
+                    <details>
+                      <summary>Technical details</summary>
+                      <p>{proofError}</p>
+                    </details>
+                  </div>
+                </div>
+              )}
+              {isVerified && (
+                <div className="verified-message">
+                  <span className="verified-seal">
+                    <ShieldCheckIcon size={32} />
+                  </span>
+                  <div>
+                    <strong>Insurance requirements satisfied</strong>
+                    <p>
+                      At least {money(aggregate)} aggregate and{" "}
+                      {money(occurrence)} per occurrence, with the requested
+                      endorsements and coverage date. Exact limits remain
+                      hidden.
+                    </p>
+                  </div>
+                  <button
+                    className="secondary-button"
+                    onClick={downloadReceipt}
+                  >
+                    Download receipt
+                    <ArrowDownIcon size={16} />
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="disclosure-grid">
+              <div>
+                <span className="disclosure-label">
+                  <CheckCircleIcon size={16} />
+                  WHAT THE BUYER CAN VERIFY
+                </span>
+                <p>Required insurance limits are met</p>
+                <p>Required endorsements are present</p>
+                <p>Coverage meets the requested date</p>
+              </div>
+              <div>
+                <span className="disclosure-label private-label">
+                  <LockKeyIcon size={16} />
+                  WHAT STAYS PRIVATE
+                </span>
+                <p>Exact aggregate and occurrence limits</p>
+                <p>Original documents and report contents</p>
+                <p>The selected signer within the accepted set</p>
+              </div>
+            </div>
+            {isVerified && (
+              <details className="receipt-details">
+                <summary>
+                  Inspect verification receipt
+                  <span>
+                    Proof & commitment details{" "}
+                    <span aria-hidden="true">↗</span>
+                  </span>
+                </summary>
+                <div className="hash-grid">
+                  <HashRow label="Circuit" value={proof.circuitIdentifier} />
+                  <HashRow
+                    label="Proof commitment"
+                    value={proof.proofCommitment}
+                  />
+                  <HashRow label="Evidence root" value={receipt.evidenceRoot} />
+                  <HashRow
+                    label="Request-scoped identifier"
+                    value={receipt.subjectNullifier ?? "—"}
+                  />
+                  <HashRow label="Receipt ID" value={receipt.id} />
+                  <HashRow
+                    label="Policy commitment"
+                    value={receipt.policyCommitment}
+                  />
+                </div>
+                <p>
+                  Prepared locally. No transaction has been submitted on-chain.
+                </p>
+              </details>
+            )}
+            <div className="scope-note">
+              <span>PROOF SCOPE</span>
+              <p>
+                Insurance uses a real zero-knowledge proof. SOC 2 and ISO 9001
+                are evaluated locally; they are not included in the
+                cryptographic proof.
+              </p>
+            </div>
+          </section>
+
+          <section id="how-it-works" className="how-it-works">
+            <div className="eyebrow">LESS SHARED. MORE CERTAIN.</div>
+            <h2>Evidence stays put. Trust moves forward.</h2>
+            <div className="steps-grid">
+              <div>
+                <span>01</span>
+                <h3>Hold your evidence</h3>
+                <p>
+                  Signed records stay in the supplier’s private wallet, with
+                  their issuer and scope intact.
+                </p>
+              </div>
+              <div>
+                <span>02</span>
+                <h3>Match the requirement</h3>
+                <p>
+                  The buyer sets a policy. The local planner checks current,
+                  authorized evidence.
+                </p>
+              </div>
+              <div>
+                <span>03</span>
+                <h3>Prove just enough</h3>
+                <p>
+                  A cryptographic proof confirms the insurance requirements
+                  without revealing exact limits.
+                </p>
+              </div>
+            </div>
+          </section>
+          <footer className="footer">
+            <span className="footer-brand">attest.</span>
+            <p>
+              Research demo · Synthetic evidence · POD/GPC is beta and unaudited
+            </p>
+            <a
+              href="https://github.com/gmackie/attest/tree/feat/assurance-kernel-poc/specs"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Protocol & limitations
+              <ArrowSquareOutIcon size={13} />
+            </a>
+          </footer>
+        </main>
       </div>
-      <div className="flow-line my-5"/>
-      <p className="m-0 text-sm text-kumo-subtle"><strong className="text-kumo-default">Never on-chain:</strong> exact policy limits, report bodies, certificate documents, legal identity, premiums, broker correspondence, or unrelated business evidence.</p>
-    </section>
-  </main>;
+    </div>
+  );
 }
 
-function Metric({ label, value, detail }: { label: string; value: string; detail: string }) {
-  return <div className="panel p-4"><div className="text-2xl font-semibold">{value}</div><div className="mt-1 text-sm font-medium">{label}</div><div className="mt-1 text-xs text-kumo-subtle">{detail}</div></div>;
-}
-
-function EvidenceCard({ title, issuer, status, rows }: { title: string; issuer: string; status: string; rows: readonly (readonly [string, string])[] }) {
-  return <div className="rounded-lg border border-kumo-line p-4">
-    <div className="mb-3 flex items-start justify-between gap-3"><div><div className="font-medium">{title}</div><div className="text-xs text-kumo-subtle">{issuer}</div></div><Badge variant="success">{status}</Badge></div>
-    <dl className="m-0 grid grid-cols-[minmax(8rem,1fr)_1.4fr] gap-x-3 gap-y-2 text-sm">
-      {rows.map(([label, value]) => <div key={label} className="contents"><dt className="text-kumo-subtle">{label}</dt><dd className="m-0 text-right font-medium">{value}</dd></div>)}
-    </dl>
-  </div>;
+function EvidenceCard({
+  kind,
+  title,
+  issuer,
+  icon: Icon,
+  reveal,
+  rows,
+}: {
+  kind: string;
+  title: string;
+  issuer: string;
+  icon: typeof ShieldCheckIcon;
+  reveal: boolean;
+  rows: readonly (readonly [string, string])[];
+}) {
+  return (
+    <article className={`evidence-card ${kind}`}>
+      <div className="evidence-card-header">
+        <span className="document-icon">
+          <Icon size={23} />
+        </span>
+        <div>
+          <h3>{title}</h3>
+          <p>{issuer}</p>
+        </div>
+        <span className="record-status">
+          <span />
+          Active
+        </span>
+      </div>
+      <dl>
+        {rows.map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>
+              {reveal ? (
+                <span className="revealed-value">{value}</span>
+              ) : (
+                <span className="redacted" role="img" aria-label="Hidden value">
+                  <span />
+                  <LockKeyIcon size={11} />
+                </span>
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <div className="record-footer">
+        <span className="record-lines" aria-hidden="true">
+          ▤
+        </span>
+        <span>
+          {kind === "insurance"
+            ? "Signed insurance credential"
+            : kind === "audit"
+              ? "Private examination report"
+              : "Private certification record"}
+        </span>
+        <LockKeyIcon size={12} />
+      </div>
+    </article>
+  );
 }
 
 function HashRow({ label, value }: { label: string; value: string }) {
-  return <div className="min-w-0"><div className="text-kumo-subtle">{label}</div><code className="block truncate" title={value}>{value}</code></div>;
+  return (
+    <div className="hash-row">
+      <span>{label}</span>
+      <code>{value}</code>
+    </div>
+  );
 }

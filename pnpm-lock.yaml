@@ -32,6 +32,9 @@ importers:
       '@attest/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@attest/demo':
+        specifier: workspace:*
+        version: link:../../packages/demo
       '@attest/domains':
         specifier: workspace:*
         version: link:../../packages/domains
@@ -111,6 +114,39 @@ importers:
       '@attest/domain':
         specifier: workspace:*
         version: link:../domain
+      effect:
+        specifier: 4.0.2
+        version: 4.0.2
+
+  packages/demo:
+    dependencies:
+      '@attest/authority':
+        specifier: workspace:*
+        version: link:../authority
+      '@attest/chain-evm':
+        specifier: workspace:*
+        version: link:../chain-evm
+      '@attest/core':
+        specifier: workspace:*
+        version: link:../core
+      '@attest/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@attest/domains':
+        specifier: workspace:*
+        version: link:../domains
+      '@attest/policy':
+        specifier: workspace:*
+        version: link:../policy
+      '@attest/proofs':
+        specifier: workspace:*
+        version: link:../proofs
+      '@attest/wallet':
+        specifier: workspace:*
+        version: link:../wallet
+      '@pcd/pod':
+        specifier: 0.5.1
+        version: 0.5.1
       effect:
         specifier: 4.0.2
         version: 4.0.2

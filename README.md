@@ -135,3 +135,29 @@ pnpm deploy:web
 `attest-demo` Worker and its custom domain from `wrangler.jsonc`. Cloudflare
 credentials remain in the operator's environment, never in this repository.
 Deployments are manual; opening or merging the PR does not automatically deploy.
+
+## Interactive network lab
+
+The demo includes 15 fictional institutions: three trust roots, an accreditor,
+six independent issuers, three suppliers, and two buyers. Select institutions and
+buyer thresholds, then use **Run walkthrough** or **Next step** to execute seven
+stages: request, signed issuance, authority resolution, private wallet, policy
+planning, real insurance proof generation, and independent verification.
+
+Pause stops automatic advancement after the current operation. Completed stages
+can be inspected without rerunning them. Reset creates a fresh holder identity and
+request challenge; late results from an older run are discarded. Nothing persists
+across a page reload. The download contains only the public request, proof and
+receipt, and **Test replay rejection** verifies against a different challenge.
+
+Failure scenarios cover tampering, missing authority, expired or revoked records,
+wrong subjects, and insufficient coverage. Changing buyers updates the default
+thresholds; Beacon cannot meet Metro's defaults, while Novus can. Every issuer has
+a distinct public demo signing key. Authority grants and status are local fixtures,
+with a fixed evaluation date of October 7, 2026. Neither SOC 2 / ISO checks nor the
+receipt's evidence root are proven by the insurance GPC circuit. No transaction is
+submitted to a chain.
+
+`packages/demo` owns the executable workflow and scenario tests; `apps/web` renders
+it with Cloudflare Kumo controls and surfaces. Proof computation uses real artifacts
+and reports completion only after the prover and verifier return.

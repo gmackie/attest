@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Badge,
   Banner,
@@ -7,1067 +7,592 @@ import {
   InputGroup,
   LayerCard,
   LinkButton,
+  Select,
 } from "@cloudflare/kumo";
 import {
-  ArrowDownIcon,
   ArrowRightIcon,
-  ArrowSquareOutIcon,
-  BuildingsIcon,
-  CertificateIcon,
   CheckCircleIcon,
-  EyeIcon,
-  EyeSlashIcon,
-  FileLockIcon,
   FingerprintIcon,
-  GlobeHemisphereWestIcon,
-  GridFourIcon,
-  LockKeyIcon,
+  PlayIcon,
   ShieldCheckIcon,
-  SlidersHorizontalIcon,
-  WarningCircleIcon,
 } from "@phosphor-icons/react";
-import { makeVerificationReceipt } from "@attest/chain-evm";
-import { commitAttestation, commitValue, merkleRoot } from "@attest/core";
-import {
-  createSupplierPolicy,
-  defaultThresholds,
-  DEMO_INSURANCE_ISSUER_PRIVATE_KEY,
-  DEMO_SUBJECT,
-  demoAttestations,
-  demoAuthorityGraph,
-} from "@attest/domains";
-import type { PolicyEvaluation } from "@attest/policy";
-import {
-  holderPublicKey,
-  issueInsurancePod,
-  newHolderIdentity,
-  proveInsuranceRequirementEffect,
-  verifyInsuranceRequirementEffect,
-  type GpcProofEnvelope,
-  type InsuranceRequirement,
-} from "@attest/proofs";
-import {
-  createPersona,
-  createPresentationContext,
-  PrivateEvidenceWallet,
-} from "@attest/wallet";
 import { Effect } from "effect";
+import {
+  advanceRun,
+  byRole,
+  buyerThresholds,
+  checkReplay,
+  createRun,
+  defaultConfig,
+  institution,
+  institutions,
+  publicPresentation,
+  scenarios,
+  steps,
+  type DemoConfig,
+  type DemoRun,
+  type DemoStepError,
+} from "@attest/demo";
 
-const money = (value: number) =>
-  new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(value);
-
-const buildWallet = (): PrivateEvidenceWallet => {
-  let wallet = new PrivateEvidenceWallet("root:acme").addPersona(
-    createPersona("persona:compliance", "Compliance", [
-      "insurance.*",
-      "soc2.*",
-      "iso9001.*",
-    ]),
+const json = (value: unknown) =>
+  JSON.stringify(
+    value,
+    (_, v: unknown) => (typeof v === "bigint" ? v.toString() : v),
+    2,
   );
-  for (const attestation of demoAttestations)
-    wallet = wallet.ingest(attestation, "persona:compliance");
-  return wallet;
-};
-
-const assuranceContext = createPresentationContext(
-  "presentation:project-817",
-  "Project 817 assurance",
-  ["persona:compliance"],
-  ["insurance.*", "soc2.*", "iso9001.*"],
-);
-
+function Inspector({ title, value }: { title: string; value: unknown }) {
+  return (
+    <Collapsible.Root>
+      <Collapsible.Trigger render={<Button variant="ghost" />}>
+        {title}
+      </Collapsible.Trigger>
+      <Collapsible.Panel>
+        <pre>{json(value)}</pre>
+      </Collapsible.Panel>
+    </Collapsible.Root>
+  );
+}
 export function App() {
-  const wallet = useMemo(buildWallet, []);
-  const [identity] = useState(newHolderIdentity);
-  const [aggregate, setAggregate] = useState(
-    Number(defaultThresholds.aggregateMinimumUsd),
-  );
-  const [occurrence, setOccurrence] = useState(
-    Number(defaultThresholds.perOccurrenceMinimumUsd),
-  );
-  const [revealVault, setRevealVault] = useState(false);
-  const [activeSection, setActiveSection] = useState("overview");
-  const [evaluation, setEvaluation] = useState<PolicyEvaluation | null>(null);
-  const [proofState, setProofState] = useState<
-    "idle" | "proving" | "verified" | "failed"
-  >("idle");
-  const [proof, setProof] = useState<GpcProofEnvelope | null>(null);
-  const [receipt, setReceipt] = useState<Awaited<
-    ReturnType<typeof makeVerificationReceipt>
-  > | null>(null);
-  const [proofError, setProofError] = useState<string | null>(null);
-
-  const thresholds = useMemo(
-    () => ({
-      aggregateMinimumUsd: BigInt(Math.max(0, Math.trunc(aggregate || 0))),
-      perOccurrenceMinimumUsd: BigInt(Math.max(0, Math.trunc(occurrence || 0))),
-      projectEnd: defaultThresholds.projectEnd,
-    }),
-    [aggregate, occurrence],
-  );
-
-  const profile = useMemo(() => createSupplierPolicy(thresholds), [thresholds]);
-  const insurancePod = useMemo(
-    () =>
-      issueInsurancePod(
-        {
-          attestationId: "att:insurance:acme:2027",
-          subjectBinding: DEMO_SUBJECT,
-          ownerPublicKey: holderPublicKey(identity),
-          aggregateUsd: 5_000_000n,
-          perOccurrenceUsd: 2_000_000n,
-          validUntilEpochSeconds: BigInt(
-            Math.floor(new Date("2027-12-31T23:59:59.000Z").getTime() / 1000),
-          ),
-          additionalInsured: true,
-          waiverOfSubrogation: true,
-        },
-        DEMO_INSURANCE_ISSUER_PRIVATE_KEY,
-      ),
-    [identity],
-  );
-
-  useEffect(() => {
-    setProofState("idle");
-    setProof(null);
-    setReceipt(null);
-    setProofError(null);
-    let active = true;
-    void Effect.runPromise(
-      wallet.plan(assuranceContext, profile, demoAuthorityGraph),
-    ).then((result) => {
-      if (active) setEvaluation(result);
-    });
-    return () => {
-      active = false;
-    };
-  }, [wallet, profile]);
-
-  const updateThreshold = (
-    value: string,
-    current: number,
-    update: (value: number) => void,
-  ) => {
-    const next = Number(value);
-    if (!Number.isSafeInteger(next) || next < 0 || next === current) return;
-    setEvaluation(null);
-    setProofState("idle");
-    setProof(null);
-    setReceipt(null);
-    setProofError(null);
-    update(next);
+  const [config, setConfig] = useState<DemoConfig>(defaultConfig);
+  const [run, setRun] = useState<DemoRun>(() => createRun(defaultConfig));
+  const [history, setHistory] = useState<DemoRun[]>([]);
+  const [selected, setSelected] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [auto, setAuto] = useState(false);
+  const [error, setError] = useState<DemoStepError | null>(null);
+  const [replay, setReplay] = useState<string | null>(null);
+  const generation = useRef(0);
+  const executing = useRef(false);
+  const autoRef = useRef(false);
+  const current = useRef(run);
+  const step = steps[selected]!;
+  const snapshot = history[selected];
+  const reset = (next = config) => {
+    generation.current++;
+    autoRef.current = false;
+    executing.current = false;
+    const fresh = createRun(next);
+    current.current = fresh;
+    setRun(fresh);
+    setHistory([]);
+    setSelected(0);
+    setBusy(false);
+    setAuto(false);
+    setError(null);
+    setReplay(null);
   };
-
-  const generateProof = async () => {
-    if (!evaluation?.satisfied || proofState === "proving") return;
-    setProofState("proving");
-    setProofError(null);
-    try {
-      const challenge = `project-817:${aggregate}:${occurrence}`;
-      const requirement: InsuranceRequirement = {
-        subjectBinding: DEMO_SUBJECT,
-        aggregateMinimumUsd: thresholds.aggregateMinimumUsd,
-        perOccurrenceMinimumUsd: thresholds.perOccurrenceMinimumUsd,
-        validThroughEpochSeconds: BigInt(
-          Math.floor(new Date(thresholds.projectEnd).getTime() / 1000),
-        ),
-        requireAdditionalInsured: true,
-        requireWaiverOfSubrogation: true,
-        challenge,
-        acceptedIssuerPublicKeys: [insurancePod.signerPublicKey],
-      };
-      const program = Effect.flatMap(
-        proveInsuranceRequirementEffect(insurancePod, identity, requirement),
-        (envelope) =>
-          Effect.map(
-            verifyInsuranceRequirementEffect(envelope, requirement),
-            (valid) => ({ envelope, valid }),
-          ),
-      );
-      const { envelope, valid } = await Effect.runPromise(program);
-      if (!valid)
-        throw new Error("Proof did not verify against the expected policy");
-
-      const evidenceRoot = await merkleRoot(
-        await Promise.all(demoAttestations.map(commitAttestation)),
-      );
-      const pairwiseNullifier = await commitValue({
-        challenge,
-        holder: holderPublicKey(identity),
-      });
-      const anchored = await makeVerificationReceipt({
-        policyId: profile.id,
-        policyCommitment: envelope.policyCommitment,
-        evidenceRoot,
-        proofCommitment: envelope.proofCommitment,
-        subjectNullifier: pairwiseNullifier,
-        satisfied: true,
-      });
-      setProof(envelope);
-      setReceipt(anchored);
-      setProofState("verified");
-    } catch (error) {
-      setProofState("failed");
-      setProofError(error instanceof Error ? error.message : String(error));
+  const change = (next: DemoConfig) => {
+    setConfig(next);
+    reset(next);
+  };
+  const advance = async () => {
+    if (executing.current || current.current.completed === steps.length) return;
+    executing.current = true;
+    const token = generation.current;
+    const before = current.current;
+    setSelected(before.completed);
+    setBusy(true);
+    setError(null);
+    const result = await Effect.runPromise(Effect.result(advanceRun(before)));
+    if (token !== generation.current) return;
+    executing.current = false;
+    setBusy(false);
+    if (result._tag === "Failure") {
+      setError(result.failure);
+      autoRef.current = false;
+      setAuto(false);
+    } else {
+      current.current = result.success;
+      setRun(result.success);
+      setHistory((h) => [...h, result.success]);
+      if (result.success.completed === steps.length) {
+        autoRef.current = false;
+        setAuto(false);
+      }
     }
   };
-
-  const verifiedCount =
-    evaluation?.leaves.filter((leaf) => leaf.satisfied).length ?? 0;
-  const totalCount = evaluation?.leaves.length ?? 12;
-
-  const isProving = proofState === "proving";
-  const isVerified =
-    proofState === "verified" && proof !== null && receipt !== null;
-  const groups = [
-    {
-      name: "Insurance",
-      detail: "Limits, endorsements & coverage period",
-      prefix: "insurance.",
-      icon: ShieldCheckIcon,
-    },
-    {
-      name: "SOC 2",
-      detail: "Type II report & security controls",
-      prefix: "soc2.",
-      icon: FileLockIcon,
-    },
-    {
-      name: "ISO 9001",
-      detail: "Certification, scope & validity",
-      prefix: "iso9001.",
-      icon: CertificateIcon,
-    },
-  ];
-  const setScenario = (nextAggregate: number, nextOccurrence: number) => {
-    updateThreshold(String(nextAggregate), aggregate, setAggregate);
-    updateThreshold(String(nextOccurrence), occurrence, setOccurrence);
-  };
-  const downloadReceipt = () => {
-    if (!proof || !receipt) return;
-    const blob = new Blob(
-      [
-        JSON.stringify(
-          {
-            scope: "Insurance proof; SOC 2 and ISO 9001 evaluated locally only",
-            proof,
-            receipt,
-          },
-          null,
-          2,
-        ),
-      ],
-      { type: "application/json" },
+  useEffect(() => {
+    if (!auto || busy || error || run.completed === steps.length) return;
+    const timer = window.setTimeout(
+      () => {
+        if (autoRef.current) void advance();
+      },
+      run.completed ? 2600 : 100,
     );
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "attest-project-817.json";
-    anchor.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return () => window.clearTimeout(timer);
+  }, [auto, busy, run.completed, error]);
+  useEffect(
+    () => () => {
+      generation.current++;
+      autoRef.current = false;
+    },
+    [],
+  );
+  const toggleAuto = () => {
+    autoRef.current = !autoRef.current;
+    setAuto(autoRef.current);
   };
-
+  const testReplay = async () => {
+    const token = generation.current;
+    setReplay("Checking a different request challenge…");
+    const result = await Effect.runPromise(Effect.result(checkReplay(run)));
+    if (token === generation.current)
+      setReplay(
+        result._tag === "Failure"
+          ? result.failure.message
+          : result.success
+            ? "Unexpected verification success"
+            : "Rejected. This proof cannot be reused for a different request challenge.",
+      );
+  };
+  const download = () => {
+    const url = URL.createObjectURL(
+      new Blob([json(publicPresentation(run))], { type: "application/json" }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "attest-presentation.json";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+  const evaluation =
+    selected === run.completed && error?.evaluation
+      ? error.evaluation
+      : snapshot?.evaluation;
   return (
-    <div className="workspace">
-      <a className="skip-link" href="#main">
-        Skip to workspace
-      </a>
-      <aside className="sidebar" aria-label="Workspace navigation">
-        <a className="brand" href="#overview" aria-label="Attest home">
-          <span className="brand-mark">
-            <ShieldCheckIcon weight="bold" />
-          </span>
-          attest<span className="brand-period">.</span>
+    <div className="app">
+      <header className="topbar">
+        <a href="#" className="brand">
+          <FingerprintIcon size={27} weight="bold" />
+          attest<span>NETWORK LAB</span>
         </a>
-        <div className="workspace-picker">
-          <span className="workspace-avatar">A</span>
-          <div>
-            Acme Industrial<span>Demo workspace</span>
-          </div>
-          <span className="workspace-dot" />
+        <div>
+          <Badge variant="secondary">Interactive demo</Badge>
+          <LinkButton
+            href="https://github.com/gmackie/attest/pull/1"
+            variant="ghost"
+            size="sm"
+          >
+            Source ↗
+          </LinkButton>
         </div>
-        <div className="nav-caption">WORKSPACE</div>
-        <nav>
-          {[
-            { id: "overview", label: "Overview", icon: GridFourIcon },
-            { id: "evidence", label: "Evidence vault", icon: FileLockIcon },
-            {
-              id: "policy",
-              label: "Buyer requirements",
-              icon: SlidersHorizontalIcon,
-            },
-            {
-              id: "presentation",
-              label: "Proof & receipt",
-              icon: FingerprintIcon,
-            },
-          ].map(({ id, label, icon: Icon }) => (
-            <LinkButton
-              variant="ghost"
-              key={id}
-              href={`#${id}`}
-              aria-label={label}
-              className={`nav-item ${activeSection === id ? "active" : ""}`}
-              aria-current={activeSection === id ? "location" : undefined}
-              onClick={() => setActiveSection(id)}
-            >
-              <Icon size={19} />
-              <span>{label}</span>
-              {id === "evidence" && <span className="nav-count">3</span>}
-            </LinkButton>
-          ))}
-        </nav>
-        <div className="sidebar-bottom">
-          <div className="privacy-note">
-            <LockKeyIcon size={20} />
-            <strong>Private by design.</strong>
+      </header>
+      <main>
+        <section className="hero">
+          <div>
+            <div className="eyebrow">PRIVATE EVIDENCE. PUBLIC CONFIDENCE.</div>
+            <h1>
+              Trust travels.
+              <br />
+              <span>Your evidence stays private.</span>
+            </h1>
             <p>
-              Your evidence stays in your browser. Share only what’s needed.
+              Build a network of institutions. Issue signed credentials. Follow
+              a real proof from a supplier’s wallet to a buyer’s decision.
             </p>
           </div>
-          <a
-            className="source-link"
-            href="https://github.com/gmackie/attest"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Explore the protocol
-            <ArrowSquareOutIcon size={15} />
-          </a>
-          <div className="sidebar-profile">
-            <span className="profile-avatar">AI</span>
-            <div>
-              Acme Industrial<span>Supplier workspace</span>
-            </div>
+          <div className="hero-stat">
+            <strong>15</strong>
+            <span>fictional institutions</span>
+            <strong>7</strong>
+            <span>working stages</span>
           </div>
-        </div>
-      </aside>
-
-      <div className="workspace-body">
-        <header className="topbar">
-          <div className="breadcrumb">
-            Workspace<span>/</span>
-            <strong>Supplier assurance</strong>
-          </div>
-          <Badge variant="beta">Interactive demo</Badge>
-        </header>
-        <main id="main" className="main-content">
-          <section id="overview" className="overview">
-            <div className="page-heading">
-              <div>
-                <div className="eyebrow">ASSURANCE, WITHOUT EXPOSURE</div>
-                <h1>Trust, with less disclosure.</h1>
-                <p>Prove you meet the requirements. Keep the evidence yours.</p>
-              </div>
-              <a className="text-link" href="#how-it-works">
-                How it works
-                <ArrowDownIcon size={15} />
-              </a>
+        </section>
+        <Banner
+          variant="secondary"
+          title="A working, local sandbox"
+          description="All institutions and credentials are fictional. Demo keys are public. Insurance uses a real POD / GPC proof; SOC 2 and ISO 9001 use local signed-record checks. The proof backend is beta and unaudited."
+        />
+        <section className="workspace">
+          <LayerCard className="configuration">
+            <div className="section-heading">
+              <span className="eyebrow">01 / SET THE SCENE</span>
+              <Badge variant="outline">In your browser</Badge>
             </div>
-            <div className="engagement-card">
-              <div className="engagement-info">
-                <div className="project-label">
-                  <span className="live-dot" />
-                  PROJECT 817 <span className="project-divider">/</span>{" "}
-                  SUPPLIER ONBOARDING
-                </div>
-                <h2>
-                  A stronger signal.
-                  <br />A smaller footprint.
-                </h2>
-                <p>
-                  One private evidence wallet.
-                  <br />A clear answer to your buyer’s requirements.
-                </p>
-                <div className="engagement-meta">
-                  <BuildingsIcon size={16} />
-                  Acme Industrial Controls<span className="meta-dot">·</span>
-                  <span>Synthetic supplier</span>
-                </div>
-              </div>
-              <div
-                className="trust-illustration"
-                aria-label="Private evidence becomes a proof for the buyer"
-              >
-                <div className="orbit orbit-one" />
-                <div className="orbit orbit-two" />
-                <div className="diagram-node node-evidence">
-                  <FileLockIcon size={24} />
-                  <span>Private evidence</span>
-                  <small>Stays with you</small>
-                </div>
-                <div className="diagram-connector">
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                </div>
-                <div className="diagram-seal">
-                  <ShieldCheckIcon size={40} weight="light" />
-                  <span>attest</span>
-                </div>
-                <div className="diagram-connector">
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                </div>
-                <div className="diagram-node node-proof">
-                  <FingerprintIcon size={26} />
-                  <span>Verifiable proof</span>
-                  <small>Shared with the buyer</small>
-                </div>
-                <div className="diagram-caption">
-                  <LockKeyIcon size={12} /> Evidence stays private. Confidence
-                  travels.
-                </div>
-              </div>
-            </div>
-            <div className="summary-strip">
-              <div>
-                <span className="summary-icon">
-                  <FileLockIcon />
-                </span>
-                <strong>03</strong>
-                <span>private records</span>
-              </div>
-              <div>
-                <span className="summary-icon">
-                  <ShieldCheckIcon />
-                </span>
-                <strong>03</strong>
-                <span>authority roots</span>
-              </div>
-              <div>
-                <span
-                  className={`summary-icon ${evaluation && !evaluation.satisfied ? "warning" : ""}`}
-                >
-                  <CheckCircleIcon />
-                </span>
-                <strong>
-                  {evaluation ? `${verifiedCount}/${totalCount}` : "—"}
-                </strong>
-                <span>requirements matched</span>
-              </div>
-              <div>
-                <span className="summary-icon">
-                  <EyeSlashIcon />
-                </span>
-                <strong>0</strong>
-                <span>source files shared</span>
-              </div>
-            </div>
-          </section>
-
-          <div className="assurance-grid">
-            <LayerCard
-              render={<section />}
-              id="evidence"
-              className="panel evidence-panel"
-            >
-              <div className="section-heading">
-                <div>
-                  <div className="step-label">
-                    01 <span>THE SUPPLIER</span>
-                  </div>
-                  <h2>Your evidence vault</h2>
-                  <p>Three records. Always in your control.</p>
-                </div>
-                <span className="icon-tile">
-                  <LockKeyIcon size={21} />
-                </span>
-              </div>
-              <div className="vault-toolbar">
-                <span>
-                  <span className="status-dot" />
-                  Private to this workspace
-                </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="vault-reveal"
-                  aria-label={
-                    revealVault ? "Hide demo values" : "Reveal demo values"
+            <h2>Your assurance network</h2>
+            <p>
+              Switch participants, then test a successful onboarding or a
+              failure at its actual boundary.
+            </p>
+            <div className="config-grid">
+              {(
+                [
+                  "supplier",
+                  "buyer",
+                  "insurer",
+                  "auditor",
+                  "certifier",
+                ] as const
+              ).map((role) => (
+                <Select<string>
+                  key={role}
+                  label={
+                    role === "certifier"
+                      ? "Certification body"
+                      : role.charAt(0).toUpperCase() + role.slice(1)
                   }
-                  aria-pressed={revealVault}
-                  onClick={() => setRevealVault((value) => !value)}
-                >
-                  {revealVault ? (
-                    <EyeSlashIcon size={17} />
-                  ) : (
-                    <EyeIcon size={17} />
-                  )}
-                  <span>{revealVault ? "Hide values" : "Reveal values"}</span>
-                </Button>
-              </div>
-              <EvidenceCard
-                kind="insurance"
-                title="General liability"
-                issuer="Carrier-issued insurance"
-                icon={ShieldCheckIcon}
-                reveal={revealVault}
-                rows={[
-                  ["Aggregate limit", "$5,000,000"],
-                  ["Per occurrence", "$2,000,000"],
-                  ["Valid through", "Dec 31, 2027"],
-                ]}
-              />
-              <EvidenceCard
-                kind="audit"
-                title="SOC 2 Type II"
-                issuer="Independent CPA examination"
-                icon={FileLockIcon}
-                reveal={revealVault}
-                rows={[
-                  ["Report period", "12 months"],
-                  ["Material exceptions", "0"],
-                  ["Security controls", "In scope"],
-                ]}
-              />
-              <EvidenceCard
-                kind="certification"
-                title="ISO 9001"
-                issuer="Accredited certification body"
-                icon={CertificateIcon}
-                reveal={revealVault}
-                rows={[
-                  ["Scope", "Industrial controls"],
-                  ["Valid through", "Aug 31, 2029"],
-                  ["Edition", "2015"],
-                ]}
-              />
-              <div className="vault-footnote">
-                <LockKeyIcon size={14} />
-                <p>
-                  These are synthetic demo records. Revealing values here does
-                  not add them to the proof.
-                </p>
-              </div>
-            </LayerCard>
-
-            <LayerCard
-              render={<section />}
-              id="policy"
-              className="panel policy-panel"
-            >
-              <div className="section-heading">
-                <div>
-                  <div className="step-label">
-                    02 <span>THE BUYER</span>
-                  </div>
-                  <h2>Set the standard</h2>
-                  <p>Define what you need to know. Nothing more.</p>
-                </div>
-                <Badge variant="outline">Project 817</Badge>
-              </div>
-              <fieldset className="scenario-fieldset" disabled={isProving}>
-                <legend>TRY A REQUIREMENT</legend>
-                <div className="scenario-options">
-                  {[
-                    {
-                      label: "Standard",
-                      aggregate: 2_000_000,
-                      occurrence: 1_000_000,
-                    },
-                    {
-                      label: "Higher coverage",
-                      aggregate: 5_000_000,
-                      occurrence: 2_000_000,
-                    },
-                    {
-                      label: "Beyond coverage",
-                      aggregate: 10_000_000,
-                      occurrence: 2_000_000,
-                    },
-                  ].map((scenario) => (
-                    <Button
-                      key={scenario.label}
-                      size="sm"
-                      variant={
-                        aggregate === scenario.aggregate &&
-                        occurrence === scenario.occurrence
-                          ? "primary"
-                          : "secondary"
-                      }
-                      aria-pressed={
-                        aggregate === scenario.aggregate &&
-                        occurrence === scenario.occurrence
-                      }
-                      onClick={() =>
-                        setScenario(scenario.aggregate, scenario.occurrence)
-                      }
-                    >
-                      {scenario.label}
-                    </Button>
-                  ))}
-                </div>
-              </fieldset>
-              <div className="threshold-grid">
-                <InputGroup
-                  label="CGL aggregate minimum"
-                  disabled={isProving}
-                  size="lg"
-                >
-                  <InputGroup.Addon>$</InputGroup.Addon>
-                  <InputGroup.Input
-                    id="aggregate"
-                    type="number"
-                    min={0}
-                    step={500000}
-                    value={aggregate}
-                    onChange={(event) =>
-                      updateThreshold(
-                        event.target.value,
-                        aggregate,
-                        setAggregate,
-                      )
+                  value={config[role]}
+                  items={byRole(role).map((i) => ({
+                    label: i.name,
+                    value: i.id,
+                  }))}
+                  disabled={busy || auto}
+                  onValueChange={(value) => {
+                    if (value) {
+                      const limits =
+                        role === "buyer" ? buyerThresholds[value] : undefined;
+                      change({
+                        ...config,
+                        [role]: value,
+                        ...(limits
+                          ? { aggregate: limits[0], occurrence: limits[1] }
+                          : {}),
+                      });
                     }
-                  />
-                  <InputGroup.Addon align="end">USD</InputGroup.Addon>
-                </InputGroup>
-                <InputGroup
-                  label="Per-occurrence minimum"
-                  disabled={isProving}
-                  size="lg"
-                >
-                  <InputGroup.Addon>$</InputGroup.Addon>
-                  <InputGroup.Input
-                    id="occurrence"
-                    type="number"
-                    min={0}
-                    step={500000}
-                    value={occurrence}
-                    onChange={(event) =>
-                      updateThreshold(
-                        event.target.value,
-                        occurrence,
-                        setOccurrence,
-                      )
-                    }
-                  />
-                  <InputGroup.Addon align="end">USD</InputGroup.Addon>
-                </InputGroup>
-              </div>
-              <div className="policy-caption">
-                <GlobeHemisphereWestIcon size={13} />
-                Buyer thresholds are public. Exact supplier limits stay private.
-              </div>
-              <div className="requirements-heading">
-                <span>REQUIREMENT CHECK</span>
-                <span>Local evaluation</span>
-              </div>
-              <div className="requirement-groups">
-                {groups.map(({ name, detail, prefix, icon: Icon }) => {
-                  const leaves =
-                    evaluation?.leaves.filter((leaf) =>
-                      leaf.predicate.startsWith(prefix),
-                    ) ?? [];
-                  const matched =
-                    leaves.length > 0 && leaves.every((leaf) => leaf.satisfied);
-                  return (
-                    <Collapsible.Root className="requirement-group" key={name}>
-                      <Collapsible.Trigger
-                        render={
-                          <Button
-                            variant="ghost"
-                            className="requirement-trigger"
-                          />
-                        }
-                      >
-                        <span className="domain-icon">
-                          <Icon size={20} />
-                        </span>
-                        <span className="domain-name">
-                          <strong>{name}</strong>
-                          <small>{detail}</small>
-                        </span>
-                        <Badge
-                          variant={
-                            evaluation
-                              ? matched
-                                ? "success"
-                                : "warning"
-                              : "secondary"
-                          }
-                          className="domain-result"
-                        >
-                          {evaluation
-                            ? matched
-                              ? "Matched"
-                              : "Not met"
-                            : "Checking"}
-                        </Badge>
-                        <span className="disclosure-chevron">⌄</span>
-                      </Collapsible.Trigger>
-                      <Collapsible.Panel>
-                        <ul>
-                          {leaves.map((leaf) => (
-                            <li key={leaf.id}>
-                              {leaf.satisfied ? (
-                                <CheckCircleIcon size={15} />
-                              ) : (
-                                <WarningCircleIcon size={15} />
-                              )}
-                              <span>{leaf.label}</span>
-                              <span>{leaf.satisfied ? "Met" : "Not met"}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </Collapsible.Panel>
-                    </Collapsible.Root>
-                  );
-                })}
-              </div>
-              <Banner
-                className="policy-outcome"
-                role="status"
-                variant={
-                  evaluation && !evaluation.satisfied ? "alert" : "secondary"
-                }
-                icon={
-                  evaluation?.satisfied ? (
-                    <CheckCircleIcon size={20} />
-                  ) : (
-                    <WarningCircleIcon size={20} />
-                  )
-                }
-                title={
-                  evaluation
-                    ? evaluation.satisfied
-                      ? "Your evidence meets the requirements"
-                      : "This request exceeds the available evidence"
-                    : "Checking your evidence…"
-                }
-                description={
-                  evaluation?.satisfied
-                    ? "Ready to prove your insurance coverage privately."
-                    : "Try a lower threshold. The source values remain hidden."
-                }
+                  }}
+                />
+              ))}
+              <Select<string>
+                label="Scenario"
+                value={config.scenario}
+                items={scenarios.map((s) => ({ label: s.label, value: s.id }))}
+                disabled={busy || auto}
+                onValueChange={(value) => {
+                  if (value)
+                    change({
+                      ...config,
+                      scenario: value as DemoConfig["scenario"],
+                    });
+                }}
               />
+              <InputGroup
+                label="Aggregate minimum (USD)"
+                disabled={busy || auto}
+              >
+                <InputGroup.Input
+                  type="number"
+                  min={0}
+                  step={1000000}
+                  value={config.aggregate}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (Number.isSafeInteger(n) && n >= 0)
+                      change({ ...config, aggregate: n });
+                  }}
+                />
+              </InputGroup>
+              <InputGroup label="Per occurrence (USD)" disabled={busy || auto}>
+                <InputGroup.Input
+                  type="number"
+                  min={0}
+                  step={1000000}
+                  value={config.occurrence}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (Number.isSafeInteger(n) && n >= 0)
+                      change({ ...config, occurrence: n });
+                  }}
+                />
+              </InputGroup>
+            </div>
+            <p className="scenario-note">
+              {scenarios.find((s) => s.id === config.scenario)?.description}
+            </p>
+          </LayerCard>
+        </section>
+        <LayerCard className="walkthrough">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">02 / RUN THE PROTOCOL</span>
+              <h2>See what makes trust work.</h2>
+            </div>
+            <div className="controls">
               <Button
                 variant="primary"
-                size="lg"
-                loading={isProving}
-                className="proof-action"
-                disabled={isProving || !evaluation?.satisfied}
-                onClick={() => {
-                  setActiveSection("presentation");
-                  document
-                    .getElementById("presentation")
-                    ?.scrollIntoView({ block: "start" });
-                  void generateProof();
-                }}
+                onClick={toggleAuto}
+                disabled={!!error || run.completed === 7}
               >
-                <FingerprintIcon size={20} />
-                <span>
-                  {isProving
-                    ? "Creating your private proof…"
-                    : isVerified
-                      ? "Generate a new proof"
-                      : "Generate private proof"}
-                </span>
-                {!isProving && <ArrowRightIcon size={19} />}
+                {auto ? (
+                  "Pause walkthrough"
+                ) : run.completed ? (
+                  "Continue walkthrough"
+                ) : (
+                  <>
+                    <PlayIcon />
+                    Run walkthrough
+                  </>
+                )}
               </Button>
-              <p className="button-note">
-                Insurance proof generated and verified in your browser.
-              </p>
-            </LayerCard>
-          </div>
-
-          <section
-            id="presentation"
-            className={`presentation-panel ${isVerified ? "presentation-verified" : ""}`}
-            aria-busy={isProving}
-          >
-            <div className="section-heading">
-              <div>
-                <div className="step-label">
-                  03 <span>THE PRESENTATION</span>
-                </div>
-                <h2>
-                  {isVerified
-                    ? "Confidence, delivered."
-                    : "Your proof. Their confidence."}
-                </h2>
-                <p>
-                  {isVerified
-                    ? "Your insurance proof was cryptographically verified."
-                    : "The buyer gets an answer, without receiving your source files."}
-                </p>
-              </div>
-              <Badge
-                variant={
-                  isVerified
-                    ? "success"
-                    : proofState === "failed"
-                      ? "error"
-                      : "secondary"
-                }
+              <Button
+                variant="secondary"
+                onClick={() => void advance()}
+                disabled={busy || auto || !!error || run.completed === 7}
               >
-                {isVerified
-                  ? "Proof verified"
-                  : isProving
-                    ? "Generating proof"
-                    : proofState === "failed"
-                      ? "Needs attention"
-                      : "Awaiting proof"}
-              </Badge>
+                Next step <ArrowRightIcon />
+              </Button>
+              <Button variant="ghost" onClick={() => reset()}>
+                Reset
+              </Button>
             </div>
-            <div aria-live="polite">
-              {isProving && (
-                <div className="proof-progress">
-                  <span className="progress-fingerprint">
-                    <FingerprintIcon size={34} />
-                  </span>
+          </div>
+          <nav className="step-list" aria-label="Walkthrough steps">
+            {steps.map((s, index) => (
+              <Button
+                key={s.title}
+                variant={selected === index ? "secondary" : "ghost"}
+                className="step-button"
+                disabled={index > run.completed || auto || busy}
+                onClick={() => setSelected(index)}
+              >
+                <span
+                  className={`step-number ${index < run.completed ? "done" : ""}`}
+                >
+                  {index < run.completed
+                    ? "✓"
+                    : String(index + 1).padStart(2, "0")}
+                </span>
+                <span>
+                  {s.title}
+                  <small>{s.actor}</small>
+                </span>
+              </Button>
+            ))}
+          </nav>
+          <div className="walkthrough-layout">
+            {" "}
+            <LayerCard className="flow-card">
+              <div className="section-heading">
+                <span className="eyebrow">THE LIVE NETWORK</span>
+                <Badge variant={run.receipt ? "success" : "secondary"}>
+                  {run.completed} / 7 complete
+                </Badge>
+              </div>
+              <div
+                className={`network ${busy || auto ? "animating" : ""}`}
+                aria-label="Authority roots authorize issuers. Issuers sign records for the private wallet. The wallet presents a proof to the buyer."
+              >
+                <div
+                  className={`network-roots ${selected === 2 ? "active" : ""}`}
+                >
+                  <ShieldCheckIcon size={23} />
                   <div>
-                    <strong>Building a proof from your private evidence</strong>
-                    <p>
-                      The first run downloads proving files and may take a
-                      moment. Keep this page open.
-                    </p>
-                    <div className="progress-track">
-                      <span />
-                    </div>
+                    <strong>Three accepted trust roots</strong>
+                    <small>Insurance · Audit · Quality → Meridian</small>
                   </div>
                 </div>
-              )}
-              {proofState === "failed" && (
-                <Banner
-                  className="proof-error"
-                  variant="error"
-                  role="alert"
-                  title="We couldn’t create this proof."
-                  description={
-                    <>
-                      Check your connection and try again.
-                      <Collapsible.Root>
-                        <Collapsible.DefaultTrigger>
-                          Technical details
-                        </Collapsible.DefaultTrigger>
-                        <Collapsible.DefaultPanel>
-                          {proofError}
-                        </Collapsible.DefaultPanel>
-                      </Collapsible.Root>
-                    </>
-                  }
+                <div className="vertical-link" />
+                <div className="issuer-row">
+                  {(["insurer", "auditor", "certifier"] as const).map(
+                    (role) => (
+                      <div
+                        key={role}
+                        className={`network-node ${selected === 1 || selected === 2 ? "active" : ""}`}
+                      >
+                        <span className="node-monogram">
+                          {institution(config[role]).short}
+                        </span>
+                        <strong>{institution(config[role]).name}</strong>
+                        <small>{role}</small>
+                      </div>
+                    ),
+                  )}
+                </div>
+                <div className="transfer">
+                  <span /> <span /> <span />
+                  <small>Signed private credentials</small>
+                </div>
+                <div
+                  className={`wallet-node ${selected >= 3 && selected <= 5 ? "active" : ""}`}
+                >
+                  <FingerprintIcon size={34} />
+                  <div>
+                    <strong>{institution(config.supplier).name}</strong>
+                    <small>Private wallet · compliance persona</small>
+                  </div>
+                  <Badge variant="outline">
+                    {run.wallet ? "3 records" : "Awaiting records"}
+                  </Badge>
+                </div>
+                <div className="proof-transfer">
+                  <div className="vertical-link" />
+                  <span>
+                    {selected >= 5
+                      ? "Insurance proof + public request"
+                      : "Only the proof crosses this boundary"}
+                  </span>
+                </div>
+                <div
+                  className={`buyer-node ${selected === 0 || selected === 6 ? "active" : ""}`}
+                >
+                  <ShieldCheckIcon size={26} />
+                  <div>
+                    <strong>{institution(config.buyer).name}</strong>
+                    <small>
+                      {run.receipt
+                        ? "Insurance proof verified"
+                        : "Buyer · independent verification"}
+                    </small>
+                  </div>
+                  {run.receipt && <CheckCircleIcon size={24} weight="fill" />}
+                </div>
+              </div>
+            </LayerCard>
+            <div className="step-detail" key={selected}>
+              <div className="section-heading">
+                <Badge variant="outline">{step.component}</Badge>
+                <span className="eyebrow">STEP {selected + 1} OF 7</span>
+              </div>
+              <h3>{step.title}</h3>
+              <p>{step.explanation}</p>
+              <div className="boundary">
+                <ShieldCheckIcon size={20} />
+                <span>{step.boundary}</span>
+              </div>
+              <div aria-live="polite" className="step-result">
+                {busy && selected === run.completed ? (
+                  <Banner
+                    title={
+                      selected === 5
+                        ? "Computing the real proof…"
+                        : "Running this stage…"
+                    }
+                    description={
+                      selected === 5
+                        ? "The first proof downloads circuit artifacts. Computation may take a moment; completion follows the actual prover result."
+                        : "The next stage starts only when this operation succeeds."
+                    }
+                  />
+                ) : error && selected === run.completed ? (
+                  <Banner
+                    variant="error"
+                    title="Stopped at the boundary"
+                    description={error.message}
+                  />
+                ) : snapshot ? (
+                  <Banner
+                    variant="secondary"
+                    title="Stage complete"
+                    description={snapshot.events[selected]?.message}
+                  />
+                ) : (
+                  <p>
+                    Ready when you are. Choose Next step or run the animated
+                    walkthrough.
+                  </p>
+                )}
+              </div>
+              {selected === 0 && snapshot && (
+                <Inspector
+                  title="Inspect the buyer request"
+                  value={snapshot.requirement}
                 />
               )}
-              {isVerified && (
-                <div className="verified-message">
-                  <span className="verified-seal">
-                    <ShieldCheckIcon size={32} />
-                  </span>
-                  <div>
-                    <strong>Insurance requirements satisfied</strong>
-                    <p>
-                      At least {money(aggregate)} aggregate and{" "}
-                      {money(occurrence)} per occurrence, with the requested
-                      endorsements and coverage date. Exact limits remain
-                      hidden.
-                    </p>
+              {selected === 1 && snapshot && (
+                <Inspector
+                  title="Reveal private signed records"
+                  value={snapshot.records}
+                />
+              )}
+              {selected === 2 && snapshot && (
+                <Inspector
+                  title="Inspect authority paths"
+                  value={snapshot.authority}
+                />
+              )}
+              {selected === 3 && snapshot && (
+                <p className="caption">
+                  3 records · insurance, SOC 2, ISO 9001 · compliance persona
+                  only
+                </p>
+              )}
+              {selected === 4 && evaluation && (
+                <>
+                  <div className="policy-results">
+                    {evaluation.leaves.map((leaf) => (
+                      <div key={leaf.id}>
+                        <Badge variant={leaf.satisfied ? "success" : "error"}>
+                          {leaf.satisfied ? "Pass" : "Fail"}
+                        </Badge>
+                        <span>
+                          {leaf.label}
+                          {leaf.reason && <small>{leaf.reason}</small>}
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                  <Button
-                    variant="secondary"
-                    className="receipt-download"
-                    onClick={downloadReceipt}
-                  >
-                    Download receipt
-                    <ArrowDownIcon size={16} />
-                  </Button>
-                </div>
+                  <Inspector
+                    title="Inspect every policy result"
+                    value={evaluation}
+                  />
+                </>
+              )}
+              {selected === 5 && snapshot && (
+                <Inspector
+                  title="Inspect the generated proof"
+                  value={snapshot.proof}
+                />
+              )}
+              {selected === 6 && snapshot?.receipt && (
+                <>
+                  <div className="controls">
+                    <Button onClick={download}>
+                      Download public presentation
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => void testReplay()}
+                    >
+                      Test replay rejection
+                    </Button>
+                  </div>
+                  {replay && <p role="status">{replay}</p>}
+                  <Inspector
+                    title="Inspect the local receipt"
+                    value={snapshot.receipt}
+                  />
+                </>
               )}
             </div>
-            <div className="disclosure-grid">
-              <div>
-                <span className="disclosure-label">
-                  <CheckCircleIcon size={16} />
-                  WHAT THE BUYER CAN VERIFY
-                </span>
-                <p>Required insurance limits are met</p>
-                <p>Required endorsements are present</p>
-                <p>Coverage meets the requested date</p>
-              </div>
-              <div>
-                <span className="disclosure-label private-label">
-                  <LockKeyIcon size={16} />
-                  WHAT STAYS PRIVATE
-                </span>
-                <p>Exact aggregate and occurrence limits</p>
-                <p>Original documents and report contents</p>
-                <p>The selected signer within the accepted set</p>
-              </div>
-            </div>
-            {isVerified && (
-              <Collapsible.Root className="receipt-details">
-                <Collapsible.DefaultTrigger>
-                  Inspect verification receipt
-                  <span>
-                    Proof & commitment details{" "}
-                    <span aria-hidden="true">↗</span>
-                  </span>
-                </Collapsible.DefaultTrigger>
-                <Collapsible.Panel>
-                  <div className="hash-grid">
-                    <HashRow label="Circuit" value={proof.circuitIdentifier} />
-                    <HashRow
-                      label="Proof commitment"
-                      value={proof.proofCommitment}
-                    />
-                    <HashRow
-                      label="Evidence root"
-                      value={receipt.evidenceRoot}
-                    />
-                    <HashRow
-                      label="Request-scoped identifier"
-                      value={receipt.subjectNullifier ?? "—"}
-                    />
-                    <HashRow label="Receipt ID" value={receipt.id} />
-                    <HashRow
-                      label="Policy commitment"
-                      value={receipt.policyCommitment}
-                    />
-                  </div>
-                  <p>
-                    Prepared locally. No transaction has been submitted
-                    on-chain.
-                  </p>
-                </Collapsible.Panel>
-              </Collapsible.Root>
-            )}
-            <div className="scope-note">
-              <span>PROOF SCOPE</span>
-              <p>
-                Insurance uses a real zero-knowledge proof. SOC 2 and ISO 9001
-                are evaluated locally; they are not included in the
-                cryptographic proof.
-              </p>
-            </div>
-          </section>
-
-          <section id="how-it-works" className="how-it-works">
-            <div className="eyebrow">LESS SHARED. MORE CERTAIN.</div>
-            <h2>Evidence stays put. Trust moves forward.</h2>
-            <div className="steps-grid">
-              <div>
-                <span>01</span>
-                <h3>Hold your evidence</h3>
-                <p>
-                  Signed records stay in the supplier’s private wallet, with
-                  their issuer and scope intact.
-                </p>
-              </div>
-              <div>
-                <span>02</span>
-                <h3>Match the requirement</h3>
-                <p>
-                  The buyer sets a policy. The local planner checks current,
-                  authorized evidence.
-                </p>
-              </div>
-              <div>
-                <span>03</span>
-                <h3>Prove just enough</h3>
-                <p>
-                  A cryptographic proof confirms the insurance requirements
-                  without revealing exact limits.
-                </p>
-              </div>
-            </div>
-          </section>
-          <footer className="footer">
-            <span className="footer-brand">attest.</span>
-            <p>
-              Research demo · Synthetic evidence · POD/GPC is beta and unaudited
-            </p>
-            <a
-              href="https://github.com/gmackie/attest/tree/feat/assurance-kernel-poc/specs"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Protocol & limitations
-              <ArrowSquareOutIcon size={13} />
-            </a>
-          </footer>
-        </main>
-      </div>
-    </div>
-  );
-}
-
-function EvidenceCard({
-  kind,
-  title,
-  issuer,
-  icon: Icon,
-  reveal,
-  rows,
-}: {
-  kind: string;
-  title: string;
-  issuer: string;
-  icon: typeof ShieldCheckIcon;
-  reveal: boolean;
-  rows: readonly (readonly [string, string])[];
-}) {
-  return (
-    <LayerCard render={<article />} className={`evidence-card ${kind}`}>
-      <div className="evidence-card-header">
-        <span className="document-icon">
-          <Icon size={23} />
-        </span>
-        <div>
-          <h3>{title}</h3>
-          <p>{issuer}</p>
-        </div>
-        <Badge variant="success" appearance="dot" className="record-status">
-          Active
-        </Badge>
-      </div>
-      <dl>
-        {rows.map(([label, value]) => (
-          <div key={label}>
-            <dt>{label}</dt>
-            <dd>
-              {reveal ? (
-                <span className="revealed-value">{value}</span>
-              ) : (
-                <span className="redacted" role="img" aria-label="Hidden value">
-                  <span />
-                  <LockKeyIcon size={11} />
-                </span>
-              )}
-            </dd>
           </div>
-        ))}
-      </dl>
-      <div className="record-footer">
-        <span className="record-lines" aria-hidden="true">
-          ▤
-        </span>
-        <span>
-          {kind === "insurance"
-            ? "Signed insurance credential"
-            : kind === "audit"
-              ? "Private examination report"
-              : "Private certification record"}
-        </span>
-        <LockKeyIcon size={12} />
-      </div>
-    </LayerCard>
-  );
-}
-
-function HashRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="hash-row">
-      <span>{label}</span>
-      <code>{value}</code>
+        </LayerCard>
+        <section className="directory">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">THE PARTICIPANTS</span>
+              <h2>A network, not a single issuer.</h2>
+            </div>
+            <Badge variant="outline">15 fictional organizations</Badge>
+          </div>
+          <div className="institution-grid">
+            {institutions.map((i) => (
+              <LayerCard key={i.id} className="institution-card">
+                <div className="section-heading">
+                  <span className="node-monogram">{i.short}</span>
+                  <Badge variant="secondary">{i.role}</Badge>
+                </div>
+                <h3>{i.name}</h3>
+                <p>{i.description}</p>
+              </LayerCard>
+            ))}
+          </div>
+        </section>
+        <footer>
+          <span className="brand">
+            <FingerprintIcon size={24} />
+            attest
+          </span>
+          <p>
+            Synthetic evidence · local authority graph and status · evaluation
+            date October 7, 2026.
+            <br />
+            No external institution is contacted. No blockchain transaction is
+            submitted.
+          </p>
+          <LinkButton href="https://github.com/gmackie/attest" variant="ghost">
+            Explore the protocol ↗
+          </LinkButton>
+        </footer>
+      </main>
     </div>
   );
 }

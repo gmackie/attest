@@ -1,0 +1,77 @@
+name: Apply type fixes
+
+on:
+  push:
+    branches: [feat/assurance-kernel-poc]
+    paths:
+      - .github/workflows/apply-type-fixes.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/assurance-kernel-poc
+      - name: Patch strict TypeScript and GPC API usage
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              if text.count(old) != 1:
+                  raise RuntimeError(f"Expected one match in {path}, found {text.count(old)}")
+              file.write_text(text.replace(old, new))
+
+          replace_once(
+              "packages/core/src/index.ts",
+              '  constructor(message: string, readonly cause?: unknown) {\n    super(message);\n  }',
+              '  constructor(message: string, cause?: unknown) {\n    super(message, { cause });\n  }',
+          )
+          replace_once(
+              "packages/core/src/index.ts",
+              '  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);',
+              '  const digestInput = new ArrayBuffer(bytes.byteLength);\n  new Uint8Array(digestInput).set(bytes);\n  const digest = await globalThis.crypto.subtle.digest("SHA-256", digestInput);',
+          )
+          replace_once(
+              "packages/proofs/src/index.ts",
+              '  type GPCProofConfig,\n  type GPCProofInputs,',
+              '  type GPCBoundConfig,\n  type GPCProof,\n  type GPCProofConfig,\n  type GPCProofInputs,\n  type JSONBoundConfig,\n  type JSONRevealedClaims,',
+          )
+          replace_once(
+              "packages/proofs/src/index.ts",
+              '  constructor(message: string, readonly cause?: unknown) {\n    super(message);\n  }',
+              '  constructor(message: string, cause?: unknown) {\n    super(message, { cause });\n  }',
+          )
+          replace_once(
+              "packages/proofs/src/index.ts",
+              '  proof: unknown;\n  boundConfig: unknown;\n  revealedClaims: unknown;\n  policyCommitment: string;\n  proofCommitment: string;\n  circuitIdentifier: string;',
+              '  proof: GPCProof;\n  boundConfig: JSONBoundConfig;\n  revealedClaims: JSONRevealedClaims;\n  policyCommitment: string;\n  proofCommitment: string;\n  circuitIdentifier: GPCBoundConfig["circuitIdentifier"];',
+          )
+          replace_once(
+              "packages/proofs/src/index.ts",
+              '  const expectedBoundConfig = gpcBindConfig(expectedConfig, boundConfig.circuitIdentifier).boundConfig;',
+              '  const expectedBoundConfig = gpcBindConfig({\n    ...expectedConfig,\n    circuitIdentifier: boundConfig.circuitIdentifier\n  }).boundConfig;',
+          )
+          replace_once(
+              "packages/proofs/src/index.ts",
+              '  return gpcVerify(envelope.proof as never, boundConfig, revealedClaims, artifactsPathOrUrl);',
+              '  return gpcVerify(envelope.proof, boundConfig, revealedClaims, artifactsPathOrUrl);',
+          )
+          replace_once(
+              "apps/web/src/App.tsx",
+              'variant={evaluation.satisfied ? "success" : "error"}',
+              'variant={evaluation.satisfied ? "default" : "error"}',
+          )
+      - name: Commit fixes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add packages/core/src/index.ts packages/proofs/src/index.ts apps/web/src/App.tsx
+          git commit -m 'fix: align strict types with Kumo and GPC APIs'
+          git push origin HEAD:feat/assurance-kernel-poc

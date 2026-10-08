@@ -8,8 +8,11 @@ export default defineConfig({
     react(),
     tailwindcss(),
     nodePolyfills({
-      include: ["buffer", "crypto", "events", "process", "stream", "util"],
-      globals: { Buffer: true, global: true, process: true }
+      // GPC proving reaches snarkjs/fastfile, which imports a wider Node-core
+      // surface than the app itself. Let the plugin provide its complete
+      // browser-safe shim set instead of maintaining a brittle allowlist.
+      globals: { Buffer: true, global: true, process: true },
+      protocolImports: true
     })
   ],
   build: {

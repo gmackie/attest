@@ -1,3 +1,4 @@
+import { CryptoExplainer } from "./CryptoExplainer";
 import { useEffect, useRef, useState } from "react";
 import {
   Badge,
@@ -117,7 +118,7 @@ export function App() {
       () => {
         if (autoRef.current) void advance();
       },
-      run.completed ? 2600 : 100,
+      run.completed ? 6500 : 100,
     );
     return () => window.clearTimeout(timer);
   }, [auto, busy, run.completed, error]);
@@ -481,6 +482,11 @@ export function App() {
                   </p>
                 )}
               </div>
+              <CryptoExplainer
+                key={`${run.id}:${selected}`}
+                step={selected}
+                run={snapshot ?? run}
+              />
               {selected === 0 && snapshot && (
                 <Inspector
                   title="Inspect the buyer request"

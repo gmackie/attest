@@ -1,3 +1,4 @@
+import { IndustryLab, IndustryIcon } from "./IndustryLab";
 import { CryptoExplainer } from "./CryptoExplainer";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -19,6 +20,7 @@ import {
 } from "@phosphor-icons/react";
 import { Effect } from "effect";
 import {
+  industries,
   advanceRun,
   byRole,
   buyerThresholds,
@@ -54,6 +56,7 @@ function Inspector({ title, value }: { title: string; value: unknown }) {
   );
 }
 export function App() {
+  const [useCase, setUseCase] = useState("healthcare");
   const [config, setConfig] = useState<DemoConfig>(defaultConfig);
   const [run, setRun] = useState<DemoRun>(() => createRun(defaultConfig));
   const [history, setHistory] = useState<DemoRun[]>([]);
@@ -181,415 +184,476 @@ export function App() {
       <main>
         <section className="hero">
           <div>
-            <div className="eyebrow">PRIVATE EVIDENCE. PUBLIC CONFIDENCE.</div>
+            <div className="eyebrow">
+              THE INSTITUTION-TO-INSTITUTION PLAYGROUND
+            </div>
             <h1>
-              Trust travels.
+              Trust, made visible.
               <br />
-              <span>Your evidence stays private.</span>
+              <span>Follow the data.</span>
             </h1>
             <p>
-              Build a network of institutions. Issue signed credentials. Follow
-              a real proof from a supplier’s wallet to a buyer’s decision.
+              Explore how trust moves across industries. Enter data at its
+              source, follow signed credentials between institutions, and see
+              what every participant actually receives.
             </p>
           </div>
           <div className="hero-stat">
-            <strong>15</strong>
-            <span>fictional institutions</span>
+            <strong>4</strong>
+            <span>industry experiences</span>
             <strong>7</strong>
-            <span>working stages</span>
+            <span>stages to explore</span>
           </div>
         </section>
-        <Banner
-          variant="secondary"
-          title="A working, local sandbox"
-          description="All institutions and credentials are fictional. Demo keys are public. Insurance uses a real POD / GPC proof; SOC 2 and ISO 9001 use local signed-record checks. The proof backend is beta and unaudited."
-        />
-        <section className="workspace">
-          <LayerCard className="configuration">
-            <div className="section-heading">
-              <span className="eyebrow">01 / SET THE SCENE</span>
-              <Badge variant="outline">In your browser</Badge>
-            </div>
-            <h2>Your assurance network</h2>
-            <p>
-              Switch participants, then test a successful onboarding or a
-              failure at its actual boundary.
-            </p>
-            <div className="config-grid">
-              {(
-                [
-                  "supplier",
-                  "buyer",
-                  "insurer",
-                  "auditor",
-                  "certifier",
-                ] as const
-              ).map((role) => (
-                <Select<string>
-                  key={role}
-                  label={
-                    role === "certifier"
-                      ? "Certification body"
-                      : role.charAt(0).toUpperCase() + role.slice(1)
-                  }
-                  value={config[role]}
-                  items={byRole(role).map((i) => ({
-                    label: i.name,
-                    value: i.id,
-                  }))}
-                  disabled={busy || auto}
-                  onValueChange={(value) => {
-                    if (value) {
-                      const limits =
-                        role === "buyer" ? buyerThresholds[value] : undefined;
-                      change({
-                        ...config,
-                        [role]: value,
-                        ...(limits
-                          ? { aggregate: limits[0], occurrence: limits[1] }
-                          : {}),
-                      });
-                    }
-                  }}
-                />
-              ))}
-              <Select<string>
-                label="Scenario"
-                value={config.scenario}
-                items={scenarios.map((s) => ({ label: s.label, value: s.id }))}
-                disabled={busy || auto}
-                onValueChange={(value) => {
-                  if (value)
-                    change({
-                      ...config,
-                      scenario: value as DemoConfig["scenario"],
-                    });
+        <section className="usecase-picker" aria-label="Choose an industry">
+          {[
+            {
+              id: "supplier",
+              name: "Supplier assurance",
+              description: "Insurance · audits · quality",
+              color: "green",
+            },
+            ...industries.map((i) => ({
+              id: i.id,
+              name: i.name,
+              description: i.purpose,
+              color: i.color,
+            })),
+          ].map((item) => (
+            <LayerCard
+              className={`usecase-card theme-${item.color} ${useCase === item.id ? "chosen" : ""}`}
+              key={item.id}
+            >
+              <Button
+                variant="ghost"
+                aria-pressed={useCase === item.id}
+                onClick={() => {
+                  reset();
+                  setUseCase(item.id);
                 }}
-              />
-              <InputGroup
-                label="Aggregate minimum (USD)"
-                disabled={busy || auto}
               >
-                <InputGroup.Input
-                  type="number"
-                  min={0}
-                  step={1000000}
-                  value={config.aggregate}
-                  onChange={(e) => {
-                    const n = Number(e.target.value);
-                    if (Number.isSafeInteger(n) && n >= 0)
-                      change({ ...config, aggregate: n });
-                  }}
-                />
-              </InputGroup>
-              <InputGroup label="Per occurrence (USD)" disabled={busy || auto}>
-                <InputGroup.Input
-                  type="number"
-                  min={0}
-                  step={1000000}
-                  value={config.occurrence}
-                  onChange={(e) => {
-                    const n = Number(e.target.value);
-                    if (Number.isSafeInteger(n) && n >= 0)
-                      change({ ...config, occurrence: n });
-                  }}
-                />
-              </InputGroup>
-            </div>
-            <p className="scenario-note">
-              {scenarios.find((s) => s.id === config.scenario)?.description}
-            </p>
-          </LayerCard>
-        </section>
-        <LayerCard className="walkthrough">
-          <div className="section-heading">
-            <div>
-              <span className="eyebrow">02 / RUN THE PROTOCOL</span>
-              <h2>See what makes trust work.</h2>
-            </div>
-            <div className="controls">
-              <Button
-                variant="primary"
-                onClick={toggleAuto}
-                disabled={!!error || run.completed === 7}
-              >
-                {auto ? (
-                  "Pause walkthrough"
-                ) : run.completed ? (
-                  "Continue walkthrough"
-                ) : (
-                  <>
-                    <PlayIcon />
-                    Run walkthrough
-                  </>
-                )}
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => void advance()}
-                disabled={busy || auto || !!error || run.completed === 7}
-              >
-                Next step <ArrowRightIcon />
-              </Button>
-              <Button variant="ghost" onClick={() => reset()}>
-                Reset
-              </Button>
-            </div>
-          </div>
-          <nav className="step-list" aria-label="Walkthrough steps">
-            {steps.map((s, index) => (
-              <Button
-                key={s.title}
-                variant={selected === index ? "secondary" : "ghost"}
-                className="step-button"
-                disabled={index > run.completed || auto || busy}
-                onClick={() => setSelected(index)}
-              >
-                <span
-                  className={`step-number ${index < run.completed ? "done" : ""}`}
-                >
-                  {index < run.completed
-                    ? "✓"
-                    : String(index + 1).padStart(2, "0")}
-                </span>
+                <IndustryIcon id={item.id} />
                 <span>
-                  {s.title}
-                  <small>{s.actor}</small>
+                  <strong>{item.name}</strong>
+                  <small>{item.description}</small>
                 </span>
+                <ArrowRightIcon />
               </Button>
-            ))}
-          </nav>
-          <div className="walkthrough-layout">
-            {" "}
-            <LayerCard className="flow-card">
+            </LayerCard>
+          ))}
+        </section>
+        {useCase !== "supplier" ? (
+          <IndustryLab
+            key={useCase}
+            industry={industries.find((i) => i.id === useCase)!}
+          />
+        ) : (
+          <>
+            <Banner
+              variant="secondary"
+              title="A working, local sandbox"
+              description="All institutions and credentials are fictional. Demo keys are public. Insurance uses a real POD / GPC proof; SOC 2 and ISO 9001 use local signed-record checks. The proof backend is beta and unaudited."
+            />
+            <section className="workspace">
+              <LayerCard className="configuration">
+                <div className="section-heading">
+                  <span className="eyebrow">01 / SET THE SCENE</span>
+                  <Badge variant="outline">In your browser</Badge>
+                </div>
+                <h2>Your assurance network</h2>
+                <p>
+                  Switch participants, then test a successful onboarding or a
+                  failure at its actual boundary.
+                </p>
+                <div className="config-grid">
+                  {(
+                    [
+                      "supplier",
+                      "buyer",
+                      "insurer",
+                      "auditor",
+                      "certifier",
+                    ] as const
+                  ).map((role) => (
+                    <Select<string>
+                      key={role}
+                      label={
+                        role === "certifier"
+                          ? "Certification body"
+                          : role.charAt(0).toUpperCase() + role.slice(1)
+                      }
+                      value={config[role]}
+                      items={byRole(role).map((i) => ({
+                        label: i.name,
+                        value: i.id,
+                      }))}
+                      disabled={busy || auto}
+                      onValueChange={(value) => {
+                        if (value) {
+                          const limits =
+                            role === "buyer"
+                              ? buyerThresholds[value]
+                              : undefined;
+                          change({
+                            ...config,
+                            [role]: value,
+                            ...(limits
+                              ? { aggregate: limits[0], occurrence: limits[1] }
+                              : {}),
+                          });
+                        }
+                      }}
+                    />
+                  ))}
+                  <Select<string>
+                    label="Scenario"
+                    value={config.scenario}
+                    items={scenarios.map((s) => ({
+                      label: s.label,
+                      value: s.id,
+                    }))}
+                    disabled={busy || auto}
+                    onValueChange={(value) => {
+                      if (value)
+                        change({
+                          ...config,
+                          scenario: value as DemoConfig["scenario"],
+                        });
+                    }}
+                  />
+                  <InputGroup
+                    label="Aggregate minimum (USD)"
+                    disabled={busy || auto}
+                  >
+                    <InputGroup.Input
+                      type="number"
+                      min={0}
+                      step={1000000}
+                      value={config.aggregate}
+                      onChange={(e) => {
+                        const n = Number(e.target.value);
+                        if (Number.isSafeInteger(n) && n >= 0)
+                          change({ ...config, aggregate: n });
+                      }}
+                    />
+                  </InputGroup>
+                  <InputGroup
+                    label="Per occurrence (USD)"
+                    disabled={busy || auto}
+                  >
+                    <InputGroup.Input
+                      type="number"
+                      min={0}
+                      step={1000000}
+                      value={config.occurrence}
+                      onChange={(e) => {
+                        const n = Number(e.target.value);
+                        if (Number.isSafeInteger(n) && n >= 0)
+                          change({ ...config, occurrence: n });
+                      }}
+                    />
+                  </InputGroup>
+                </div>
+                <p className="scenario-note">
+                  {scenarios.find((s) => s.id === config.scenario)?.description}
+                </p>
+              </LayerCard>
+            </section>
+            <LayerCard className="walkthrough">
               <div className="section-heading">
-                <span className="eyebrow">THE LIVE NETWORK</span>
-                <Badge variant={run.receipt ? "success" : "secondary"}>
-                  {run.completed} / 7 complete
-                </Badge>
+                <div>
+                  <span className="eyebrow">02 / RUN THE PROTOCOL</span>
+                  <h2>See what makes trust work.</h2>
+                </div>
+                <div className="controls">
+                  <Button
+                    variant="primary"
+                    onClick={toggleAuto}
+                    disabled={!!error || run.completed === 7}
+                  >
+                    {auto ? (
+                      "Pause walkthrough"
+                    ) : run.completed ? (
+                      "Continue walkthrough"
+                    ) : (
+                      <>
+                        <PlayIcon />
+                        Run walkthrough
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => void advance()}
+                    disabled={busy || auto || !!error || run.completed === 7}
+                  >
+                    Next step <ArrowRightIcon />
+                  </Button>
+                  <Button variant="ghost" onClick={() => reset()}>
+                    Reset
+                  </Button>
+                </div>
               </div>
-              <div
-                className={`network ${busy || auto ? "animating" : ""}`}
-                aria-label="Authority roots authorize issuers. Issuers sign records for the private wallet. The wallet presents a proof to the buyer."
-              >
-                <div
-                  className={`network-roots ${selected === 2 ? "active" : ""}`}
-                >
-                  <ShieldCheckIcon size={23} />
-                  <div>
-                    <strong>Three accepted trust roots</strong>
-                    <small>Insurance · Audit · Quality → Meridian</small>
+              <nav className="step-list" aria-label="Walkthrough steps">
+                {steps.map((s, index) => (
+                  <Button
+                    key={s.title}
+                    variant={selected === index ? "secondary" : "ghost"}
+                    className="step-button"
+                    disabled={index > run.completed || auto || busy}
+                    onClick={() => setSelected(index)}
+                  >
+                    <span
+                      className={`step-number ${index < run.completed ? "done" : ""}`}
+                    >
+                      {index < run.completed
+                        ? "✓"
+                        : String(index + 1).padStart(2, "0")}
+                    </span>
+                    <span>
+                      {s.title}
+                      <small>{s.actor}</small>
+                    </span>
+                  </Button>
+                ))}
+              </nav>
+              <div className="walkthrough-layout">
+                {" "}
+                <LayerCard className="flow-card">
+                  <div className="section-heading">
+                    <span className="eyebrow">THE LIVE NETWORK</span>
+                    <Badge variant={run.receipt ? "success" : "secondary"}>
+                      {run.completed} / 7 complete
+                    </Badge>
                   </div>
-                </div>
-                <div className="vertical-link" />
-                <div className="issuer-row">
-                  {(["insurer", "auditor", "certifier"] as const).map(
-                    (role) => (
-                      <div
-                        key={role}
-                        className={`network-node ${selected === 1 || selected === 2 ? "active" : ""}`}
-                      >
-                        <span className="node-monogram">
-                          {institution(config[role]).short}
-                        </span>
-                        <strong>{institution(config[role]).name}</strong>
-                        <small>{role}</small>
+                  <div
+                    className={`network ${busy || auto ? "animating" : ""}`}
+                    aria-label="Authority roots authorize issuers. Issuers sign records for the private wallet. The wallet presents a proof to the buyer."
+                  >
+                    <div
+                      className={`network-roots ${selected === 2 ? "active" : ""}`}
+                    >
+                      <ShieldCheckIcon size={23} />
+                      <div>
+                        <strong>Three accepted trust roots</strong>
+                        <small>Insurance · Audit · Quality → Meridian</small>
                       </div>
-                    ),
+                    </div>
+                    <div className="vertical-link" />
+                    <div className="issuer-row">
+                      {(["insurer", "auditor", "certifier"] as const).map(
+                        (role) => (
+                          <div
+                            key={role}
+                            className={`network-node ${selected === 1 || selected === 2 ? "active" : ""}`}
+                          >
+                            <span className="node-monogram">
+                              {institution(config[role]).short}
+                            </span>
+                            <strong>{institution(config[role]).name}</strong>
+                            <small>{role}</small>
+                          </div>
+                        ),
+                      )}
+                    </div>
+                    <div className="transfer">
+                      <span /> <span /> <span />
+                      <small>Signed private credentials</small>
+                    </div>
+                    <div
+                      className={`wallet-node ${selected >= 3 && selected <= 5 ? "active" : ""}`}
+                    >
+                      <FingerprintIcon size={34} />
+                      <div>
+                        <strong>{institution(config.supplier).name}</strong>
+                        <small>Private wallet · compliance persona</small>
+                      </div>
+                      <Badge variant="outline">
+                        {run.wallet ? "3 records" : "Awaiting records"}
+                      </Badge>
+                    </div>
+                    <div className="proof-transfer">
+                      <div className="vertical-link" />
+                      <span>
+                        {selected >= 5
+                          ? "Insurance proof + public request"
+                          : "Only the proof crosses this boundary"}
+                      </span>
+                    </div>
+                    <div
+                      className={`buyer-node ${selected === 0 || selected === 6 ? "active" : ""}`}
+                    >
+                      <ShieldCheckIcon size={26} />
+                      <div>
+                        <strong>{institution(config.buyer).name}</strong>
+                        <small>
+                          {run.receipt
+                            ? "Insurance proof verified"
+                            : "Buyer · independent verification"}
+                        </small>
+                      </div>
+                      {run.receipt && (
+                        <CheckCircleIcon size={24} weight="fill" />
+                      )}
+                    </div>
+                  </div>
+                </LayerCard>
+                <div className="step-detail" key={selected}>
+                  <div className="section-heading">
+                    <Badge variant="outline">{step.component}</Badge>
+                    <span className="eyebrow">STEP {selected + 1} OF 7</span>
+                  </div>
+                  <h3>{step.title}</h3>
+                  <p>{step.explanation}</p>
+                  <div className="boundary">
+                    <ShieldCheckIcon size={20} />
+                    <span>{step.boundary}</span>
+                  </div>
+                  <div aria-live="polite" className="step-result">
+                    {busy && selected === run.completed ? (
+                      <Banner
+                        title={
+                          selected === 5
+                            ? "Computing the real proof…"
+                            : "Running this stage…"
+                        }
+                        description={
+                          selected === 5
+                            ? "The first proof downloads circuit artifacts. Computation may take a moment; completion follows the actual prover result."
+                            : "The next stage starts only when this operation succeeds."
+                        }
+                      />
+                    ) : error && selected === run.completed ? (
+                      <Banner
+                        variant="error"
+                        title="Stopped at the boundary"
+                        description={error.message}
+                      />
+                    ) : snapshot ? (
+                      <Banner
+                        variant="secondary"
+                        title="Stage complete"
+                        description={snapshot.events[selected]?.message}
+                      />
+                    ) : (
+                      <p>
+                        Ready when you are. Choose Next step or run the animated
+                        walkthrough.
+                      </p>
+                    )}
+                  </div>
+                  <CryptoExplainer
+                    key={`${run.id}:${selected}`}
+                    step={selected}
+                    run={snapshot ?? run}
+                  />
+                  {selected === 0 && snapshot && (
+                    <Inspector
+                      title="Inspect the buyer request"
+                      value={snapshot.requirement}
+                    />
                   )}
-                </div>
-                <div className="transfer">
-                  <span /> <span /> <span />
-                  <small>Signed private credentials</small>
-                </div>
-                <div
-                  className={`wallet-node ${selected >= 3 && selected <= 5 ? "active" : ""}`}
-                >
-                  <FingerprintIcon size={34} />
-                  <div>
-                    <strong>{institution(config.supplier).name}</strong>
-                    <small>Private wallet · compliance persona</small>
-                  </div>
-                  <Badge variant="outline">
-                    {run.wallet ? "3 records" : "Awaiting records"}
-                  </Badge>
-                </div>
-                <div className="proof-transfer">
-                  <div className="vertical-link" />
-                  <span>
-                    {selected >= 5
-                      ? "Insurance proof + public request"
-                      : "Only the proof crosses this boundary"}
-                  </span>
-                </div>
-                <div
-                  className={`buyer-node ${selected === 0 || selected === 6 ? "active" : ""}`}
-                >
-                  <ShieldCheckIcon size={26} />
-                  <div>
-                    <strong>{institution(config.buyer).name}</strong>
-                    <small>
-                      {run.receipt
-                        ? "Insurance proof verified"
-                        : "Buyer · independent verification"}
-                    </small>
-                  </div>
-                  {run.receipt && <CheckCircleIcon size={24} weight="fill" />}
+                  {selected === 1 && snapshot && (
+                    <Inspector
+                      title="Reveal private signed records"
+                      value={snapshot.records}
+                    />
+                  )}
+                  {selected === 2 && snapshot && (
+                    <Inspector
+                      title="Inspect authority paths"
+                      value={snapshot.authority}
+                    />
+                  )}
+                  {selected === 3 && snapshot && (
+                    <p className="caption">
+                      3 records · insurance, SOC 2, ISO 9001 · compliance
+                      persona only
+                    </p>
+                  )}
+                  {selected === 4 && evaluation && (
+                    <>
+                      <div className="policy-results">
+                        {evaluation.leaves.map((leaf) => (
+                          <div key={leaf.id}>
+                            <Badge
+                              variant={leaf.satisfied ? "success" : "error"}
+                            >
+                              {leaf.satisfied ? "Pass" : "Fail"}
+                            </Badge>
+                            <span>
+                              {leaf.label}
+                              {leaf.reason && <small>{leaf.reason}</small>}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <Inspector
+                        title="Inspect every policy result"
+                        value={evaluation}
+                      />
+                    </>
+                  )}
+                  {selected === 5 && snapshot && (
+                    <Inspector
+                      title="Inspect the generated proof"
+                      value={snapshot.proof}
+                    />
+                  )}
+                  {selected === 6 && snapshot?.receipt && (
+                    <>
+                      <div className="controls">
+                        <Button onClick={download}>
+                          Download public presentation
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          onClick={() => void testReplay()}
+                        >
+                          Test replay rejection
+                        </Button>
+                      </div>
+                      {replay && <p role="status">{replay}</p>}
+                      <Inspector
+                        title="Inspect the local receipt"
+                        value={snapshot.receipt}
+                      />
+                    </>
+                  )}
                 </div>
               </div>
             </LayerCard>
-            <div className="step-detail" key={selected}>
+            <section className="directory">
               <div className="section-heading">
-                <Badge variant="outline">{step.component}</Badge>
-                <span className="eyebrow">STEP {selected + 1} OF 7</span>
-              </div>
-              <h3>{step.title}</h3>
-              <p>{step.explanation}</p>
-              <div className="boundary">
-                <ShieldCheckIcon size={20} />
-                <span>{step.boundary}</span>
-              </div>
-              <div aria-live="polite" className="step-result">
-                {busy && selected === run.completed ? (
-                  <Banner
-                    title={
-                      selected === 5
-                        ? "Computing the real proof…"
-                        : "Running this stage…"
-                    }
-                    description={
-                      selected === 5
-                        ? "The first proof downloads circuit artifacts. Computation may take a moment; completion follows the actual prover result."
-                        : "The next stage starts only when this operation succeeds."
-                    }
-                  />
-                ) : error && selected === run.completed ? (
-                  <Banner
-                    variant="error"
-                    title="Stopped at the boundary"
-                    description={error.message}
-                  />
-                ) : snapshot ? (
-                  <Banner
-                    variant="secondary"
-                    title="Stage complete"
-                    description={snapshot.events[selected]?.message}
-                  />
-                ) : (
-                  <p>
-                    Ready when you are. Choose Next step or run the animated
-                    walkthrough.
-                  </p>
-                )}
-              </div>
-              <CryptoExplainer
-                key={`${run.id}:${selected}`}
-                step={selected}
-                run={snapshot ?? run}
-              />
-              {selected === 0 && snapshot && (
-                <Inspector
-                  title="Inspect the buyer request"
-                  value={snapshot.requirement}
-                />
-              )}
-              {selected === 1 && snapshot && (
-                <Inspector
-                  title="Reveal private signed records"
-                  value={snapshot.records}
-                />
-              )}
-              {selected === 2 && snapshot && (
-                <Inspector
-                  title="Inspect authority paths"
-                  value={snapshot.authority}
-                />
-              )}
-              {selected === 3 && snapshot && (
-                <p className="caption">
-                  3 records · insurance, SOC 2, ISO 9001 · compliance persona
-                  only
-                </p>
-              )}
-              {selected === 4 && evaluation && (
-                <>
-                  <div className="policy-results">
-                    {evaluation.leaves.map((leaf) => (
-                      <div key={leaf.id}>
-                        <Badge variant={leaf.satisfied ? "success" : "error"}>
-                          {leaf.satisfied ? "Pass" : "Fail"}
-                        </Badge>
-                        <span>
-                          {leaf.label}
-                          {leaf.reason && <small>{leaf.reason}</small>}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  <Inspector
-                    title="Inspect every policy result"
-                    value={evaluation}
-                  />
-                </>
-              )}
-              {selected === 5 && snapshot && (
-                <Inspector
-                  title="Inspect the generated proof"
-                  value={snapshot.proof}
-                />
-              )}
-              {selected === 6 && snapshot?.receipt && (
-                <>
-                  <div className="controls">
-                    <Button onClick={download}>
-                      Download public presentation
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      onClick={() => void testReplay()}
-                    >
-                      Test replay rejection
-                    </Button>
-                  </div>
-                  {replay && <p role="status">{replay}</p>}
-                  <Inspector
-                    title="Inspect the local receipt"
-                    value={snapshot.receipt}
-                  />
-                </>
-              )}
-            </div>
-          </div>
-        </LayerCard>
-        <section className="directory">
-          <div className="section-heading">
-            <div>
-              <span className="eyebrow">THE PARTICIPANTS</span>
-              <h2>A network, not a single issuer.</h2>
-            </div>
-            <Badge variant="outline">15 fictional organizations</Badge>
-          </div>
-          <div className="institution-grid">
-            {institutions.map((i) => (
-              <LayerCard key={i.id} className="institution-card">
-                <div className="section-heading">
-                  <span className="node-monogram">{i.short}</span>
-                  <Badge variant="secondary">{i.role}</Badge>
+                <div>
+                  <span className="eyebrow">THE PARTICIPANTS</span>
+                  <h2>A network, not a single issuer.</h2>
                 </div>
-                <h3>{i.name}</h3>
-                <p>{i.description}</p>
-              </LayerCard>
-            ))}
-          </div>
-        </section>
+                <Badge variant="outline">15 fictional organizations</Badge>
+              </div>
+              <div className="institution-grid">
+                {institutions.map((i) => (
+                  <LayerCard key={i.id} className="institution-card">
+                    <div className="section-heading">
+                      <span className="node-monogram">{i.short}</span>
+                      <Badge variant="secondary">{i.role}</Badge>
+                    </div>
+                    <h3>{i.name}</h3>
+                    <p>{i.description}</p>
+                  </LayerCard>
+                ))}
+              </div>
+            </section>
+          </>
+        )}
         <footer>
           <span className="brand">
             <FingerprintIcon size={24} />
             attest
           </span>
           <p>
-            Synthetic evidence · local authority graph and status · evaluation
-            date October 7, 2026.
+            Synthetic evidence · local institution stores · fixed demo
+            evaluation dates in October 2026.
             <br />
             No external institution is contacted. No blockchain transaction is
             submitted.

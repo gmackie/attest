@@ -566,3 +566,5 @@ export const publicPresentation = (run: DemoRun) => {
     receipt: run.receipt,
   };
 };
+
+export * from "./industries";

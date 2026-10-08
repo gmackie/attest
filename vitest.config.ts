@@ -9,7 +9,7 @@ export default defineConfig({
       optimizer: {
         ssr: {
           enabled: true,
-          include: ["@pcd/gpc", "@pcd/pod", "@pcd/util"]
+          include: ["@pcd/pod"]
         }
       }
     }

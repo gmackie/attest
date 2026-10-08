@@ -7,7 +7,7 @@ export default defineConfig({
     coverage: { reporter: ["text", "json", "html"] },
     server: {
       deps: {
-        inline: true
+        fallbackCJS: true
       }
     }
   }

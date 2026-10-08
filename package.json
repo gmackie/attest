@@ -17,9 +17,7 @@
     "check": "pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {
-    "@pcd/gpc": "0.4.1",
     "@pcd/pod": "0.5.1",
-    "@pcd/util": "0.9.0",
     "@types/node": "^25.0.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.0"

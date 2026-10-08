@@ -1,0 +1,39 @@
+name: Apply test fixes
+
+on:
+  push:
+    branches: [feat/assurance-kernel-poc]
+    paths:
+      - .github/workflows/apply-test-fixes.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/assurance-kernel-poc
+      - name: Patch witness cost and Vitest dependency interop
+        shell: python
+        run: |
+          from pathlib import Path
+
+          policy = Path("packages/policy/src/index.ts")
+          text = policy.read_text()
+          old = "privacyCost: satisfied ? witnessIds.length : Number.POSITIVE_INFINITY"
+          new = "privacyCost: satisfied ? evaluations.reduce((total, evaluation) => total + evaluation.privacyCost, 0) : Number.POSITIVE_INFINITY"
+          if text.count(old) != 1:
+              raise RuntimeError(f"Expected one policy cost match, found {text.count(old)}")
+          policy.write_text(text.replace(old, new))
+
+          Path("vitest.config.ts").write_text('''import { defineConfig } from "vitest/config";\n\nexport default defineConfig({\n  test: {\n    environment: "node",\n    include: ["packages/*/test/**/*.test.ts"],\n    coverage: { reporter: ["text", "json", "html"] },\n    server: {\n      deps: {\n        inline: [/@pcd\\/gpc/, /@pcd\\/pod/, /blakejs/]\n      }\n    }\n  }\n});\n''')
+      - name: Commit fixes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add packages/policy/src/index.ts vitest.config.ts
+          git commit -m 'fix: minimize proof branches and inline POD test deps'
+          git push origin HEAD:feat/assurance-kernel-poc

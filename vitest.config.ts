@@ -5,9 +5,12 @@ export default defineConfig({
     environment: "node",
     include: ["packages/*/test/**/*.test.ts"],
     coverage: { reporter: ["text", "json", "html"] },
-    server: {
-      deps: {
-        fallbackCJS: true
+    deps: {
+      optimizer: {
+        ssr: {
+          enabled: true,
+          include: ["@pcd/gpc", "@pcd/pod", "@pcd/util"]
+        }
       }
     }
   }

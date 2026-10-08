@@ -44,7 +44,13 @@ export type AnyRequirement = Readonly<{
   children: readonly RequirementNode[];
 }>;
 
-export type RequirementNode = ClaimRequirement | CountRequirement | AllRequirement | AnyRequirement;
+export type SameAttestationRequirement = Readonly<{
+  kind: "same-attestation";
+  id: string;
+  child: RequirementNode;
+}>;
+
+export type RequirementNode = ClaimRequirement | CountRequirement | AllRequirement | AnyRequirement | SameAttestationRequirement;
 
 export type RequirementProfile = Readonly<{
   id: string;
@@ -77,10 +83,12 @@ export type PolicyEvaluation = Readonly<{
 
 const unique = <T>(items: readonly T[]): T[] => [...new Set(items)];
 
-const usableAt = (attestation: Attestation, subject: string, at: Date): boolean => {
+const usableAt = (attestation: Attestation, subject: string, at: Date, jurisdiction?: string): boolean => {
   if (attestation.subject !== subject || attestation.status !== "active") return false;
-  if (attestation.validFrom !== undefined && new Date(attestation.validFrom) > at) return false;
-  if (attestation.validUntil !== undefined && new Date(attestation.validUntil) < at) return false;
+  if (!Number.isFinite(at.getTime()) || !(Date.parse(attestation.issuedAt) <= at.getTime())) return false;
+  if (attestation.validFrom !== undefined && !(Date.parse(attestation.validFrom) <= at.getTime())) return false;
+  if (attestation.validUntil !== undefined && !(Date.parse(attestation.validUntil) >= at.getTime())) return false;
+  if (jurisdiction !== undefined && attestation.jurisdiction !== jurisdiction) return false;
   return true;
 };
 
@@ -128,7 +136,7 @@ const evaluateClaim = (
   const at = new Date(profile.evaluatedAt);
   const failures: string[] = [];
   for (const attestation of attestations) {
-    if (!usableAt(attestation, profile.subject, at)) continue;
+    if (!usableAt(attestation, profile.subject, at, profile.jurisdiction)) continue;
     const value = attestation.claims[node.predicate];
     if (value === undefined || !compare(value, node.operator, node.expected)) continue;
     const authority = candidateAuthority(graph, attestation, node.predicate, profile);
@@ -158,11 +166,11 @@ const evaluateClaim = (
   return { policyId: profile.id, satisfied: false, witnessIds: [], leaves: [leaf], privacyCost: Number.POSITIVE_INFINITY };
 };
 
-const distinctKey = (attestation: Attestation, distinctBy: CountRequirement["distinctBy"]): string => {
+const distinctKey = (attestation: Attestation, distinctBy: CountRequirement["distinctBy"]): string | undefined => {
   if (distinctBy === undefined || distinctBy === "attestation") return attestation.id;
   const key = distinctBy.slice("context:".length);
   const value = attestation.context?.[key];
-  if (value === undefined) return attestation.id;
+  if (value === undefined) return undefined;
   return `${value.kind}:${"value" in value ? String(value.value) : ""}`;
 };
 
@@ -176,16 +184,17 @@ const evaluateCount = (
   const accepted: Array<{ attestation: Attestation; authority: AuthorityResolution }> = [];
   const seen = new Set<string>();
   for (const attestation of attestations) {
-    if (!usableAt(attestation, profile.subject, at) || attestation.claims[node.predicate] === undefined) continue;
+    if (!usableAt(attestation, profile.subject, at, profile.jurisdiction) || attestation.claims[node.predicate] === undefined) continue;
     const key = distinctKey(attestation, node.distinctBy);
-    if (seen.has(key)) continue;
+    if (key === undefined || seen.has(key)) continue;
     const authority = candidateAuthority(graph, attestation, node.predicate, profile);
     if (!authority.authorized) continue;
     seen.add(key);
     accepted.push({ attestation, authority });
   }
-  const selected = accepted.slice(0, node.minimum);
-  const satisfied = accepted.length >= node.minimum;
+  const validMinimum = Number.isSafeInteger(node.minimum) && node.minimum >= 0;
+  const selected = validMinimum ? accepted.slice(0, node.minimum) : [];
+  const satisfied = validMinimum && accepted.length >= node.minimum;
   const leaf: LeafEvaluation = {
     id: node.id,
     label: node.label,
@@ -218,7 +227,7 @@ const combineAll = (evaluations: readonly PolicyEvaluation[], profile: Requireme
 
 const chooseAny = (evaluations: readonly PolicyEvaluation[], profile: RequirementProfile): PolicyEvaluation => {
   const successful = evaluations.filter((evaluation) => evaluation.satisfied);
-  if (successful.length === 0) return combineAll(evaluations, profile);
+  if (successful.length === 0) return { ...combineAll(evaluations, profile), satisfied: false, privacyCost: Number.POSITIVE_INFINITY };
   return successful.reduce((best, candidate) => candidate.privacyCost < best.privacyCost ? candidate : best);
 };
 
@@ -229,6 +238,13 @@ const evaluateNode = (
   profile: RequirementProfile
 ): PolicyEvaluation => {
   switch (node.kind) {
+    case "same-attestation": {
+      const candidates = attestations.map((attestation) => evaluateNode(node.child, [attestation], graph, profile));
+      const successful = candidates.filter((candidate) => candidate.satisfied);
+      if (successful.length > 0) return chooseAny(successful, profile);
+      // Preserve the requirement leaves without presenting a mixed-record plan.
+      return { ...evaluateNode(node.child, [], graph, profile), satisfied: false, privacyCost: Number.POSITIVE_INFINITY };
+    }
     case "claim": return evaluateClaim(node, attestations, graph, profile);
     case "count": return evaluateCount(node, attestations, graph, profile);
     case "all": return combineAll(node.children.map((child) => evaluateNode(child, attestations, graph, profile)), profile);
@@ -269,3 +285,6 @@ export const countAtLeast = (
 ): CountRequirement => ({ kind: "count", id, label, predicate, minimum, ...(distinctBy === undefined ? {} : { distinctBy }) });
 export const all = (id: string, ...children: readonly RequirementNode[]): AllRequirement => ({ kind: "all", id, children });
 export const any = (id: string, ...children: readonly RequirementNode[]): AnyRequirement => ({ kind: "any", id, children });
+
+/** All requirements in child must be supported by a single coherent record. */
+export const sameAttestation = (id: string, child: RequirementNode): SameAttestationRequirement => ({ kind: "same-attestation", id, child });

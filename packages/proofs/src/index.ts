@@ -35,6 +35,7 @@ export type InsurancePodInput = Readonly<{
 }>;
 
 export type InsuranceRequirement = Readonly<{
+  subjectBinding: string;
   aggregateMinimumUsd: bigint;
   perOccurrenceMinimumUsd: bigint;
   validThroughEpochSeconds: bigint;
@@ -80,10 +81,18 @@ export const serializePod = (pod: POD): SerializedPod => pod.toJSON();
 export const deserializePod = (pod: SerializedPod): POD => POD.fromJSON(pod);
 
 export const insuranceProofConfig = (requirement: InsuranceRequirement): GPCProofConfig => ({
+  tuples: {
+    insuranceContext: {
+      entries: ["insurance.pod_type", "insurance.subject_binding", "insurance.currency"],
+      isMemberOf: "acceptedContexts"
+    }
+  },
   pods: {
     insurance: {
       entries: {
-        pod_type: { isRevealed: false, isMemberOf: "acceptedSchemas" },
+        pod_type: { isRevealed: false },
+        subject_binding: { isRevealed: false },
+        currency: { isRevealed: false },
         owner: { isRevealed: false, isOwnerID: "SemaphoreV4" },
         aggregate_usd: {
           isRevealed: false,
@@ -121,12 +130,19 @@ const proofInputs = (
     semaphoreV4: identity,
     externalNullifier: { type: "string", value: `attest:${requirement.challenge}` }
   },
-  membershipLists: {
-    acceptedSchemas: [{ type: "string", value: "attest.insurance.cgl.v1" }],
-    acceptedIssuers: requirement.acceptedIssuerPublicKeys.map((value) => ({ type: "eddsa_pubkey" as const, value })),
-    requiredTrue: [{ type: "boolean", value: true }]
-  },
+  membershipLists: insuranceMembershipLists(requirement),
   watermark: { type: "string", value: requirement.challenge }
+});
+
+const insuranceMembershipLists = (requirement: InsuranceRequirement): NonNullable<GPCProofInputs["membershipLists"]> => ({
+  acceptedContexts: [[
+    { type: "string", value: "attest.insurance.cgl.v1" },
+    { type: "string", value: requirement.subjectBinding },
+    { type: "string", value: "USD" }
+  ]],
+  acceptedIssuers: requirement.acceptedIssuerPublicKeys.map((value) => ({ type: "eddsa_pubkey" as const, value })),
+  ...(requirement.requireAdditionalInsured || requirement.requireWaiverOfSubrogation
+    ? { requiredTrue: [{ type: "boolean", value: true }] } : {})
 });
 
 export const proveInsuranceRequirement = async (
@@ -137,7 +153,7 @@ export const proveInsuranceRequirement = async (
 ): Promise<GpcProofEnvelope> => {
   const runtime = await loadGpcRuntime();
   const config = insuranceProofConfig(requirement);
-  const policyCommitment = await commitValue(runtime.proofConfigToJSON(config));
+  const policyCommitment = await commitValue({ config: runtime.proofConfigToJSON(config), requirement });
   const { proof, boundConfig, revealedClaims } = await runtime.gpcProve(
     config,
     proofInputs(pod, identity, requirement),
@@ -166,11 +182,18 @@ export const verifyInsuranceRequirement = async (
 
   const runtime = await loadGpcRuntime();
   const expectedConfig = insuranceProofConfig(requirement);
-  const expectedPolicyCommitment = await commitValue(runtime.proofConfigToJSON(expectedConfig));
+  const expectedPolicyCommitment = await commitValue({ config: runtime.proofConfigToJSON(expectedConfig), requirement });
   if (expectedPolicyCommitment !== envelope.policyCommitment) return false;
 
   const boundConfig = runtime.boundConfigFromJSON(envelope.boundConfig);
   const revealedClaims = runtime.revealedClaimsFromJSON(envelope.revealedClaims);
+  // A valid proof authenticates its supplied public inputs, not the verifier's
+  // intended request. Compare every request-controlled input before accepting it.
+  if (canonicalJson(revealedClaims.membershipLists) !== canonicalJson(insuranceMembershipLists(requirement))) return false;
+  if (canonicalJson(revealedClaims.watermark) !== canonicalJson({ type: "string", value: requirement.challenge })) return false;
+  if (canonicalJson(revealedClaims.owner?.externalNullifier) !== canonicalJson({ type: "string", value: `attest:${requirement.challenge}` })) return false;
+  if (revealedClaims.owner?.nullifierHashV4 === undefined) return false;
+
   const expectedBoundConfig = runtime.gpcBindConfig({
     ...expectedConfig,
     circuitIdentifier: boundConfig.circuitIdentifier

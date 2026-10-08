@@ -6,7 +6,7 @@ import {
   type Attestation,
   type AuthorityGraph
 } from "@attest/domain";
-import { all, eq, gte, type RequirementProfile } from "@attest/policy";
+import { all, eq, gte, sameAttestation, type RequirementProfile } from "@attest/policy";
 
 export const DEMO_SUBJECT = "subject:acme-industrial-controls";
 export const DEMO_INSURANCE_ISSUER_PRIVATE_KEY = "ASNFZ4mrze8BI0VniavN7wEjRWeJq83vASNFZ4mrze8";
@@ -152,27 +152,33 @@ export const createSupplierPolicy = (thresholds: DemoThresholds = defaultThresho
   evaluatedAt: "2026-10-07T18:00:00.000Z",
   root: all(
     "supplier-assurance",
-    gte(
-      "cgl-aggregate",
-      `CGL aggregate ≥ $${Number(thresholds.aggregateMinimumUsd).toLocaleString("en-US")}`,
-      "insurance.cgl.aggregate",
-      integerValue(thresholds.aggregateMinimumUsd, "USD")
-    ),
-    gte(
-      "cgl-occurrence",
-      `CGL per occurrence ≥ $${Number(thresholds.perOccurrenceMinimumUsd).toLocaleString("en-US")}`,
-      "insurance.cgl.perOccurrence",
-      integerValue(thresholds.perOccurrenceMinimumUsd, "USD")
-    ),
-    eq("additional-insured", "Additional insured supported", "insurance.additionalInsured", booleanValue(true)),
-    eq("waiver", "Waiver of subrogation supported", "insurance.waiverOfSubrogation", booleanValue(true)),
-    gte("coverage-date", "Coverage valid through project end", "insurance.validUntil", dateValue(thresholds.projectEnd)),
-    eq("soc2-type", "SOC 2 Type II", "soc2.report.type", stringValue("type-ii")),
-    gte("soc2-period", "SOC 2 period ≥ 6 months", "soc2.periodMonths", integerValue(6, "months")),
-    eq("soc2-security", "Security criterion in scope", "soc2.criteria.security", booleanValue(true)),
-    eq("soc2-exceptions", "No material SOC 2 exceptions", "soc2.materialExceptions", integerValue(0)),
-    eq("iso-current", "ISO 9001 certification current", "iso9001.current", booleanValue(true)),
-    eq("iso-scope", "ISO 9001 scope covers industrial-controls manufacturing", "iso9001.scope", stringValue("manufacturing-industrial-controls")),
-    gte("iso-date", "ISO 9001 valid through project end", "iso9001.validUntil", dateValue(thresholds.projectEnd))
+    sameAttestation("insurance-record", all("insurance",
+      gte(
+        "cgl-aggregate",
+        `CGL aggregate ≥ $${Number(thresholds.aggregateMinimumUsd).toLocaleString("en-US")}`,
+        "insurance.cgl.aggregate",
+        integerValue(thresholds.aggregateMinimumUsd, "USD")
+      ),
+      gte(
+        "cgl-occurrence",
+        `CGL per occurrence ≥ $${Number(thresholds.perOccurrenceMinimumUsd).toLocaleString("en-US")}`,
+        "insurance.cgl.perOccurrence",
+        integerValue(thresholds.perOccurrenceMinimumUsd, "USD")
+      ),
+      eq("additional-insured", "Additional insured supported", "insurance.additionalInsured", booleanValue(true)),
+      eq("waiver", "Waiver of subrogation supported", "insurance.waiverOfSubrogation", booleanValue(true)),
+      gte("coverage-date", "Coverage valid through project end", "insurance.validUntil", dateValue(thresholds.projectEnd)),
+    )),
+    sameAttestation("soc2-record", all("soc2",
+      eq("soc2-type", "SOC 2 Type II", "soc2.report.type", stringValue("type-ii")),
+      gte("soc2-period", "SOC 2 period ≥ 6 months", "soc2.periodMonths", integerValue(6, "months")),
+      eq("soc2-security", "Security criterion in scope", "soc2.criteria.security", booleanValue(true)),
+      eq("soc2-exceptions", "No material SOC 2 exceptions", "soc2.materialExceptions", integerValue(0)),
+    )),
+    sameAttestation("iso-record", all("iso9001",
+      eq("iso-current", "ISO 9001 certification current", "iso9001.current", booleanValue(true)),
+      eq("iso-scope", "ISO 9001 scope covers industrial-controls manufacturing", "iso9001.scope", stringValue("manufacturing-industrial-controls")),
+      gte("iso-date", "ISO 9001 valid through project end", "iso9001.validUntil", dateValue(thresholds.projectEnd))
+    ))
   )
 });

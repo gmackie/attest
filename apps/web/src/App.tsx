@@ -87,15 +87,32 @@ export function App() {
     setProof(null);
     setReceipt(null);
     setProofError(null);
-    void Effect.runPromise(wallet.plan(assuranceContext, profile, demoAuthorityGraph)).then(setEvaluation);
+    let active = true;
+    void Effect.runPromise(wallet.plan(assuranceContext, profile, demoAuthorityGraph)).then((result) => {
+      if (active) setEvaluation(result);
+    });
+    return () => { active = false; };
   }, [wallet, profile]);
 
+  const updateThreshold = (value: string, current: number, update: (value: number) => void) => {
+    const next = Number(value);
+    if (!Number.isSafeInteger(next) || next < 0 || next === current) return;
+    setEvaluation(null);
+    setProofState("idle");
+    setProof(null);
+    setReceipt(null);
+    setProofError(null);
+    update(next);
+  };
+
   const generateProof = async () => {
+    if (!evaluation?.satisfied || proofState === "proving") return;
     setProofState("proving");
     setProofError(null);
     try {
       const challenge = `project-817:${aggregate}:${occurrence}`;
       const requirement: InsuranceRequirement = {
+        subjectBinding: DEMO_SUBJECT,
         aggregateMinimumUsd: thresholds.aggregateMinimumUsd,
         perOccurrenceMinimumUsd: thresholds.perOccurrenceMinimumUsd,
         validThroughEpochSeconds: BigInt(Math.floor(new Date(thresholds.projectEnd).getTime() / 1000)),
@@ -207,8 +224,8 @@ export function App() {
           <p className="mt-1 text-sm text-kumo-subtle">Thresholds are public. The supplier's exact values are not.</p>
         </div>
         <div className="mb-5 grid gap-3 sm:grid-cols-2">
-          <Input label="CGL aggregate minimum" type="number" min={0} step={500000} value={String(aggregate)} onChange={(event) => setAggregate(Number(event.target.value))} description="Buyer-visible threshold, USD"/>
-          <Input label="Per-occurrence minimum" type="number" min={0} step={500000} value={String(occurrence)} onChange={(event) => setOccurrence(Number(event.target.value))} description="Buyer-visible threshold, USD"/>
+          <Input label="CGL aggregate minimum" type="number" disabled={proofState === "proving"} min={0} step={500000} value={String(aggregate)} onChange={(event) => updateThreshold(event.target.value, aggregate, setAggregate)} description="Buyer-visible threshold, USD"/>
+          <Input label="Per-occurrence minimum" type="number" disabled={proofState === "proving"} min={0} step={500000} value={String(occurrence)} onChange={(event) => updateThreshold(event.target.value, occurrence, setOccurrence)} description="Buyer-visible threshold, USD"/>
         </div>
 
         <div className="mb-5 overflow-hidden rounded-lg border border-kumo-line">
@@ -217,7 +234,7 @@ export function App() {
               ? <CheckCircleIcon className="size-5 shrink-0 text-kumo-success"/>
               : <WarningCircleIcon className="size-5 shrink-0 text-kumo-danger"/>}
             <span className="min-w-0 flex-1 text-sm">{leaf.label}</span>
-            <Badge variant={leaf.satisfied ? "success" : "error"}>{leaf.satisfied ? "verified" : "not met"}</Badge>
+            <Badge variant={leaf.satisfied ? "success" : "error"}>{leaf.satisfied ? "matched locally" : "not met"}</Badge>
           </div>)}
         </div>
 

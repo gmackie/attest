@@ -8,3 +8,5 @@ coverage/
 !.env.example
 contracts/artifacts/
 .DS_Store
+
+.wrangler/

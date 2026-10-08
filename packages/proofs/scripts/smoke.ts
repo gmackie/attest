@@ -24,6 +24,7 @@ const pod = issueInsurancePod({
 }, "ASNFZ4mrze8BI0VniavN7wEjRWeJq83vASNFZ4mrze8");
 
 const requirement: InsuranceRequirement = {
+  subjectBinding: "subject:smoke",
   aggregateMinimumUsd: 2_000_000n,
   perOccurrenceMinimumUsd: 1_000_000n,
   validThroughEpochSeconds: 1_800_000_000n,

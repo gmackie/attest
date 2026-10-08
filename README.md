@@ -18,6 +18,8 @@ This repository contains the first end-to-end proof of concept:
 
 ## The demo
 
+Live demo: https://attest.gmac.io
+
 A synthetic supplier privately holds:
 
 - `$5M` commercial-general-liability aggregate coverage,
@@ -113,3 +115,23 @@ In particular, POD/GPC is an upstream beta implementation whose circuits, compil
 and proving setup must not be treated as audited production cryptography. The demo
 uses synthetic issuers and records. No domain pack is endorsed by ACORD, AICPA, ISO,
 an accreditation body, insurer, auditor or regulator.
+
+
+## Deploy
+
+The demo is hosted as static assets on Cloudflare Workers at `attest.gmac.io`.
+The browser evaluates synthetic evidence and generates proofs locally; there is
+no server wallet, upload endpoint or production issuer integration.
+
+With Node 24+, pnpm and access to the configured Cloudflare account:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm exec wrangler login
+pnpm deploy:web
+```
+
+`pnpm deploy:web` runs all quality gates, builds the assets, and deploys the
+`attest-demo` Worker and its custom domain from `wrangler.jsonc`. Cloudflare
+credentials remain in the operator's environment, never in this repository.
+Deployments are manual; opening or merging the PR does not automatically deploy.

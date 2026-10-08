@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { booleanValue, dateValue, integerValue, stringValue, type Attestation, type AuthorityGraph } from "@attest/domain";
-import { all, any, eq, evaluatePolicy, gte, type RequirementProfile } from "../src/index";
+import { all, any, countAtLeast, eq, evaluatePolicy, gte, type RequirementProfile } from "../src/index";
 
 const authority: AuthorityGraph = {
   acceptedRoots: ["root:insurance", "root:audit"],
@@ -101,5 +101,41 @@ describe("policy planning", () => {
     const result = evaluatePolicy(profile(any("alternatives", two, one)), [insurance, soc2], authority);
     expect(result.satisfied).toBe(true);
     expect(result.witnessIds).toEqual(["att:insurance"]);
+  });
+});
+
+
+describe("policy rejection regressions", () => {
+  const root = gte("aggregate", "CGL", "insurance.cgl.aggregate", integerValue(2_000_000, "USD"));
+
+  it("rejects an alternative with no branches", () => {
+    expect(evaluatePolicy(profile(any("empty")), [insurance], authority).satisfied).toBe(false);
+  });
+
+  it("does not count records lacking the required distinct context", () => {
+    const requirement = countAtLeast("engagements", "Two engagements", "insurance.cgl.aggregate", 2, "context:engagement");
+    expect(evaluatePolicy(profile(requirement), [insurance, { ...insurance, id: "copy" }], authority).satisfied).toBe(false);
+    const records = ["a", "b"].map((id) => ({ ...insurance, id, context: { engagement: stringValue(id) } }));
+    expect(evaluatePolicy(profile(requirement), records, authority).satisfied).toBe(true);
+    expect(evaluatePolicy(profile(requirement), [records[0]!, { ...records[0]!, id: "copy" }], authority).satisfied).toBe(false);
+  });
+
+  it.each([-1, 1.5, NaN, Infinity])("rejects invalid minimum %s", (minimum) => {
+    expect(evaluatePolicy(profile(countAtLeast("count", "Count", "insurance.cgl.aggregate", minimum)), [insurance], authority).satisfied).toBe(false);
+  });
+
+  it.each(["issuedAt", "validFrom", "validUntil"] as const)("rejects invalid %s", (field) => {
+    expect(evaluatePolicy(profile(root), [{ ...insurance, [field]: "invalid" }], authority).satisfied).toBe(false);
+  });
+
+  it("rejects future-issued evidence and invalid evaluation time", () => {
+    expect(evaluatePolicy(profile(root), [{ ...insurance, issuedAt: "2030-01-01" }], authority).satisfied).toBe(false);
+    expect(evaluatePolicy({ ...profile(root), evaluatedAt: "invalid" }, [insurance], authority).satisfied).toBe(false);
+  });
+
+  it("enforces the requested jurisdiction", () => {
+    const requested = { ...profile(root), jurisdiction: "US" };
+    expect(evaluatePolicy(requested, [{ ...insurance, jurisdiction: "CA" }], authority).satisfied).toBe(false);
+    expect(evaluatePolicy(requested, [{ ...insurance, jurisdiction: "US" }], authority).satisfied).toBe(true);
   });
 });

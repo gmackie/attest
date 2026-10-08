@@ -58,12 +58,13 @@ export class PrivateEvidenceWallet {
     const personas = new Set(context.personaIds);
     return this.records
       .filter((record) => record.sourcePersona === undefined || personas.has(record.sourcePersona))
-      .map((record) => record.attestation)
-      .map((attestation) => ({
-        ...attestation,
+      .map((record) => ({
+        ...record.attestation,
         claims: Object.fromEntries(
-          Object.entries(attestation.claims).filter(([predicate]) =>
-            context.allowedPredicatePatterns.some((pattern) => matchesPattern(pattern, predicate))
+          Object.entries(record.attestation.claims).filter(([predicate]) =>
+            context.allowedPredicatePatterns.some((pattern) => matchesPattern(pattern, predicate)) &&
+            (record.sourcePersona === undefined ||
+              this.personas.get(record.sourcePersona)?.allowedPredicatePatterns.some((pattern) => matchesPattern(pattern, predicate)) === true)
           )
         )
       }))

@@ -68,3 +68,12 @@ describe("private evidence wallet", () => {
     expect(result.satisfied).toBe(false);
   });
 });
+
+
+it("does not let a presentation widen the source persona's namespaces", async () => {
+  const wallet = new PrivateEvidenceWallet("root:holder")
+    .addPersona(createPersona("restricted", "Restricted", ["soc2.*"]))
+    .ingest(attestation, "restricted");
+  const context = createPresentationContext("buyer", "Buyer", ["restricted"], ["*"]);
+  expect((await Effect.runPromise(wallet.plan(context, profile, authority))).satisfied).toBe(false);
+});

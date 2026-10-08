@@ -30,6 +30,7 @@ describe("POD/GPC adapter", () => {
 
   it("builds a hidden range-proof policy", () => {
     const config = insuranceProofConfig({
+      subjectBinding: "subject:acme",
       aggregateMinimumUsd: 2_000_000n,
       perOccurrenceMinimumUsd: 1_000_000n,
       validThroughEpochSeconds: 1_800_000_000n,

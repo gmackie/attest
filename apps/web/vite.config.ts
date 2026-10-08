@@ -20,6 +20,7 @@ export default defineConfig({
     sourcemap: true
   },
   optimizeDeps: {
-    exclude: ["@pcd/gpc", "@pcd/pod", "@semaphore-protocol/core"]
+    // Prebundle the crypto packages so their CommonJS dependencies work in dev.
+    include: ["@pcd/gpc", "@pcd/pod", "@semaphore-protocol/core"]
   }
 });

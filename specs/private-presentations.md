@@ -54,3 +54,25 @@ over a hidden RDF graph.
 The POC signs insurance records as PODs and uses GPC to prove hidden numeric ranges,
 accepted signer membership, holder binding, required booleans, validity and a
 challenge-bound nullifier. The policy planner remains backend-independent.
+
+
+## Reference verifier binding
+
+The insurance adapter requires the verifier's subject binding as a public input.
+A tuple constraint binds the signed schema, subject and USD currency; signer
+membership, watermark and external nullifier are compared with the verifier's
+request before cryptographic verification. The policy commitment includes both
+the circuit configuration and the complete insurance request, including challenge
+and accepted issuer keys. Proofs made with the earlier configuration must be
+regenerated.
+
+The subject binding and accepted issuer set are visible in the proof's public
+membership lists. Use a verifier-scoped subject identifier where correlation is a
+concern; the demo identifier is synthetic. Exact limits and the selected signer
+remain hidden.
+
+The local policy algebra provides `sameAttestation(id, child)` for claims that
+must come from one record. The supplier profile uses one group per insurance
+policy, SOC 2 report and ISO certificate. Plain `all` joins independent groups for
+the requested subject; it does not establish cross-record policy or engagement
+identity. Witness selection is a greedy heuristic, not a globally minimal set.

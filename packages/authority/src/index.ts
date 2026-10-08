@@ -33,8 +33,9 @@ export const matchesPattern = (pattern: string, value: string): boolean => {
 };
 
 const activeAt = (grant: AuthorityGrant, instant: Date): boolean => {
-  if (grant.validFrom !== undefined && new Date(grant.validFrom) > instant) return false;
-  if (grant.validUntil !== undefined && new Date(grant.validUntil) < instant) return false;
+  if (!Number.isFinite(instant.getTime())) return false;
+  if (grant.validFrom !== undefined && !(Date.parse(grant.validFrom) <= instant.getTime())) return false;
+  if (grant.validUntil !== undefined && !(Date.parse(grant.validUntil) >= instant.getTime())) return false;
   return true;
 };
 
@@ -43,7 +44,7 @@ const grantMatches = (grant: AuthorityGrant, query: AuthorityQuery): boolean => 
   if (!grant.actions.includes(query.action)) return false;
   if (!grant.predicatePatterns.some((pattern) => matchesPattern(pattern, query.predicate))) return false;
   if (grant.schemas !== undefined && !grant.schemas.includes(query.schema)) return false;
-  if (query.jurisdiction !== undefined && grant.jurisdiction !== undefined && grant.jurisdiction !== query.jurisdiction) return false;
+  if (grant.jurisdiction !== undefined && grant.jurisdiction !== query.jurisdiction) return false;
   return activeAt(grant, instant);
 };
 
@@ -52,13 +53,13 @@ const grantMatches = (grant: AuthorityGrant, query: AuthorityQuery): boolean => 
  * Every edge must independently cover the requested action/predicate/schema.
  */
 export const resolveAuthority = (graph: AuthorityGraph, query: AuthorityQuery): AuthorityResolution => {
+  if (!Number.isFinite(Date.parse(query.at))) return { authorized: false, path: [], reason: "Invalid authority evaluation time" };
   const roots = new Set(query.acceptedRoots ?? graph.acceptedRoots);
   if (roots.has(query.issuer)) return { authorized: true, root: query.issuer, path: [] };
 
-  const visited = new Set<IssuerId>();
-  const walk = (issuer: IssuerId, lowerPath: readonly AuthorityGrant[]): AuthorityResolution | undefined => {
-    if (visited.has(issuer)) return undefined;
-    visited.add(issuer);
+  const walk = (issuer: IssuerId, lowerPath: readonly AuthorityGrant[], ancestors: ReadonlySet<IssuerId>): AuthorityResolution | undefined => {
+    if (ancestors.has(issuer)) return undefined;
+    const visited = new Set([...ancestors, issuer]);
 
     for (const grant of graph.grants) {
       if (grant.grantee !== issuer || !grantMatches(grant, query)) continue;
@@ -70,14 +71,14 @@ export const resolveAuthority = (graph: AuthorityGraph, query: AuthorityQuery): 
       if (roots.has(grant.grantor)) {
         return { authorized: true, root: grant.grantor, path };
       }
-      const parent = walk(grant.grantor, path);
+      const parent = walk(grant.grantor, path, visited);
       if (parent !== undefined) return parent;
     }
     return undefined;
   };
 
   return (
-    walk(query.issuer, []) ?? {
+    walk(query.issuer, [], new Set()) ?? {
       authorized: false,
       path: [],
       reason: `No accepted authority path permits ${query.issuer} to ${query.action} ${query.predicate}`

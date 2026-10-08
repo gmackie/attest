@@ -25,7 +25,7 @@ jobs:
           cat .bootstrap/payload-* | tr -d '\n\r ' | base64 --decode > /tmp/attest-implementation.tar.gz
           echo 'ef675cd1016c9f6e766ab46a666a8f753ab426001dcc0aba0f42a9b53df050fb  /tmp/attest-implementation.tar.gz' | sha256sum --check
           tar -xzf /tmp/attest-implementation.tar.gz -C .
-          rm -rf .bootstrap .github/workflows/bootstrap.yml
+          rm -rf .bootstrap .github/workflows/bootstrap.yml .github/workflows/ci.yml
       - name: Commit implementation
         run: |
           git config user.name 'github-actions[bot]'

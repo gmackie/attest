@@ -4,7 +4,7 @@ on:
   push:
     branches: [feat/assurance-kernel-poc]
     paths:
-      - .bootstrap/attest-implementation.tar.gz.b64
+      - .bootstrap/chunk-*
       - .github/workflows/bootstrap.yml
 
 permissions:
@@ -19,8 +19,11 @@ jobs:
         with:
           ref: feat/assurance-kernel-poc
       - name: Expand implementation tree
+        shell: bash
         run: |
-          base64 --decode .bootstrap/attest-implementation.tar.gz.b64 > /tmp/attest-implementation.tar.gz
+          set -euo pipefail
+          cat .bootstrap/chunk-* | tr -d '\n\r ' | base64 --decode > /tmp/attest-implementation.tar.gz
+          echo '11be04f4cd7359efb0175d4f7f0f4743fbe64539ce0aceb5f91883fa0f918f10  /tmp/attest-implementation.tar.gz' | sha256sum --check
           tar -xzf /tmp/attest-implementation.tar.gz -C .
           rm -rf .bootstrap .github/workflows/bootstrap.yml
       - name: Commit implementation

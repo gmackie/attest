@@ -222,7 +222,7 @@ export function App() {
         </div>
 
         {evaluation !== null && <Banner
-          variant={evaluation.satisfied ? "success" : "error"}
+          variant={evaluation.satisfied ? "default" : "error"}
           size="sm"
           title={evaluation.satisfied ? "Local evidence plan satisfies the buyer policy" : "The current private evidence does not satisfy the policy"}
           description={evaluation.satisfied

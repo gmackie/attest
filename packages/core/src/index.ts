@@ -3,8 +3,8 @@ import { Effect } from "effect";
 
 export class CryptoError extends Error {
   readonly _tag = "CryptoError";
-  constructor(message: string, readonly cause?: unknown) {
-    super(message);
+  constructor(message: string, cause?: unknown) {
+    super(message, { cause });
   }
 }
 
@@ -26,7 +26,9 @@ export const canonicalJson = (value: unknown): string => JSON.stringify(normaliz
 
 export const sha256Hex = async (value: string | Uint8Array): Promise<string> => {
   const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
-  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+  const digestInput = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(digestInput).set(bytes);
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", digestInput);
   return `0x${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 };
 

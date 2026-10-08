@@ -4,8 +4,12 @@ import {
   boundConfigToJSON,
   gpcArtifactDownloadURL,
   gpcBindConfig,
+  type GPCBoundConfig,
+  type GPCProof,
   type GPCProofConfig,
   type GPCProofInputs,
+  type JSONBoundConfig,
+  type JSONRevealedClaims,
   gpcProve,
   gpcVerify,
   proofConfigToJSON,
@@ -20,8 +24,8 @@ export const GPC_ARTIFACTS_URL = gpcArtifactDownloadURL("jsdelivr", "prod", unde
 
 export class ProofError extends Error {
   readonly _tag = "ProofError";
-  constructor(message: string, readonly cause?: unknown) {
-    super(message);
+  constructor(message: string, cause?: unknown) {
+    super(message, { cause });
   }
 }
 
@@ -50,12 +54,12 @@ export type SerializedPod = ReturnType<POD["toJSON"]>;
 
 export type GpcProofEnvelope = Readonly<{
   version: "attest-gpc-v1";
-  proof: unknown;
-  boundConfig: unknown;
-  revealedClaims: unknown;
+  proof: GPCProof;
+  boundConfig: JSONBoundConfig;
+  revealedClaims: JSONRevealedClaims;
   policyCommitment: string;
   proofCommitment: string;
-  circuitIdentifier: string;
+  circuitIdentifier: GPCBoundConfig["circuitIdentifier"];
 }>;
 
 export const newHolderIdentity = (): Identity => new Identity();
@@ -170,7 +174,10 @@ export const verifyInsuranceRequirement = async (
 
   const boundConfig = boundConfigFromJSON(envelope.boundConfig);
   const revealedClaims = revealedClaimsFromJSON(envelope.revealedClaims);
-  const expectedBoundConfig = gpcBindConfig(expectedConfig, boundConfig.circuitIdentifier).boundConfig;
+  const expectedBoundConfig = gpcBindConfig({
+    ...expectedConfig,
+    circuitIdentifier: boundConfig.circuitIdentifier
+  }).boundConfig;
   if (canonicalJson(boundConfigToJSON(boundConfig)) !== canonicalJson(boundConfigToJSON(expectedBoundConfig))) return false;
 
   const recomputedProofCommitment = await commitValue({
@@ -180,7 +187,7 @@ export const verifyInsuranceRequirement = async (
   });
   if (recomputedProofCommitment !== envelope.proofCommitment) return false;
 
-  return gpcVerify(envelope.proof as never, boundConfig, revealedClaims, artifactsPathOrUrl);
+  return gpcVerify(envelope.proof, boundConfig, revealedClaims, artifactsPathOrUrl);
 };
 
 export const proveInsuranceRequirementEffect = (

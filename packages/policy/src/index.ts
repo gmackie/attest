@@ -212,7 +212,7 @@ const combineAll = (evaluations: readonly PolicyEvaluation[], profile: Requireme
     satisfied,
     witnessIds,
     leaves: evaluations.flatMap((evaluation) => evaluation.leaves),
-    privacyCost: satisfied ? witnessIds.length : Number.POSITIVE_INFINITY
+    privacyCost: satisfied ? evaluations.reduce((total, evaluation) => total + evaluation.privacyCost, 0) : Number.POSITIVE_INFINITY
   };
 };
 

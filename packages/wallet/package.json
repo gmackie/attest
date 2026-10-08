@@ -1,0 +1,8 @@
+{
+  "name": "@attest/wallet",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": { "@attest/authority": "workspace:*", "@attest/domain": "workspace:*", "@attest/policy": "workspace:*", "effect": "4.0.2" }
+}

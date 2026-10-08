@@ -1,0 +1,33 @@
+{
+  "name": "@attest/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@attest/chain-evm": "workspace:*",
+    "@attest/core": "workspace:*",
+    "@attest/domains": "workspace:*",
+    "@attest/policy": "workspace:*",
+    "@attest/proofs": "workspace:*",
+    "@attest/wallet": "workspace:*",
+    "@cloudflare/kumo": "2.14.0",
+    "@phosphor-icons/react": "^2.1.10",
+    "effect": "4.0.2",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.2.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "6.0.1",
+    "tailwindcss": "^4.2.2",
+    "vite": "8.0.0",
+    "vite-plugin-node-polyfills": "^0.24.0"
+  }
+}

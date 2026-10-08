@@ -1,3 +1,10 @@
+import {
+  issueCriteriaPod,
+  proveCriteria,
+  verifyCriteria,
+  type CriteriaRequest,
+  type GpcProofEnvelope,
+} from "@attest/proofs";
 import { Effect } from "effect";
 import { POD, deriveSignerPublicKey } from "@pcd/pod";
 import { canonicalJson, commitValue } from "@attest/core";
@@ -41,7 +48,7 @@ export type Industry = Readonly<{
   rules: readonly IndustryRule[];
   failure: { source: string; field: string; value: FieldValue; label: string };
 }>;
-export const industries: readonly Industry[] = [
+const baseIndustries: readonly Industry[] = [
   {
     id: "healthcare",
     name: "Healthcare",
@@ -441,6 +448,185 @@ export const industries: readonly Industry[] = [
     },
   },
 ];
+const additionalSources: Record<IndustryId, readonly IndustrySource[]> = {
+  healthcare: [
+    {
+      id: "screening",
+      name: "ClearPath Screening",
+      short: "CS",
+      role: "Credential screening",
+      system: "Professional screening registry",
+      schema: "demo:screening:v1",
+      fields: [
+        {
+          id: "eligible",
+          label: "Eligible for clinical placement",
+          type: "boolean",
+          value: true,
+        },
+        {
+          id: "validThrough",
+          label: "Screening valid through",
+          type: "date",
+          value: "2027-10-31",
+        },
+      ],
+    },
+    {
+      id: "occupational",
+      name: "Everwell Occupational Health",
+      short: "EO",
+      role: "Occupational health",
+      system: "Fitness-for-duty records",
+      schema: "demo:fitness:v1",
+      fields: [
+        {
+          id: "cleared",
+          label: "Fit for assigned duties",
+          type: "boolean",
+          value: true,
+        },
+        {
+          id: "validThrough",
+          label: "Clearance valid through",
+          type: "date",
+          value: "2027-06-30",
+        },
+      ],
+    },
+  ],
+  education: [
+    {
+      id: "prerequisites",
+      name: "Summit Course Registry",
+      short: "SC",
+      role: "Prerequisite assessment",
+      system: "Course completion registry",
+      schema: "demo:prerequisites:v1",
+      fields: [
+        {
+          id: "credits",
+          label: "Relevant course credits",
+          type: "number",
+          value: 36,
+        },
+        {
+          id: "research",
+          label: "Research methods completed",
+          type: "boolean",
+          value: true,
+        },
+      ],
+    },
+    {
+      id: "funding",
+      name: "Crescent Education Trust",
+      short: "CE",
+      role: "Financial capacity attestor",
+      system: "Education funding attestations",
+      schema: "demo:funding:v1",
+      fields: [
+        {
+          id: "available",
+          label: "Available education funding",
+          type: "number",
+          value: 45000,
+          unit: "USD",
+        },
+        {
+          id: "validThrough",
+          label: "Funding confirmation valid through",
+          type: "date",
+          value: "2027-08-31",
+        },
+      ],
+    },
+  ],
+  logistics: [
+    {
+      id: "calibration",
+      name: "Precision Calibration Bureau",
+      short: "PC",
+      role: "Sensor calibration authority",
+      system: "Calibration certificate registry",
+      schema: "demo:calibration:v1",
+      fields: [
+        {
+          id: "certified",
+          label: "Sensor calibration certified",
+          type: "boolean",
+          value: true,
+        },
+        {
+          id: "validThrough",
+          label: "Calibration valid through",
+          type: "date",
+          value: "2027-05-31",
+        },
+      ],
+    },
+    {
+      id: "origin",
+      name: "Alpine Manufacturing QA",
+      short: "AM",
+      role: "Manufacturer release authority",
+      system: "Batch release records",
+      schema: "demo:release:v1",
+      fields: [
+        {
+          id: "released",
+          label: "Batch approved for release",
+          type: "boolean",
+          value: true,
+        },
+        {
+          id: "deviations",
+          label: "Unresolved quality deviations",
+          type: "number",
+          value: 0,
+        },
+      ],
+    },
+  ],
+};
+export const industries: readonly Industry[] = baseIndustries.map((i) => ({
+  ...i,
+  headline:
+    i.id === "healthcare"
+      ? "A nurse. Five credentials. One private decision."
+      : i.headline,
+  sources: [...i.sources, ...additionalSources[i.id]],
+  rules: [
+    ...i.rules,
+    ...additionalSources[i.id].flatMap((source) =>
+      source.fields.map((field) => ({
+        source: source.id,
+        field: field.id,
+        label:
+          field.type === "date"
+            ? `${source.role}: current on Oct 8, 2026`
+            : field.label,
+        operator:
+          field.type === "date" ||
+          field.id === "credits" ||
+          field.id === "available"
+            ? ("gte" as const)
+            : field.id === "deviations"
+              ? ("lte" as const)
+              : ("eq" as const),
+        value:
+          field.type === "date"
+            ? "2026-10-08"
+            : field.id === "credits"
+              ? 24
+              : field.id === "available"
+                ? 30000
+                : field.value,
+      })),
+    ),
+  ],
+}));
+
 export const industrySteps = [
   {
     title: "Capture",
@@ -456,7 +642,7 @@ export const industrySteps = [
   },
   {
     title: "Sign",
-    verb: "Sign three credentials",
+    verb: "Sign issuer credentials",
     description:
       "Each institution signs its own subject-bound credential with a distinct POD signing key. The signature authenticates claims; it cannot establish that entered data is true.",
   },
@@ -464,7 +650,7 @@ export const industrySteps = [
     title: "Store",
     verb: "Deliver to the wallet",
     description:
-      "The holder receives three credentials. Issuer copies stay in the source stores. No issuer receives another issuer’s source data.",
+      "The holder receives five credentials. Issuer copies stay in the source stores. No issuer receives another issuer’s source data.",
   },
   {
     title: "Present",
@@ -512,6 +698,12 @@ export type IndustryRun = Readonly<{
   id: string;
   industry: Industry;
   completed: number;
+  privateMode: boolean;
+  privatePods: readonly ReturnType<POD["toJSON"]>[];
+  privateInbox: null | {
+    proofs: readonly GpcProofEnvelope[];
+    signature: ReturnType<POD["toJSON"]>;
+  };
   holderSecret: string;
   holderPublicKey: string;
   challenge: string;
@@ -560,6 +752,7 @@ const sourceKey = (industry: Industry, sourceId: string) => {
 export const createIndustryRun = (
   industry: Industry,
   inputs = defaultIndustryInputs(industry),
+  privateMode = false,
 ): IndustryRun => {
   const holderSecret = Array.from(
     crypto.getRandomValues(new Uint8Array(32)),
@@ -568,6 +761,9 @@ export const createIndustryRun = (
   const id = crypto.randomUUID();
   return {
     id,
+    privateMode,
+    privatePods: [],
+    privateInbox: null,
     industry,
     completed: 0,
     holderSecret,
@@ -636,7 +832,29 @@ const presentationMessage = (run: IndustryRun, credentialsCommitment: string) =>
     subject: run.industry.subject,
     credentialsCommitment,
   });
-const advanceIndustry = async (run: IndustryRun): Promise<IndustryRun> => {
+export const criteriaRequest = (
+  run: IndustryRun,
+  sourceId: string,
+): CriteriaRequest => {
+  const source = run.industry.sources.find((s) => s.id === sourceId)!;
+  return {
+    schema: source.schema,
+    subject: run.industry.subject,
+    holderPublicKey: run.holderPublicKey,
+    issuerPublicKey: deriveSignerPublicKey(sourceKey(run.industry, sourceId)),
+    challenge: `${run.challenge}:${sourceId}`,
+    criteria: run.industry.rules
+      .filter((r) => r.source === sourceId)
+      .map((r) => ({
+        ...r,
+        kind: source.fields.find((f) => f.id === r.field)!.type,
+      })),
+  };
+};
+const advanceIndustry = async (
+  run: IndustryRun,
+  artifacts?: string,
+): Promise<IndustryRun> => {
   const next = (patch: Partial<IndustryRun>): IndustryRun => ({
     ...run,
     ...patch,
@@ -680,6 +898,13 @@ const advanceIndustry = async (run: IndustryRun): Promise<IndustryRun> => {
     }
     case 2:
       return next({
+        privatePods: run.prepared.map((claims) =>
+          issueCriteriaPod(
+            { ...criteriaRequest(run, claims.issuer), subject: claims.subject },
+            claims.fields,
+            sourceKey(run.industry, claims.issuer),
+          ).toJSON(),
+        ),
         issued: run.prepared.map((claims) => ({
           claims,
           pod: POD.sign(
@@ -691,6 +916,49 @@ const advanceIndustry = async (run: IndustryRun): Promise<IndustryRun> => {
     case 3:
       return next({ wallet: structuredClone(run.issued) });
     case 4: {
+      if (run.privateMode) {
+        const invalid = run.industry.rules.find((rule) => {
+          const c = run.wallet.find((c) => c.claims.issuer === rule.source);
+          const v = c?.claims.fields[rule.field];
+          return (
+            !c ||
+            !authenticateIndustryCredential(
+              c,
+              run.industry,
+              run.industry.sources.find((s) => s.id === rule.source)!,
+              run,
+            ) ||
+            !(rule.operator === "eq"
+              ? v === rule.value
+              : rule.operator === "gte"
+                ? v! >= rule.value
+                : v! <= rule.value)
+          );
+        });
+        if (invalid)
+          throw new IndustryError(
+            `Private preflight failed: ${invalid.label}. No proof or private values were sent. Correct the source input to continue.`,
+          );
+        const proofs: GpcProofEnvelope[] = [];
+        for (const [index, source] of run.industry.sources.entries())
+          proofs.push(
+            await proveCriteria(
+              POD.fromJSON(run.privatePods[index]!),
+              criteriaRequest(run, source.id),
+              artifacts,
+            ),
+          );
+        const signature = POD.sign(
+          {
+            presentation: {
+              type: "string",
+              value: presentationMessage(run, await commitValue(proofs)),
+            },
+          },
+          run.holderSecret,
+        ).toJSON();
+        return next({ privateInbox: { proofs, signature } });
+      }
       const credentials = structuredClone(run.wallet);
       const message = presentationMessage(run, await commitValue(credentials));
       return next({
@@ -704,6 +972,55 @@ const advanceIndustry = async (run: IndustryRun): Promise<IndustryRun> => {
       });
     }
     case 5: {
+      if (run.privateMode) {
+        if (!run.privateInbox)
+          throw new IndustryError("No private proof presentation received");
+        const { proofs, signature } = run.privateInbox;
+        const signer = POD.fromJSON(signature);
+        const checks: IndustryCheck[] = [
+          {
+            label: "Holder signature, proof set and request challenge",
+            satisfied:
+              signer.verifySignature() &&
+              signer.signerPublicKey === run.holderPublicKey &&
+              signer.content.getValue("presentation")?.value ===
+                presentationMessage(run, await commitValue(proofs)) &&
+              proofs.length === run.industry.sources.length,
+            detail: "No source claims disclosed",
+          },
+        ];
+        for (const [index, source] of run.industry.sources.entries()) {
+          const valid =
+            !!proofs[index] &&
+            (await verifyCriteria(
+              proofs[index]!,
+              criteriaRequest(run, source.id),
+              artifacts,
+            ));
+          for (const rule of run.industry.rules.filter(
+            (r) => r.source === source.id,
+          ))
+            checks.push({
+              label: rule.label,
+              satisfied: valid,
+              detail:
+                "Verified by source-specific zero-knowledge proof; exact value hidden",
+            });
+        }
+        const receipt = {
+          policyCommitment: await commitValue(
+            run.industry.sources.map((s) => criteriaRequest(run, s.id)),
+          ),
+          proofCommitment: await commitValue(run.privateInbox),
+          evidenceRoot: await commitValue(proofs.map((p) => p.proofCommitment)),
+          subjectNullifier: await commitValue({
+            holder: run.holderPublicKey,
+            challenge: run.challenge,
+          }),
+          satisfied: checks.every((c) => c.satisfied),
+        };
+        return next({ checks, receipt });
+      }
       if (!run.inbox) throw new IndustryError("No presentation received");
       const { credentials, presentation } = run.inbox;
       let holderValid = false;
@@ -791,9 +1108,9 @@ const advanceIndustry = async (run: IndustryRun): Promise<IndustryRun> => {
       throw new IndustryError("Run complete. Reset to enter new data.");
   }
 };
-export const advanceIndustryRun = (run: IndustryRun) =>
+export const advanceIndustryRun = (run: IndustryRun, artifacts?: string) =>
   Effect.tryPromise({
-    try: () => advanceIndustry(run),
+    try: () => advanceIndustry(run, artifacts),
     catch: (cause) =>
       cause instanceof IndustryError
         ? cause

@@ -231,3 +231,5 @@ export const verifyInsuranceRequirementEffect = (
   try: () => verifyInsuranceRequirement(envelope, requirement, artifactsPathOrUrl),
   catch: (cause) => new ProofError("Unable to verify GPC insurance proof", cause)
 });
+
+export * from "./criteria";

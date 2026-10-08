@@ -248,7 +248,33 @@ export function App() {
             industry={industries.find((i) => i.id === useCase)!}
           />
         ) : (
-          <>
+          <div className="theme-green">
+            <div className="industry-hero">
+              <div className="industry-orbit" aria-hidden="true">
+                <div className="orbit-ring" />
+                <div className="orbit-ring second" />
+                <IndustryIcon id="supplier" size={70} />
+              </div>
+              <div>
+                <Badge variant="outline">
+                  Supplier assurance / private qualification
+                </Badge>
+                <h2>
+                  One supplier. Independent evidence. A confident approval.
+                </h2>
+                <p>
+                  Follow insurance, security audits and quality certification
+                  from their issuers into a supplier wallet. Prove insurance
+                  thresholds privately and inspect the local audit and quality
+                  checks.
+                </p>
+                <div className="industry-pills">
+                  <span>15 institutions</span>
+                  <span>12 policy criteria</span>
+                  <span>Real insurance ZK proof</span>
+                </div>
+              </div>
+            </div>
             <Banner
               variant="secondary"
               title="A working, local sandbox"
@@ -257,7 +283,7 @@ export function App() {
             <section className="workspace">
               <LayerCard className="configuration">
                 <div className="section-heading">
-                  <span className="eyebrow">01 / SET THE SCENE</span>
+                  <span className="eyebrow">PARTICIPANTS & REQUIREMENTS</span>
                   <Badge variant="outline">In your browser</Badge>
                 </div>
                 <h2>Your assurance network</h2>
@@ -644,7 +670,7 @@ export function App() {
                 ))}
               </div>
             </section>
-          </>
+          </div>
         )}
         <footer>
           <span className="brand">

@@ -1172,7 +1172,7 @@ footer p {
   font-size: 12px;
   gap: 8px !important;
 }
-.journey-stages > button > span {
+.journey-stages .stage-index {
   font-size: 9px;
   border-radius: 50%;
   width: 23px;
@@ -1730,5 +1730,111 @@ footer p {
   }
   .store-stats span {
     font-size: 9px;
+  }
+}
+.theme-green {
+  --industry-accent: #4c7840;
+  --industry-tint: #edf5e7;
+  --industry-dark: #183b2c;
+}
+.industry-orbit > span {
+  left: calc(100px + 90px * cos(var(--i) * 72deg));
+  top: calc(100px + 90px * sin(var(--i) * 72deg));
+}
+.source-nodes {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.source-nodes .actor-node {
+  min-height: 115px;
+}
+.source-nodes .actor-node:nth-child(n + 4) {
+  grid-column: span 1;
+}
+.journey-presets > div:first-child {
+  min-width: 270px;
+  margin-right: 12px;
+}
+.approval-sources {
+  margin: 28px 0;
+}
+.approval-sources h3 {
+  font-size: 24px;
+  letter-spacing: -0.6px;
+  margin-top: 6px;
+}
+.approval-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+.approval-card {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+}
+.approval-card .section-heading {
+  margin-bottom: 12px;
+}
+.approval-card h4 {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.approval-card p {
+  font-size: 10px;
+  margin-top: 5px;
+}
+.approval-card ul {
+  padding: 0;
+  list-style: none;
+  margin: 16px 0;
+  flex: 1;
+}
+.approval-card li {
+  padding: 10px 0;
+  border-top: 1px solid #e0e6dd;
+}
+.approval-card li strong {
+  font-size: 11px;
+  line-height: 1.5;
+  font-weight: 500;
+  display: block;
+}
+.approval-card code {
+  font-size: 9px;
+  display: block;
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+  color: var(--industry-accent);
+}
+.approval-card > button {
+  align-self: flex-start;
+}
+.approval-sources > p {
+  font-size: 11px;
+  margin-top: 12px;
+}
+@media (max-width: 1100px) {
+  .approval-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 650px) {
+  .approval-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .approval-card {
+    padding: 13px;
+  }
+  .approval-card .section-heading {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .approval-sources > .section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .approval-sources h3 {
+    font-size: 22px;
   }
 }

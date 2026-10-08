@@ -24,12 +24,12 @@ it.each(industries)(
   async (industry) => {
     const run = await through(industry, 7);
     expect(run.receipt?.satisfied).toBe(true);
-    expect(run.issued).toHaveLength(3);
-    expect(new Set(run.issued.map((c) => c.pod.signerPublicKey)).size).toBe(3);
+    expect(run.issued).toHaveLength(5);
+    expect(new Set(run.issued.map((c) => c.pod.signerPublicKey)).size).toBe(5);
     expect(run.ledger).toHaveLength(1);
     expect(JSON.stringify(run.inbox)).not.toContain("internalNote");
     expect(JSON.stringify(run.ledger)).not.toContain("fields");
-    expect(Object.keys(run.raw)).toHaveLength(3);
+    expect(Object.keys(run.raw)).toHaveLength(5);
     expect(run.raw[industry.sources[0]!.id]?.internalNote).toBeTruthy();
   },
   30_000,

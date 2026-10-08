@@ -63,11 +63,12 @@ function DataDrawer({ title, value }: { title: string; value: unknown }) {
   );
 }
 export function IndustryLab({ industry }: { industry: Industry }) {
+  const [privateMode, setPrivateMode] = useState(true);
   const [inputs, setInputs] = useState<IndustryInputs>(() =>
     defaultIndustryInputs(industry),
   );
   const [run, setRun] = useState<IndustryRun>(() =>
-    createIndustryRun(industry),
+    createIndustryRun(industry, defaultIndustryInputs(industry), true),
   );
   const [history, setHistory] = useState<IndustryRun[]>([]);
   const [selected, setSelected] = useState(0);
@@ -82,11 +83,11 @@ export function IndustryLab({ industry }: { industry: Industry }) {
   const snapshot = history[selected] ?? run;
   const step = industrySteps[selected]!;
   const activeSource = industry.sources.find((s) => s.id === focus);
-  const reset = (next = inputs) => {
+  const reset = (next = inputs, mode = privateMode) => {
     generation.current++;
     locked.current = false;
     playingRef.current = false;
-    const fresh = createIndustryRun(industry, next);
+    const fresh = createIndustryRun(industry, next, mode);
     current.current = fresh;
     setRun(fresh);
     setHistory([]);
@@ -216,17 +217,99 @@ export function IndustryLab({ industry }: { industry: Industry }) {
           <h2>{industry.headline}</h2>
           <p>{industry.description}</p>
           <div className="industry-pills">
-            <span>3 independent issuers</span>
+            <span>{industry.sources.length} independent issuers</span>
             <span>7 working stages</span>
-            <span>Editable source data</span>
+            <span>{industry.rules.length} approval criteria</span>
           </div>
         </div>
       </div>
       <Banner
         variant="secondary"
-        title="Real signatures. Transparent data sharing."
-        description="These three industry examples use real issuer signatures and holder-signed presentations, with local policy verification. All signed claims are disclosed to the verifier. The supplier-assurance example demonstrates the separate insurance zero-knowledge proof. All data and systems here are fictional and live only in browser memory."
+        title={
+          privateMode
+            ? "Private approval with real zero-knowledge proofs"
+            : "Disclosed credential comparison mode"
+        }
+        description={
+          privateMode
+            ? "Five issuer-specific GPC proofs establish the ten approval criteria. Exact values, dates and credential signatures stay in the wallet. Subject, holder public key, trusted issuer keys, thresholds and request challenge remain public. Equality checks imply their required value. POD/GPC is beta and unaudited."
+            : "All signed claims are disclosed in comparison mode. Real signatures and request binding remain checked. These fictional systems exist only in browser memory."
+        }
       />
+      <section className="approval-sources">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">THE APPROVAL CONTRACT</span>
+            <h3>
+              {industry.sources.length} sources. {industry.rules.length}{" "}
+              independent criteria.
+            </h3>
+          </div>
+          <Badge variant="outline">
+            {privateMode
+              ? "Proven without exact values"
+              : "Disclosed comparison"}
+          </Badge>
+        </div>
+        <div className="approval-grid">
+          {industry.sources.map((source) => (
+            <LayerCard className="approval-card" key={source.id}>
+              <div className="section-heading">
+                <span className="actor-avatar">{source.short}</span>
+                <Badge variant="secondary">
+                  {privateMode ? "ZK proof" : "Signed record"}
+                </Badge>
+              </div>
+              <h4>{source.name}</h4>
+              <p>{source.role}</p>
+              <ul>
+                {industry.rules
+                  .filter((r) => r.source === source.id)
+                  .map((rule) => (
+                    <li key={rule.field}>
+                      <strong>{rule.label}</strong>
+                      <code>
+                        {rule.field}{" "}
+                        {rule.operator === "eq"
+                          ? "="
+                          : rule.operator === "gte"
+                            ? "≥"
+                            : "≤"}{" "}
+                        {String(rule.value)}
+                      </code>
+                    </li>
+                  ))}
+              </ul>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setFocus(source.id);
+                  document
+                    .querySelector(".institution-console")
+                    ?.scrollIntoView({
+                      behavior: window.matchMedia(
+                        "(prefers-reduced-motion: reduce)",
+                      ).matches
+                        ? "auto"
+                        : "smooth",
+                      block: "start",
+                    });
+                }}
+              >
+                Inspect source <ArrowRightIcon />
+              </Button>
+            </LayerCard>
+          ))}
+        </div>
+        <p>
+          Thresholds and required categories are public. Private proofs hide
+          exact numerical values and expiry dates; equality criteria necessarily
+          reveal that the required category or boolean is satisfied. This demo
+          does not prove the underlying real-world truth of an issuer’s
+          assertion.
+        </p>
+      </section>
       <LayerCard className="journey-control">
         <div>
           <span className="eyebrow">YOUR EXPERIMENT</span>
@@ -261,6 +344,22 @@ export function IndustryLab({ industry }: { industry: Industry }) {
         </div>
       </LayerCard>
       <div className="journey-presets">
+        <Select<string>
+          label="Approval privacy"
+          value={privateMode ? "private" : "disclosed"}
+          items={[
+            { label: "Private proofs · hide source values", value: "private" },
+            { label: "Disclosed credentials · compare", value: "disclosed" },
+          ]}
+          disabled={busy || playing}
+          onValueChange={(value) => {
+            if (value) {
+              setPrivateMode(value === "private");
+              reset(inputs, value === "private");
+            }
+          }}
+        />
+
         <span>TRY A SCENARIO</span>
         <Button
           size="sm"
@@ -300,7 +399,7 @@ export function IndustryLab({ industry }: { industry: Industry }) {
             }}
             aria-current={selected === index ? "step" : undefined}
           >
-            <span>{index < run.completed ? "✓" : `0${index + 1}`}</span>
+            <span className="stage-index">{index < run.completed ? "✓" : `0${index + 1}`}</span>
             {s.title}
           </Button>
         ))}
@@ -369,9 +468,11 @@ export function IndustryLab({ industry }: { industry: Industry }) {
             <div className="data-wire">
               <i />
               <span>
-                {snapshot.inbox
-                  ? "Signed claims + holder signature shared"
-                  : "Holder chooses what to present"}
+                {snapshot.privateInbox
+                  ? "Zero-knowledge proofs · values stay private"
+                  : snapshot.inbox
+                    ? "Signed claims + holder signature shared"
+                    : "Holder chooses what to present"}
               </span>
             </div>
             <Button
@@ -387,7 +488,7 @@ export function IndustryLab({ industry }: { industry: Industry }) {
                     ? snapshot.receipt.satisfied
                       ? "Verified · policy satisfied"
                       : "Verified · policy failed"
-                    : snapshot.inbox
+                    : snapshot.inbox || snapshot.privateInbox
                       ? "Presentation received"
                       : "Inbox empty"}
                 </small>
@@ -421,8 +522,20 @@ export function IndustryLab({ industry }: { industry: Industry }) {
               </Badge>
               <span className="eyebrow">STAGE {selected + 1}</span>
             </div>
-            <h3>{step.verb}</h3>
-            <p>{step.description}</p>
+            <h3>
+              {privateMode && selected === 4
+                ? "Prove the approval criteria privately"
+                : step.verb}
+            </h3>
+            <p>
+              {privateMode && selected === 4
+                ? "The wallet checks the criteria locally, then generates one real zero-knowledge proof per issuer. Failing criteria stop the flow without sharing source values. Proof generation can take a minute or longer on the first run."
+                : privateMode && selected === 5
+                  ? "The verifier checks every proof against its own source-specific policy, accepted issuer, subject, holder binding and challenge. It receives no raw credentials or exact field values."
+                  : step.description.replace(/three|3 /g, (match) =>
+                      match === "three" ? "five" : "5 ",
+                    )}
+            </p>
             <div className="stage-io">
               <div>
                 <span>INPUT</span>
@@ -434,7 +547,9 @@ export function IndustryLab({ industry }: { industry: Industry }) {
                       "Validated credential claims",
                       "Signed issuer credentials",
                       "Wallet + fresh challenge",
-                      "Signed presentation",
+                      privateMode
+                        ? "Request-bound proof bundle"
+                        : "Signed presentation",
                       "Local verification receipt",
                     ][selected]
                   }
@@ -448,9 +563,11 @@ export function IndustryLab({ industry }: { industry: Industry }) {
                     [
                       "Separate institution stores",
                       "Subject + schema + claims",
-                      "3 independent signatures",
-                      "3 wallet copies",
-                      "Verifier inbox",
+                      `${industry.sources.length} independent signatures`,
+                      `${industry.sources.length} wallet copies`,
+                      privateMode
+                        ? "Five proofs; no source claims"
+                        : "Verifier inbox",
                       "Checks + decision receipt",
                       "Simulated public ledger",
                     ][selected]
@@ -467,7 +584,11 @@ export function IndustryLab({ industry }: { industry: Industry }) {
             )}
             <div aria-live="polite">
               {busy ? (
-                <p>Processing actual local data…</p>
+                <p>
+                  {privateMode && selected === 4
+                    ? "Generating five real private proofs sequentially. This can take a minute or longer; no simulated completion."
+                    : "Processing actual local data…"}
+                </p>
               ) : (
                 !pending && (
                   <p className="stage-status">
@@ -693,8 +814,16 @@ export function IndustryLab({ industry }: { industry: Industry }) {
                 </div>
                 <Banner
                   variant="secondary"
-                  title="This presentation discloses the signed claims"
-                  description="The holder signs the verifier challenge and a commitment to all three credentials. Exact values go to the verifier in these examples; no ZK privacy is claimed."
+                  title={
+                    privateMode
+                      ? "Only proofs cross the privacy boundary"
+                      : "This presentation discloses the signed claims"
+                  }
+                  description={
+                    privateMode
+                      ? "Issuer credentials supply private witnesses. The holder signs the proof bundle for this request. Exact values and signatures remain local; the verifier sees policies, context and proofs."
+                      : "The holder signs the verifier challenge and a commitment to all five credentials. Exact values go to the verifier in this comparison mode."
+                  }
                 />
               </>
             )}
@@ -705,9 +834,12 @@ export function IndustryLab({ industry }: { industry: Industry }) {
                   <span>Application inbox & decision engine</span>
                 </div>
                 <p>
-                  Receives {snapshot.inbox ? 3 : 0} signed credentials. Checks
-                  each against the expected issuer key, subject and schema, then
-                  evaluates the following requirements.
+                  Receives{" "}
+                  {snapshot.privateInbox
+                    ? `${snapshot.privateInbox.proofs.length} private proofs`
+                    : `${snapshot.inbox?.credentials.length ?? 0} signed credentials`}
+                  . Checks each against the expected issuer key, subject and
+                  schema, then evaluates the following requirements.
                 </p>
                 <div className="verifier-rules">
                   {snapshot.checks.length
@@ -739,12 +871,15 @@ export function IndustryLab({ industry }: { industry: Industry }) {
                         ? "Application accepted by demo policy"
                         : "Application does not meet demo policy"
                     }
-                    description="The outcome is computed from the received signed data. These example policies do not represent a real institution’s requirements."
+                    description="The outcome is computed from verified proofs or disclosed credentials, depending on the selected mode. These example policies do not represent a real institution’s requirements."
                   />
                 )}
                 <DataDrawer
                   title="Inspect exact verifier inbox"
-                  value={snapshot.inbox ?? { state: "No presentation sent" }}
+                  value={
+                    snapshot.privateInbox ??
+                    snapshot.inbox ?? { state: "No presentation sent" }
+                  }
                 />
                 <DataDrawer
                   title="Inspect decision receipt"
@@ -800,11 +935,10 @@ export function IndustryLab({ industry }: { industry: Industry }) {
                   />
                 )}
                 <p>
-                  evidenceRoot here is a hash of the credential set, not a
-                  Merkle root. proofCommitment names the contract field; in
-                  these examples it commits to the signed presentation, not a
-                  zero-knowledge proof. The holder-derived nullifier is scoped
-                  to this request.
+                  evidenceRoot hashes the proof-commitment set in private mode,
+                  or the credential set in disclosed mode; it is not a Merkle
+                  root. proofCommitment commits to the selected presentation.
+                  The holder-derived nullifier is scoped to this request.
                 </p>
               </>
             )}
@@ -855,8 +989,23 @@ export function IndustryLab({ industry }: { industry: Industry }) {
                     {snapshot.issued.length ? "Own only" : "—"}
                   </td>
                 ))}
-                <td>{snapshot.wallet.length ? "All 3" : "—"}</td>
-                <td>{snapshot.inbox ? "All 3" : "—"}</td>
+                <td>
+                  {snapshot.wallet.length
+                    ? `All ${industry.sources.length}`
+                    : "—"}
+                </td>
+                <td>
+                  {snapshot.inbox ? `All ${industry.sources.length}` : "—"}
+                </td>
+                <td>—</td>
+              </tr>
+              <tr>
+                <th>Private proof bundle</th>
+                {industry.sources.map((s) => (
+                  <td key={s.id}>—</td>
+                ))}
+                <td>{snapshot.privateInbox ? "Generated" : "—"}</td>
+                <td>{snapshot.privateInbox ? "Proofs only" : "—"}</td>
                 <td>—</td>
               </tr>
               <tr>

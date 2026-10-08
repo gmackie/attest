@@ -175,28 +175,41 @@ this demo.
 
 ## Industry data journeys
 
-The landing page now offers four experiences. Supplier assurance retains its real
-insurance GPC proof. Three additional interactive journeys use issuer-signed POD
-credentials and holder-signed, challenge-bound presentations:
+All four examples have matching industry headers. Healthcare, education and
+cold-chain logistics each include five independently signed sources and ten
+explicit approval criteria:
 
-| Industry | Source institutions | Example decision | Failure preset |
-| --- | --- | --- | --- |
-| Healthcare workforce | Nursing board, training institute, previous clinic | License, training and experience qualify for placement | Expired license |
-| Education | University, language assessment, scholarship foundation | Degree, score and funding qualify for admission | Insufficient language score |
-| Cold-chain logistics | Monitoring provider, laboratory, carrier | Temperature, lot test and custody qualify a shipment | Temperature excursion |
+| Industry | Evidence sources | Approval examples |
+| --- | --- | --- |
+| Healthcare | License board, training institute, employer, screening provider, occupational health | Current license and screening, training, experience, fitness clearance |
+| Education | University, language assessment, scholarship foundation, course registry, funding trust | Degree/GPA, language score, scholarship, prerequisite credits, sufficient funds |
+| Cold-chain logistics | Monitoring provider, lab, carrier, calibration bureau, manufacturer QA | Temperature range, lot tests/expiry, custody, calibrated sensors, batch release |
 
-Every journey has editable source fields and internal notes. Seven executable
-stages capture separate source stores, validate and map claims, sign credentials,
-copy them into a holder wallet, present them to a verifier, independently verify
-signatures/bindings/policy, and simulate a receipt ledger. Selecting an institution
-shows its input form, counts, stored records, signed messages or verifier inbox.
-The ownership table follows the selected stage's immutable snapshot. Editing inputs
-resets the request and discards stale asynchronous results.
+The new journeys default to **private proof mode**. Issuers sign field-addressable
+PODs alongside their display credentials. The holder wallet checks feasibility and
+then generates a real GPC/Groth16 proof for each source. Each proof is bound to the
+expected issuer, schema, subject, holder public key, policy and fresh source-specific
+challenge. The holder separately signs the exact proof bundle for the verifier's
+request. The verifier reconstructs every expected proof configuration and public
+input before cryptographic verification. Numeric fields use a fixed scale of 1,000
+(up to three decimal places); dates use epoch days.
 
-These three examples **disclose all signed claims to the verifier** and do not
-claim zero-knowledge privacy. Internal notes stay in the logical issuer stores.
-The receipt's `proofCommitment` commits to the signed presentation, and its
-`evidenceRoot` hashes the credential set (not a Merkle tree). All institution stores
-are logical partitions in browser memory, with no production access isolation,
-remote API, persistence after reload, or chain transaction. Demo policies use a
-fixed October 8, 2026 evaluation date and do not represent real institutions.
+Exact numeric values, dates, credential records and issuer signatures stay private.
+Subjects, holder public keys, trusted issuer keys, policy thresholds and challenges
+remain public. Equality checks necessarily imply their required categorical or
+boolean value. Failed private preflight sends no proof or source values. These
+proofs establish signed assertions and policy satisfaction, not real-world truth.
+POD/GPC remains beta and unaudited.
+
+A disclosed comparison mode sends the signed credentials instead, allowing users
+to inspect the difference in verifier inboxes. The institution workspace and stage
+ownership table show input records, mapped claims, issued credentials, wallet
+copies, proof bundles and decision commitments. Internal notes never leave source
+stores. Editing any input resets the request and invalidates late async results.
+
+`proofCommitment` hashes the selected presentation. In private mode, `evidenceRoot`
+is a hash of the proof-commitment set; in disclosed mode it hashes the credential
+set. Neither is a Merkle tree. All stores are logical partitions in browser memory,
+with no production access isolation or persistence. Ledger inclusion is a local
+illustration, not a chain transaction. Supplier assurance retains its insurance
+proof plus local SOC 2 / ISO checks. Demo policies use fixed October 2026 dates.

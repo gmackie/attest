@@ -534,9 +534,7 @@ export function IndustryLab({
                   ? "The wallet checks the criteria locally, then generates one real zero-knowledge proof per issuer. Failing criteria stop the flow without sharing source values. Proof generation can take a minute or longer on the first run."
                   : privateMode && selected === 5
                     ? "The verifier checks every proof against its own source-specific policy, accepted issuer, subject, holder binding and challenge. It receives no raw credentials or exact field values."
-                    : step.description.replace(/three|3 /g, (match) =>
-                        match === "three" ? "five" : "5 ",
-                      )}
+                    : step.description.replace(/three|five|3 |5 /g, () => `${industry.sources.length} `)}
               </p>
               <div className="stage-io">
                 <div>
@@ -588,7 +586,7 @@ export function IndustryLab({
                 {busy ? (
                   <p>
                     {privateMode && selected === 4
-                      ? "Generating five real private proofs sequentially. This can take a minute or longer; no simulated completion."
+                      ? `Generating ${industry.sources.length} real private proofs sequentially. This can take a minute or longer; no simulated completion.`
                       : "Processing actual local data…"}
                   </p>
                 ) : (
@@ -842,7 +840,7 @@ export function IndustryLab({
                     description={
                       privateMode
                         ? "Issuer credentials supply private witnesses. The holder signs the proof bundle for this request. Exact values and signatures remain local; the verifier sees policies, context and proofs."
-                        : "The holder signs the verifier challenge and a commitment to all five credentials. Exact values go to the verifier in this comparison mode."
+                        : `The holder signs the verifier challenge and a commitment to all ${industry.sources.length} credentials. Exact values go to the verifier in this comparison mode.`
                     }
                   />
                 </>

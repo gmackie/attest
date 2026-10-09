@@ -58,7 +58,7 @@ export function ContractExplorer({
         <div>
           <span>APPROVAL LOGIC</span>
           <strong>ALL clauses must pass</strong>
-          <code>5 independent source proofs</code>
+          <code>{industry.sources.length} independent source proofs</code>
         </div>
       </div>
       <div className="controls">

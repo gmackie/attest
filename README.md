@@ -231,3 +231,18 @@ substitution. Private proofs and holder presentations remain bound to the fresh
 challenge. All clauses are conjunctive; no alternatives or cross-source arithmetic
 are implied. Retention and future-monitoring duties are explanatory only. These
 are fictional approval specifications, not legal advice or on-chain contracts.
+
+## EVM and credential clearinghouses
+
+The shared architecture explorer walks through ABI call preparation, transaction
+signing and gas, RPC submission, EVM execution, finality, and application-level
+interpretation. It separates contract state, public calldata/logs, and private
+evidence/witness custody, and documents AssuranceAnchor’s actual enforcement
+boundary: receipt events contain caller assertions, not verified proofs.
+
+Four proposed coordination models compare direct federation, registry services,
+managed verification, and consortium governance. A clinical example traces scoped
+authorities through holder presentations to independent buyer verification. Six
+illustrative decision scenarios explain revocation, freshness, request binding,
+untrusted receipt callers, and outages. These are educational UI states, not live
+status checks, deployed clearinghouses, or blockchain transactions.

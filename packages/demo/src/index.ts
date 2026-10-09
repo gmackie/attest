@@ -574,3 +574,5 @@ export * from "./workspace";
 
 export * from "./supplier";
 export * from "./connected-proof";
+
+export * from "./testnet-journey";

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Badge, Button, LayerCard, LinkButton } from "@cloudflare/kumo";
 import { FingerprintIcon } from "@phosphor-icons/react";
 import { industries, supplierIndustry } from "@attest/demo";
@@ -7,6 +7,9 @@ import { WalletWorkspace } from "./WalletWorkspace";
 import { ConnectedWorkspace } from "./ConnectedWorkspace";
 import { StandardsExplorer } from "./StandardsExplorer";
 import { InfrastructureExplorer } from "./InfrastructureExplorer";
+const TestnetJourney = lazy(() =>
+  import("./TestnetJourney").then((m) => ({ default: m.TestnetJourney })),
+);
 const stories = [supplierIndustry, ...industries];
 function route() {
   return location.hash.slice(1) || "/";
@@ -27,6 +30,7 @@ export function App() {
     path === "/explore" ||
     !!story ||
     path === "/sandbox" ||
+    path.split("?")[0] === "/demo" ||
     path.startsWith("/app") ||
     path === "/learn" ||
     path.startsWith("/learn/") ||
@@ -41,6 +45,7 @@ export function App() {
         <nav aria-label="Primary navigation">
           {[
             { name: "Explore", href: "/explore" },
+            { name: "Testnet demo", href: "/demo" },
             { name: "Workspace", href: "/app" },
             { name: "Learn", href: "/learn" },
             { name: "Developers", href: "/developers" },
@@ -77,8 +82,8 @@ export function App() {
                 <LinkButton href="#/explore" variant="primary">
                   Try a guided demo
                 </LinkButton>
-                <LinkButton href="#/app" variant="secondary">
-                  Open your workspace
+                <LinkButton href="#/demo" variant="secondary">
+                  Try with a real wallet
                 </LinkButton>
               </div>
             </section>
@@ -172,6 +177,15 @@ export function App() {
             </div>
             <WalletWorkspace />
           </section>
+        )}
+        {path.split("?")[0] === "/demo" && (
+          <Suspense
+            fallback={
+              <p className="page-section">Opening the testnet journey…</p>
+            }
+          >
+            <TestnetJourney key={path} />
+          </Suspense>
         )}
         {path.startsWith("/app") && <ConnectedWorkspace />}
         {(path === "/learn" || path.startsWith("/learn/")) && (

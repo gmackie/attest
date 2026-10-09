@@ -2,7 +2,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import solc from "solc";
 
-for (const name of ["AssuranceAnchor", "WorkspaceRegistry"]) {
+for (const name of [
+  "AssuranceAnchor",
+  "WorkspaceRegistry",
+  "DemoJourneyRegistry",
+]) {
   const sourcePath = new URL(`../src/${name}.sol`, import.meta.url);
   const source = await fs.readFile(sourcePath, "utf8");
   const input = {
@@ -10,7 +14,11 @@ for (const name of ["AssuranceAnchor", "WorkspaceRegistry"]) {
     sources: { [`${name}.sol`]: { content: source } },
     settings: {
       evmVersion: "paris",
-      outputSelection: { "*": { "*": ["abi", "evm.bytecode.object"] } },
+      outputSelection: {
+        "*": {
+          "*": ["abi", "evm.bytecode.object", "evm.deployedBytecode.object"],
+        },
+      },
     },
   };
   const output = JSON.parse(solc.compile(JSON.stringify(input)));
@@ -30,16 +38,17 @@ for (const name of ["AssuranceAnchor", "WorkspaceRegistry"]) {
   );
   console.log(`compiled ${destination}`);
 
-  if (name === "WorkspaceRegistry") {
+  if (name !== "AssuranceAnchor") {
     const publicDir = new URL(
       "../../apps/web/public/contracts/",
       import.meta.url,
     );
     await fs.mkdir(publicDir, { recursive: true });
     await fs.writeFile(
-      new URL("WorkspaceRegistry.json", publicDir),
+      new URL(`${name}.json`, publicDir),
       JSON.stringify({
         abi: contract.abi,
+        deployedBytecode: `0x${contract.evm.deployedBytecode.object}`,
         bytecode: `0x${contract.evm.bytecode.object}`,
       }),
     );

@@ -276,3 +276,19 @@ there is no Attest evidence server or automatic remote synchronization. This is
 experimental custody, not production key management. See
 [connected-workspaces.md](specs/connected-workspaces.md) for setup, disclosure,
 contract semantics, recovery and outstanding production gates.
+
+## Guided testnet passport
+
+**Testnet demo** (`/#/demo`) walks visitors through fictional training, employment
+experience and liability assurance institutions using their own Sepolia wallet.
+The guided flow handles issuance, salted content anchoring, explicit disclosure,
+three real private proofs and current chain-status verification without JSON
+copy/paste. An optional holder-recorded receipt is clearly distinguished from
+on-chain proof verification.
+
+The host launches the shared `DemoJourneyRegistry` with one funded Sepolia wallet
+transaction, shares the generated invitation, and supplies its public address for
+`apps/web/public/demo-deployment.json`. Until that transaction, the launch screen
+shows the pending setup rather than inventing a deployment. See
+[guided-testnet.md](specs/guided-testnet.md) for host activation, custody, wallet
+requirements, fictional issuer semantics and the on-chain data boundary.

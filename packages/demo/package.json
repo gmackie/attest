@@ -16,6 +16,8 @@
     "@attest/proofs": "workspace:*",
     "@attest/wallet": "workspace:*",
     "@pcd/pod": "0.5.1",
-    "effect": "4.0.2"
+    "effect": "4.0.2",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.5"
   }
 }

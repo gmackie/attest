@@ -261,3 +261,23 @@ local Attest model, domain examples, and the optional EVM reference contract. Th
 map does not claim VC, OpenID, JSON-LD, SHACL, or domain certification conformance.
 A worked composition explains why importing or re-signing credentials requires
 explicit provenance and trust rules rather than assuming proof compatibility.
+
+## Personal and organization wallet workspaces
+
+The default demo now opens a persistent wallet workspace: issue credentials as the
+board and training provider, create a hospital request, prepare private proofs as
+Jordan, inspect and approve disclosure, then verify at the hospital. Revoke a
+credential and recheck to see a distinct current-status failure. A status outage
+produces a pending decision, not approval. Existing industry journeys are still
+available through **Industry walkthroughs**.
+
+`pnpm attest --help` opens the matching CLI. UI and CLI share document validation,
+issuance, proof preparation, request binding, approval, status, and verification
+operations. Both expose readable wallet manifests, issuance templates, trust
+profiles, requests and decision records with a generated JSON Schema. See
+[wallet-workspaces.md](specs/wallet-workspaces.md) for the runnable CLI sequence,
+format, privacy boundary, and storage details.
+
+This is a fictional local sandbox: public demo keys, simulated participant roles,
+and unencrypted storage. It does not implement passkey login, production key
+custody, team authentication, or live standards adapters. Never enter real data.

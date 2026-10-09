@@ -1,0 +1,7 @@
+{
+  "name": "@attest/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": { "@attest/demo": "workspace:*", "effect": "4.0.2" }
+}

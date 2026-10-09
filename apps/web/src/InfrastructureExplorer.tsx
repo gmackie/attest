@@ -303,9 +303,10 @@ export function InfrastructureExplorer() {
               </p>
               <p>
                 Never submit raw evidence or secret witnesses as calldata. A
-                commitment cannot recover missing documents. The demo’s logical
-                stores live in browser memory, without server isolation or
-                persistence.
+                commitment cannot recover missing documents. Industry
+                walkthrough stores live in memory; wallet workspaces persist in
+                unencrypted local browser storage. Neither provides server
+                isolation.
               </p>
             </LayerCard>
           </div>

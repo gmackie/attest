@@ -10,3 +10,7 @@ contracts/artifacts/
 .DS_Store
 
 .wrangler/
+
+# Local wallet CLI demo state
+attest-wallet-demo.json
+attest-wallet-demo.json.*

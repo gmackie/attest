@@ -570,3 +570,4 @@ export const publicPresentation = (run: DemoRun) => {
 export * from "./industries";
 
 export * from "./contracts";
+export * from "./workspace";

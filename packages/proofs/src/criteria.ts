@@ -15,6 +15,7 @@ export type PrivateCriterion = {
   kind: "text" | "number" | "boolean" | "date";
 };
 export type CriteriaRequest = {
+  contentID?: string;
   schema: string;
   subject: string;
   holderPublicKey: string;
@@ -80,6 +81,7 @@ const material = (r: CriteriaRequest) => {
           holder: { isRevealed: false },
         },
         signerPublicKey: { isRevealed: false, isMemberOf: "issuers" },
+        ...(r.contentID ? { contentID: { isRevealed: true } } : {}),
       },
     },
     tuples: {
@@ -171,6 +173,11 @@ export async function verifyCriteria(
       return false;
     const bound = gpc.boundConfigFromJSON(envelope.boundConfig),
       claims = gpc.revealedClaimsFromJSON(envelope.revealedClaims);
+    if (
+      request.contentID &&
+      claims.pods.credential?.contentID?.toString() !== request.contentID
+    )
+      return false;
     if (
       canonicalJson(claims.membershipLists) !== canonicalJson(lists) ||
       canonicalJson(claims.watermark) !==

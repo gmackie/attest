@@ -10,7 +10,7 @@ import { Effect } from "effect";
 import { POD, deriveSignerPublicKey } from "@pcd/pod";
 import { canonicalJson, commitValue } from "@attest/core";
 
-export type IndustryId = "healthcare" | "education" | "logistics";
+export type IndustryId = "healthcare" | "education" | "logistics" | "supplier";
 export type FieldValue = string | number | boolean;
 export type SourceField = Readonly<{
   id: string;
@@ -451,6 +451,7 @@ const baseIndustries: readonly Industry[] = [
   },
 ];
 const additionalSources: Record<IndustryId, readonly IndustrySource[]> = {
+  supplier: [],
   healthcare: [
     {
       id: "screening",
@@ -746,7 +747,7 @@ export const defaultIndustryInputs = (industry: Industry): IndustryInputs =>
   );
 // Deliberately public demonstration keys, unique across industry/source pairs.
 const sourceKey = (industry: Industry, sourceId: string) => {
-  const i = industries.findIndex((item) => item.id === industry.id);
+  const i = { healthcare: 0, education: 1, logistics: 2, supplier: 3 }[industry.id];
   const j = industry.sources.findIndex((item) => item.id === sourceId);
   if (i < 0 || j < 0) throw new Error("Unknown issuer");
   return (1000 + i * 10 + j).toString(16).padStart(64, "0");

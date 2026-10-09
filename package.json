@@ -9,7 +9,7 @@
   "packageManager": "pnpm@10.32.1",
   "scripts": {
     "dev": "pnpm --filter @attest/web dev",
-    "build": "pnpm --filter @attest/web build && pnpm --filter @attest/contracts build",
+    "build": "pnpm --filter @attest/contracts build && pnpm --filter @attest/web build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -14,3 +14,5 @@ contracts/artifacts/
 # Local wallet CLI demo state
 attest-wallet-demo.json
 attest-wallet-demo.json.*
+
+apps/web/public/contracts/

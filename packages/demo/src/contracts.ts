@@ -6,6 +6,19 @@ export const contractLevels = [
   { value: "critical", label: "Critical engagement" },
 ] as const;
 const contexts = {
+  supplier: {
+    title: "Project 817 Supplier Assurance Agreement",
+    purpose:
+      "Qualification for industrial-controls supply to Northstar Procurement",
+    scope:
+      "Atlas Industrial Controls and the named Project 817 engagement only. Coverage, audit and certification assertions each remain within one coherent source record. Financial capacity does not reserve funds, and screening is limited to the named fictional profile.",
+    retention:
+      "Source policy documents, audit workpapers, bank records and screening details remain with their custodians. The buyer receives request-bound proofs and their public inputs; exact values remain private in proof mode.",
+    event:
+      "Coverage withdrawal, certification suspension, screening changes or capacity reductions require a new evaluation. Notification and future monitoring are contractual obligations, not facts proven by a snapshot.",
+    exclusion:
+      "Fictional qualification profile; no ACORD, AICPA or ISO conformance or endorsement. This is not legal eligibility, indemnity enforcement, reserved capacity, or a guarantee of future delivery.",
+  },
   healthcare: {
     title: "Clinical Placement Assurance Agreement",
     purpose: "Permission to begin an assigned nursing placement",
@@ -70,30 +83,52 @@ export function withContract(base: Industry, level: ContractLevel): Industry {
   const overrides: Record<string, number | string> =
     level === "standard"
       ? {}
-      : base.id === "healthcare"
+      : base.id === "supplier"
         ? {
-            "employer.experience": level === "critical" ? 5 : 3,
-            "training-center.hours": level === "critical" ? 40 : 24,
-            "license-board.validThrough":
-              level === "critical" ? "2027-12-31" : "2027-06-30",
-            "occupational.validThrough":
-              level === "critical" ? "2027-12-31" : "2027-06-30",
+            "insurance.aggregate": level === "critical" ? 10000000 : 5000000,
+            "insurance.occurrence": level === "critical" ? 5000000 : 2000000,
+            "audit.periodMonths": 12,
+            "finance.liquidity": level === "critical" ? 2000000 : 750000,
+            "cyber.coverage": level === "critical" ? 5000000 : 2000000,
+            "capacity.units": level === "critical" ? 2500 : 1250,
+            ...Object.fromEntries(
+              [
+                "insurance",
+                "quality",
+                "finance",
+                "cyber",
+                "screening",
+                "capacity",
+              ].map((id) => [
+                id + ".validThrough",
+                level === "critical" ? "2028-06-30" : "2027-12-31",
+              ]),
+            ),
           }
-        : base.id === "education"
+        : base.id === "healthcare"
           ? {
-              "university.gpa": level === "critical" ? 3.8 : 3.5,
-              "assessment.score": level === "critical" ? 115 : 110,
-              "foundation.award": level === "critical" ? 25000 : 20000,
-              "prerequisites.credits": level === "critical" ? 48 : 30,
-              "funding.available": level === "critical" ? 60000 : 40000,
+              "employer.experience": level === "critical" ? 5 : 3,
+              "training-center.hours": level === "critical" ? 40 : 24,
+              "license-board.validThrough":
+                level === "critical" ? "2027-12-31" : "2027-06-30",
+              "occupational.validThrough":
+                level === "critical" ? "2027-12-31" : "2027-06-30",
             }
-          : {
-              "sensor.minimum": level === "critical" ? 4 : 3,
-              "sensor.maximum": level === "critical" ? 5 : 7,
-              "carrier.handoffs": level === "critical" ? 1 : 2,
-              "calibration.validThrough":
-                level === "critical" ? "2027-12-31" : "2027-03-31",
-            };
+          : base.id === "education"
+            ? {
+                "university.gpa": level === "critical" ? 3.8 : 3.5,
+                "assessment.score": level === "critical" ? 115 : 110,
+                "foundation.award": level === "critical" ? 25000 : 20000,
+                "prerequisites.credits": level === "critical" ? 48 : 30,
+                "funding.available": level === "critical" ? 60000 : 40000,
+              }
+            : {
+                "sensor.minimum": level === "critical" ? 4 : 3,
+                "sensor.maximum": level === "critical" ? 5 : 7,
+                "carrier.handoffs": level === "critical" ? 1 : 2,
+                "calibration.validThrough":
+                  level === "critical" ? "2027-12-31" : "2027-03-31",
+              };
   const rules = base.rules.map((r) => {
     const value = overrides[`${r.source}.${r.field}`];
     return value === undefined

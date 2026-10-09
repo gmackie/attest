@@ -55,6 +55,7 @@ function download(name: string, value: string, type = "application/yaml") {
 }
 export function WalletWorkspace() {
   const [state, setState] = useState<Workspace>(() => createWorkspace());
+  const [workspaceTab, setWorkspaceTab] = useState("tasks");
   const [actor, setActor] = useState<Actor>("jordan");
   const [ready, setReady] = useState(false),
     [busy, setBusy] = useState(false);
@@ -175,6 +176,7 @@ export function WalletWorkspace() {
   };
   const switchActor = (value: Actor) => {
     setActor(value);
+    setWorkspaceTab("tasks");
     setConsent(false);
     setEditor("");
     setNotice("");
@@ -237,7 +239,18 @@ export function WalletWorkspace() {
             ? 3
             : 4;
   return (
-    <section className="wallet-workspace" aria-label="Wallet workspace">
+    <section
+      className="wallet-workspace"
+      data-tab={workspaceTab}
+      data-role={
+        actor === "jordan"
+          ? "holder"
+          : actor === "hospital"
+            ? "verifier"
+            : "issuer"
+      }
+      aria-label="Wallet workspace"
+    >
       <div className="wallet-hero">
         <div>
           <span className="eyebrow">
@@ -312,6 +325,34 @@ export function WalletWorkspace() {
         </div>
         <Badge variant="outline">{busy ? "Working…" : "Saved locally"}</Badge>
       </div>
+      <nav className="controls workspace-tabs" aria-label="Workspace tasks">
+        {[
+          {
+            id: "tasks",
+            label: issuer
+              ? "Issue"
+              : actor === "hospital"
+                ? "Inbox & decisions"
+                : "Inbox",
+          },
+          {
+            id: "records",
+            label: actor === "hospital" ? "Requests & policies" : "Credentials",
+          },
+          { id: "documents", label: "Documents & CLI" },
+          { id: "activity", label: "Activity" },
+        ].map((tab) => (
+          <Button
+            key={tab.id}
+            variant={workspaceTab === tab.id ? "primary" : "secondary"}
+            aria-pressed={workspaceTab === tab.id}
+            disabled={busy}
+            onClick={() => setWorkspaceTab(tab.id)}
+          >
+            {tab.label}
+          </Button>
+        ))}
+      </nav>
       {error && (
         <div role="alert">
           <Banner title="Action could not complete" description={error} />
@@ -767,7 +808,10 @@ export function WalletWorkspace() {
           </LayerCard>
         </div>
       )}
-      <LayerCard className="infra-card wallet-documents">
+      <LayerCard
+        hidden={workspaceTab !== "documents"}
+        className="infra-card wallet-documents"
+      >
         <div className="section-heading">
           <div>
             <span className="eyebrow">HUMAN + LLM READABLE</span>
@@ -870,7 +914,7 @@ export function WalletWorkspace() {
           value={inspectWorkspace(state, actor)}
         />
       </LayerCard>
-      <LayerCard className="infra-card">
+      <LayerCard hidden={workspaceTab !== "activity"} className="infra-card">
         <h3>Your activity</h3>
         {state.history.filter((h) => h.actor === actor).length ? (
           <ol className="wallet-history">
@@ -897,10 +941,10 @@ export function WalletWorkspace() {
           >
             Reset local demo
           </Button>
-          <LinkButton href="#standards" variant="ghost">
+          <LinkButton href="#/learn/standards" variant="ghost">
             Explore the standards
           </LinkButton>
-          <LinkButton href="#infrastructure" variant="ghost">
+          <LinkButton href="#/learn/infrastructure" variant="ghost">
             Explore infrastructure
           </LinkButton>
         </div>

@@ -571,3 +571,6 @@ export * from "./industries";
 
 export * from "./contracts";
 export * from "./workspace";
+
+export * from "./supplier";
+export * from "./connected-proof";

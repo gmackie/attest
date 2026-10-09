@@ -96,3 +96,4 @@ export const createPresentationContext = (
   allowedPredicatePatterns: readonly string[],
   mayBindGovernmentIdentity = false
 ): PresentationContext => ({ id, label, personaIds, allowedPredicatePatterns, mayBindGovernmentIdentity });
+export * from "./custody";

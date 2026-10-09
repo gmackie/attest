@@ -206,11 +206,32 @@ export function InfrastructureExplorer() {
         presentations.
       </p>
       <p>
-        The running demo uses local browser flows and simulated ledger receipts.
-        This explorer explains the reference Solidity contract and proposed
-        infrastructure; it does not submit transactions or contact a
+        The guided stories use local browser flows and simulated ledger
+        receipts. This explorer explains the reference Solidity contract and
+        proposed infrastructure; it does not submit transactions or contact a
         clearinghouse.
       </p>
+      <details className="quiet-details">
+        <summary>Connected Sepolia workspace: what is implemented?</summary>
+        <p>
+          The Workspace page uses a separate WorkspaceRegistry contract with
+          administrator-managed issuer scopes and signing-key commitments,
+          original-issuer revocation, and authorized verifier receipts with
+          per-request replay protection. It anchors the exact signed POD content
+          ID. It does not verify GPC inside the EVM or establish real-world
+          institutional authority.
+        </p>
+        <p>
+          Ethereum Sepolia is the experimental write target; Ethereum mainnet is
+          configured for read-only access until deployment and security review.
+          Encrypted local custody and portable backups keep evidence off-chain.
+          This architecture walkthrough below describes the earlier
+          AssuranceAnchor reference contract; its permissions differ.
+        </p>
+        <LinkButton href="#/app" variant="secondary">
+          Open connected workspace
+        </LinkButton>
+      </details>
       <div className="controls infra-tabs" aria-label="Infrastructure topics">
         {[
           "EVM & chain storage",

@@ -33,3 +33,4 @@ export const makeVerificationReceipt = async (input: VerificationAnchorInput): P
     verifiedAt
   };
 };
+export * from "./connected";

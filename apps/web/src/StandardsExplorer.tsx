@@ -102,7 +102,7 @@ const layers: {
         example:
           "Supplier approval combines insurance coverage, an in-scope SOC 2 assertion, and a current ISO 9001 certification assertion from separate fictional issuers.",
         boundary:
-          "These are simplified example profiles, not ACORD document parsing, a SOC 2 examination, or ISO certification. No endorsement or conformance is claimed. Only the insurance conditions have a private proof in the supplier flow.",
+          "These are simplified example profiles, not ACORD document parsing, a SOC 2 examination, or ISO certification. No endorsement or conformance is claimed. The current supplier story proves twenty criteria across seven issuer-specific PODs.",
         href: "https://github.com/gmackie/attest/blob/feat/assurance-kernel-poc/packages/domains/src/index.ts",
         reference: "Inspect the domain profiles",
       },
@@ -203,7 +203,7 @@ const layers: {
         status: "Implemented backend",
         role: "General Purpose Circuits compile supported constraints over PODs into zero-knowledge proofs using Groth16. The verifier checks the expected configuration, proof, and public-input bindings.",
         example:
-          "Prove signed coverage meets a threshold without revealing its exact amount. Healthcare, education, and logistics generate separate issuer-specific proofs for their criteria.",
+          "Prove signed coverage meets a threshold without revealing its exact amount. All four industry stories generate separate issuer-specific proofs for their criteria.",
         boundary:
           "POD/GPC is beta and unaudited. Public thresholds, identifiers, and equality requirements can reveal information. Authority and live status are not automatically proven by these circuits; arbitrary graph queries are not supported.",
         href: "https://github.com/proofcarryingdata/zupass/tree/main/packages/lib/gpc",
@@ -212,11 +212,11 @@ const layers: {
       {
         name: "Semaphore V4 identity",
         status: "Implemented backend",
-        role: "The supplier insurance adapter uses a Semaphore V4 identity for GPC holder ownership and a request-scoped nullifier. This demonstrates one holder-binding mechanism.",
+        role: "The legacy insurance adapter uses a Semaphore V4 identity for GPC holder ownership and a request-scoped nullifier. This demonstrates one holder-binding mechanism.",
         example:
           "The insurance proof binds the credential’s owner to the holder secret and derives a nullifier for the challenge, supporting application-level replay rejection.",
         boundary:
-          "This is not a deployed Semaphore group or anonymous membership service. The other industry flows use their own holder-key and signed-bundle bindings. The EVM contract does not enforce nullifier uniqueness.",
+          "This is not a deployed Semaphore group or anonymous membership service. The current industry and connected flows use holder-key and signed-presentation bindings. WorkspaceRegistry enforces per-verifier request uniqueness, not Semaphore nullifiers.",
         href: "https://docs.semaphore.pse.dev/",
         reference: "Semaphore documentation",
       },
@@ -252,12 +252,12 @@ const layers: {
       },
       {
         name: "EVM / Solidity ABI",
-        status: "Reference contract only",
+        status: "Reference + testnet workspace",
         role: "The Ethereum Virtual Machine executes the Solidity anchor contract. ABI encoding defines function arguments and event data; the contract uses Keccak-256 to derive receipt identifiers.",
         example:
           "An institution could submit a commitment and expiry to the anchor contract, while the buyer indexes a verification event for audit.",
         boundary:
-          "The browser submits no transactions. The reference contract logs caller assertions without proof verification. SHA-256 application commitments and Keccak-256 contract receipt IDs serve different purposes; no ERC credential-token interface is implemented.",
+          "Guided stories submit no transactions. The connected Sepolia workspace can deploy a separate scoped WorkspaceRegistry and anchor commitments through an EVM wallet. Both contracts record caller assertions without on-chain proof verification. SHA-256 application commitments and Keccak-256 contract receipt IDs serve different purposes; no ERC credential-token interface is implemented.",
         href: "https://docs.soliditylang.org/en/latest/abi-spec.html",
         reference: "Solidity ABI specification",
       },

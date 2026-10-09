@@ -1,3 +1,16 @@
+import { industryAbi } from "@attest/chain-evm";
+import {
+  industryProfile,
+  industryWallets,
+  industryCommandSchema,
+  industryCommandMessage,
+  issueIndustryCredential,
+  industryRequestSchema,
+  verifyIndustry,
+  type ConnectedIndustry,
+  type IndustryPresentation,
+} from "../../../packages/demo/src/industry-journey";
+import industryArtifact from "../../web/public/contracts/IndustryRegistry.json";
 import type {
   DurableObjectNamespace,
   DurableObjectState,
@@ -44,6 +57,7 @@ type Env = {
   ASSETS: Fetcher;
   INSTITUTIONS: DurableObjectNamespace;
   INSTITUTION_WALLETS: string;
+  INDUSTRY_WALLETS: string;
   SEPOLIA_RPC_URL: string;
 };
 const rpc = (env: Env) =>
@@ -145,9 +159,21 @@ export default {
         institutions: institutionDirectory.institutions,
         serviceConfigured: !!env.INSTITUTION_WALLETS,
       });
+    if (url.pathname === "/api/v3/institutions" && request.method === "GET")
+      return response({
+        chainId: 11155111,
+        profiles: industryWallets,
+        serviceConfigured: !!env.INDUSTRY_WALLETS,
+      });
+    const industryRoute = url.pathname.startsWith("/api/v3/");
     if (
       request.method !== "POST" ||
-      !["/api/v2/credentials", "/api/v2/decisions"].includes(url.pathname)
+      ![
+        "/api/v2/credentials",
+        "/api/v2/decisions",
+        "/api/v3/credentials",
+        "/api/v3/decisions",
+      ].includes(url.pathname)
     )
       return response({ error: "Not found" }, 404);
     if (Number(request.headers.get("content-length") ?? 0) > 100000)
@@ -175,11 +201,22 @@ export default {
       }
       const body = new TextDecoder().decode(bytes);
       const parsed = JSON.parse(body);
+      const profile = industryRoute
+        ? url.pathname.endsWith("credentials")
+          ? industryCommandSchema.parse(parsed.command).industry
+          : industryRequestSchema.parse(parsed.request).industry
+        : undefined;
       const id = url.pathname.endsWith("credentials")
-        ? signedSchema.parse(parsed).command.institution
-        : 3;
+        ? industryRoute
+          ? industryCommandSchema.parse(parsed.command).institution
+          : signedSchema.parse(parsed).command.institution
+        : industryRoute
+          ? 5
+          : 3;
       return (await env.INSTITUTIONS.get(
-        env.INSTITUTIONS.idFromName(`institution-v2-${id}`),
+        env.INSTITUTIONS.idFromName(
+          profile ? `industry-v1-${profile}-${id}` : `institution-v2-${id}`,
+        ),
       ).fetch(
         new Request(`https://institution.internal${url.pathname}`, {
           method: "POST",
@@ -236,7 +273,25 @@ export class InstitutionService {
       );
     await this.state.storage.put({ [daily]: all + 1, [user]: count + 1 });
   }
-  private identity(id: number) {
+  private identity(id: number, profile?: ConnectedIndustry) {
+    if (profile) {
+      if (!this.env.INDUSTRY_WALLETS)
+        throw new ServiceError(503, "Industry wallets are not configured");
+      const keys = (
+        JSON.parse(this.env.INDUSTRY_WALLETS) as {
+          profiles: Record<ConnectedIndustry, Bundle["institutions"]>;
+        }
+      ).profiles[profile][id];
+      const expected = industryWallets[profile][id]!;
+      if (
+        !keys ||
+        privateKeyToAccount(keys.evmPrivateKey).address.toLowerCase() !==
+          expected.address.toLowerCase() ||
+        keys.credentialPublicKey !== expected.credentialPublicKey
+      )
+        throw new ServiceError(503, "Institution wallet mismatch");
+      return keys;
+    }
     if (!this.env.INSTITUTION_WALLETS)
       throw new ServiceError(
         503,
@@ -261,8 +316,9 @@ export class InstitutionService {
     operation: string,
     functionName: "grant" | "revoke" | "recordDecision",
     args: readonly unknown[],
+    profile?: ConnectedIndustry,
   ) {
-    const keys = this.identity(id),
+    const keys = this.identity(id, profile),
       account = privateKeyToAccount(keys.evmPrivateKey),
       reader = rpc(this.env),
       wallet = createWalletClient({
@@ -322,7 +378,7 @@ export class InstitutionService {
       )
         throw new ServiceError(
           503,
-          `${institutionDirectory.institutions[id]!.name} needs Sepolia test ETH. See institution wallets on the launch screen.`,
+          `${profile ? industryWallets[profile][id]!.name : institutionDirectory.institutions[id]!.name} needs Sepolia test ETH. See institution wallets on the launch screen.`,
         );
       await this.budget(holder, id);
       const raw = await wallet.signTransaction(prepared);
@@ -362,7 +418,214 @@ export class InstitutionService {
     await this.state.storage.delete("pending-operation");
     return saved.hash;
   }
+  private async industryRegistry(
+    profile: ConnectedIndustry,
+    registry: Address,
+  ) {
+    const client = rpc(this.env);
+    if ((await client.getChainId()) !== 11155111)
+      throw new ServiceError(503, "RPC must be Sepolia");
+    if (
+      (await client.getCode({ address: registry })) !==
+      industryArtifact.deployedBytecode
+    )
+      throw new ServiceError(400, "Unsupported industry registry");
+    if (
+      (await client.readContract({
+        address: registry,
+        abi: industryAbi,
+        functionName: "profile",
+      })) !== (await commitValue(industryProfile(profile)))
+    )
+      throw new ServiceError(400, "Wrong industry registry");
+    for (const item of industryWallets[profile]) {
+      if (
+        (
+          await client.readContract({
+            address: registry,
+            abi: industryAbi,
+            functionName: "institutions",
+            args: [BigInt(item.id)],
+          })
+        ).toLowerCase() !== item.address.toLowerCase()
+      )
+        throw new ServiceError(400, "Wrong institution wallet");
+      if (
+        item.id < 5 &&
+        (await client.readContract({
+          address: registry,
+          abi: industryAbi,
+          functionName: "credentialKeys",
+          args: [BigInt(item.id)],
+        })) !== (await commitValue(item.credentialPublicKey))
+      )
+        throw new ServiceError(400, "Wrong credential key");
+    }
+    return client;
+  }
+  private async handleIndustry(request: Request): Promise<Response> {
+    const input = (await request.json()) as {
+      command: unknown;
+      signature: Hex;
+      request: unknown;
+      presentation: IndustryPresentation;
+    };
+    if (new URL(request.url).pathname.endsWith("credentials")) {
+      const c = industryCommandSchema.parse(input.command),
+        expiry = Date.parse(c.expiresAt);
+      if (
+        expiry <= Date.now() ||
+        expiry > Date.now() + 600000 ||
+        !(await verifyMessage({
+          address: c.account as Address,
+          message: industryCommandMessage(c),
+          signature: input.signature,
+        }))
+      )
+        throw new ServiceError(401, "Invalid or expired wallet authorization");
+      const client = await this.industryRegistry(
+          c.industry,
+          c.registry as Address,
+        ),
+        keys = this.identity(c.institution, c.industry),
+        journey = checkedHash(await commitValue(c.journey)),
+        slot = `industry:${c.industry}:${c.registry}:${c.account}:${journey}:${c.institution}:${c.action}`;
+      const record = await client.readContract({
+        address: c.registry as Address,
+        abi: industryAbi,
+        functionName: "records",
+        args: [c.account as Address, journey, c.institution],
+      });
+      const holderKey = checkedHash(await commitValue(c.holderPublicKey));
+      if (c.action === "revoke") {
+        if (record[1] !== holderKey)
+          throw new ServiceError(403, "Holder key does not match");
+        return response({
+          transactionHash: await this.transact(
+            c.institution,
+            c.account as Address,
+            c.registry as Address,
+            slot,
+            "revoke",
+            [c.account, journey, c.institution],
+            c.industry,
+          ),
+        });
+      }
+      const expiryDay = Date.parse(c.validThrough);
+      if (expiryDay < Date.now() || expiryDay > Date.now() + 181 * 86400000)
+        throw new ServiceError(400, "Use credential validity within 180 days");
+      const stable = {
+        industry: c.industry,
+        account: c.account,
+        registry: c.registry,
+        journey: c.journey,
+        holderPublicKey: c.holderPublicKey,
+        institution: c.institution,
+        fields: c.fields,
+        validThrough: c.validThrough,
+      };
+      let credential;
+      try {
+        credential = issueIndustryCredential(
+          c,
+          keys.credentialPrivateKey,
+          await saltFor(keys.credentialPrivateKey, stable),
+        );
+      } catch {
+        throw new ServiceError(400, "Invalid fields for this institution");
+      }
+      const content = checkedHash(await commitValue(credential.contentID));
+      if (
+        record[0] !== `0x${"0".repeat(64)}` &&
+        (record[0] !== content || record[1] !== holderKey)
+      )
+        throw new ServiceError(
+          409,
+          "Different credential already issued for this journey",
+        );
+      const previous = await this.state.storage.get<string>(slot + ":content");
+      if (previous && previous !== content)
+        throw new ServiceError(409, "Different issuance is already pending");
+      await this.state.storage.put(slot + ":content", content);
+      const hash = await this.transact(
+        c.institution,
+        c.account as Address,
+        c.registry as Address,
+        slot,
+        "grant",
+        [
+          c.account,
+          journey,
+          c.institution,
+          content,
+          holderKey,
+          BigInt(expiryDay / 1000 + 86399),
+        ],
+        c.industry,
+      );
+      return response({ credential, transactionHash: hash });
+    }
+    const req = industryRequestSchema.parse(input.request),
+      client = await this.industryRegistry(
+        req.industry,
+        req.registry as Address,
+      ),
+      block = await client.getBlock({ blockTag: "latest" }),
+      journey = checkedHash(await commitValue(req.journey));
+    const records = await Promise.all(
+      [0, 1, 2, 3, 4].map(async (i) => {
+        const r = await client.readContract({
+          address: req.registry as Address,
+          abi: industryAbi,
+          functionName: "records",
+          args: [req.account as Address, journey, i],
+          blockNumber: block.number,
+        });
+        return {
+          content: r[0],
+          holderKey: r[1],
+          validUntil: r[2],
+          revoked: r[3],
+        };
+      }),
+    );
+    let checks;
+    try {
+      checks = await verifyIndustry(
+        input.presentation,
+        req,
+        records,
+        block.timestamp,
+      );
+    } catch {
+      throw new ServiceError(422, "Invalid contract, request or proof bundle");
+    }
+    if (checks.some((c) => !c.pass))
+      return response(
+        { error: "Institution rejected the presentation", checks },
+        422,
+      );
+    const digest = checkedHash(await commitValue(req)),
+      proof = checkedHash(await commitValue(input.presentation));
+    const hash = await this.transact(
+      5,
+      req.account as Address,
+      req.registry as Address,
+      `industry-decision:${req.industry}:${req.registry}:${req.account}:${digest}`,
+      "recordDecision",
+      [req.account, digest, proof],
+      req.industry,
+    );
+    return response({
+      checks,
+      transactionHash: hash,
+      checkedBlock: block.number.toString(),
+    });
+  }
   private async handle(request: Request): Promise<Response> {
+    if (new URL(request.url).pathname.startsWith("/api/v3/"))
+      return this.handleIndustry(request);
     const body = await request.json();
     if (new URL(request.url).pathname.endsWith("credentials")) {
       const { command: c, signature } = signedSchema.parse(body),

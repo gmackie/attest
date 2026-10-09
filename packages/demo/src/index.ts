@@ -578,3 +578,4 @@ export * from "./connected-proof";
 export * from "./testnet-journey";
 
 export * from "./institution-service";
+export * from './industry-journey';

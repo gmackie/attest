@@ -10,6 +10,12 @@ import { InfrastructureExplorer } from "./InfrastructureExplorer";
 const TestnetJourney = lazy(() =>
   import("./TestnetJourney").then((m) => ({ default: m.TestnetJourney })),
 );
+const IndustryJourney = lazy(() =>
+  import("./IndustryJourney").then((m) => ({ default: m.IndustryJourney })),
+);
+const DemoChooser = lazy(() =>
+  import("./IndustryJourney").then((m) => ({ default: m.DemoChooser })),
+);
 const stories = [supplierIndustry, ...industries];
 function route() {
   return location.hash.slice(1) || "/";
@@ -31,6 +37,7 @@ export function App() {
     !!story ||
     path === "/sandbox" ||
     path.split("?")[0] === "/demo" ||
+    path.startsWith("/demo/") ||
     path.startsWith("/app") ||
     path === "/learn" ||
     path.startsWith("/learn/") ||
@@ -149,6 +156,12 @@ export function App() {
                   <LinkButton href={`#/explore/${i.id}`} variant="secondary">
                     Follow this story →
                   </LinkButton>
+                  <LinkButton
+                    href={`#/demo/${i.id === "supplier" ? "contractor" : i.id}`}
+                    variant="primary"
+                  >
+                    Try with real Sepolia wallets →
+                  </LinkButton>
                 </LayerCard>
               ))}
             </div>
@@ -178,13 +191,26 @@ export function App() {
             <WalletWorkspace />
           </section>
         )}
-        {path.split("?")[0] === "/demo" && (
+        {(path.split("?")[0] === "/demo" || path.startsWith("/demo/")) && (
           <Suspense
             fallback={
               <p className="page-section">Opening the testnet journey…</p>
             }
           >
-            <TestnetJourney key={path} />
+            {path.split("?")[0] === "/demo" && !path.includes("registry=") ? (
+              <DemoChooser />
+            ) : (["healthcare", "education", "logistics"] as const).find(
+                (id) => path.split("?")[0] === `/demo/${id}`,
+              ) ? (
+              <IndustryJourney
+                key={path}
+                industry={(
+                  ["healthcare", "education", "logistics"] as const
+                ).find((id) => path.split("?")[0] === `/demo/${id}`)!}
+              />
+            ) : (
+              <TestnetJourney key={path} />
+            )}
           </Suspense>
         )}
         {path.startsWith("/app") && <ConnectedWorkspace />}

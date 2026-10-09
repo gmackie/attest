@@ -74,3 +74,33 @@ it("bounds streamed bodies even without content-length and rejects unknown API r
     ).status,
   ).toBe(404);
 });
+
+it("industry requests cannot change profile, institution or claim fields after wallet signing", async () => {
+  const { industryCommandSchema, industryCommandMessage } =
+    await import("../../demo/src/industry-journey");
+  const { profile: _, value: __, ...base } = command();
+  const c = industryCommandSchema.parse({
+    ...base,
+    version: 1,
+    industry: "healthcare",
+    fields: { status: "active", validThrough: "2027-12-31" },
+  });
+  const signature = await account.signMessage({
+    message: industryCommandMessage(c),
+  });
+  const service = new InstitutionService({} as never, {} as never);
+  for (const changed of [
+    { ...c, industry: "education" },
+    { ...c, institution: 1 },
+    { ...c, fields: { ...c.fields, status: "suspended" } },
+    { ...c, registry: account.address },
+  ]) {
+    const r = await service.fetch(
+      new Request("https://institution.internal/api/v3/credentials", {
+        method: "POST",
+        body: JSON.stringify({ command: changed, signature }),
+      }),
+    );
+    expect(r.status).toBe(401);
+  }
+});

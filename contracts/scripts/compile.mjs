@@ -7,6 +7,7 @@ for (const name of [
   "WorkspaceRegistry",
   "DemoJourneyRegistry",
   "InstitutionRegistry",
+  "IndustryRegistry",
 ]) {
   const sourcePath = new URL(`../src/${name}.sol`, import.meta.url);
   const source = await fs.readFile(sourcePath, "utf8");

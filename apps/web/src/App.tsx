@@ -1,4 +1,5 @@
 import { IndustryLab, IndustryIcon } from "./IndustryLab";
+import { StandardsExplorer } from "./StandardsExplorer";
 import { InfrastructureExplorer } from "./InfrastructureExplorer";
 import { CryptoExplainer } from "./CryptoExplainer";
 import { useEffect, useRef, useState } from "react";
@@ -198,9 +199,14 @@ export function App() {
               source, follow signed credentials between institutions, and see
               what every participant actually receives.
             </p>
-            <LinkButton href="#infrastructure" variant="secondary">
-              Explore the EVM & clearinghouses ↓
-            </LinkButton>
+            <div className="controls">
+              <LinkButton href="#standards" variant="secondary">
+                Explore the standards stack ↓
+              </LinkButton>
+              <LinkButton href="#infrastructure" variant="secondary">
+                Explore the EVM & clearinghouses ↓
+              </LinkButton>
+            </div>
           </div>
           <div className="hero-stat">
             <strong>4</strong>
@@ -676,6 +682,7 @@ export function App() {
             </section>
           </div>
         )}
+        <StandardsExplorer />
         <InfrastructureExplorer />
         <footer>
           <span className="brand">

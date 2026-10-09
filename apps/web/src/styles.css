@@ -2125,3 +2125,17 @@ footer p {
     padding: 18px;
   }
 }
+
+.standards-explorer {
+  background: linear-gradient(130deg, #e5eef4, #f4f7f8 55%, #eaf2e5);
+}
+.standards-map {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 24px 0;
+}
+.standards-explorer h4 {
+  font-weight: 700;
+  margin-top: 12px;
+}

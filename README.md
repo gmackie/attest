@@ -246,3 +246,18 @@ authorities through holder presentations to independent buyer verification. Six
 illustrative decision scenarios explain revocation, freshness, request binding,
 untrusted receipt callers, and outages. These are educational UI states, not live
 status checks, deployed clearinghouses, or blockchain transactions.
+
+## Standards composition map
+
+The interactive standards explorer covers every ecosystem named in the composition
+proposal: RDF/JSON-LD, PROV-O, SKOS, SHACL, W3C Verifiable Credentials, Open Badges,
+CTDL, ISO/IEC 11179 governance principles, OpenID4VCI/OpenID4VP, and federation /
+recognized entities. Each entry explains its role, example handoff, authoritative
+reference, and implementation boundary. These remain proposed alignments.
+
+Separate entries describe the implemented POD/GPC/Groth16 backend, supplier
+Semaphore V4 identity binding, SHA-256 commitments with custom serialization, the
+local Attest model, domain examples, and the optional EVM reference contract. The
+map does not claim VC, OpenID, JSON-LD, SHACL, or domain certification conformance.
+A worked composition explains why importing or re-signing credentials requires
+explicit provenance and trust rules rather than assuming proof compatibility.

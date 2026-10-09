@@ -24,6 +24,7 @@
     "packages/*/test/**/*.ts",
     "apps/web/src/**/*.ts",
     "apps/web/src/**/*.tsx",
+    "apps/issuer/src/**/*.ts",
     "apps/web/vite.config.ts",
     "contracts/scripts/**/*.ts",
     "vitest.config.ts"

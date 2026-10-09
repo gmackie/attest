@@ -1,10 +1,12 @@
+import { deriveSignerPublicKey } from "@pcd/pod";
 import { it, expect } from "vitest";
 import path from "node:path";
 import { commitValue } from "@attest/core";
 import { encryptVault, decryptVault } from "@attest/wallet";
 import {
   createJourneyVault,
-  grantFictionalCredential,
+  issueInstitutionCredential,
+  type JourneyVault,
   fictionalInstitutions,
   journeyVaultSchema,
   journeyHolderKey,
@@ -13,6 +15,20 @@ import {
   verifyJourney,
   journeyNamespace,
 } from "../src/testnet-journey";
+const testKeys = ["11".repeat(32), "22".repeat(32), "33".repeat(32)];
+const grantFictionalCredential = (
+  v: JourneyVault,
+  id: 0 | 1 | 2,
+  value: number,
+) =>
+  issueInstitutionCredential(
+    { ...v, holderPublicKey: journeyHolderKey(v) },
+    id,
+    value,
+    testKeys[id]!,
+    "44".repeat(32),
+    new Date(Date.now() + 180 * 86400000).toISOString().slice(0, 10),
+  );
 const account = "0x1111111111111111111111111111111111111111",
   registry = "0x2222222222222222222222222222222222222222";
 const artifacts = path.resolve(
@@ -20,7 +36,11 @@ const artifacts = path.resolve(
   "../../proofs/node_modules/@pcd/proto-pod-gpc-artifacts",
 );
 function complete() {
-  const v = createJourneyVault(account, registry);
+  const v = createJourneyVault(
+    account,
+    registry,
+    testKeys.map(deriveSignerPublicKey),
+  );
   return {
     ...v,
     credentials: fictionalInstitutions.map((i) =>
@@ -65,7 +85,11 @@ it("binds fictional institution credentials to wallet, registry, holder, values 
       journeyNamespace(registry, registry),
     ),
   ).rejects.toThrow();
-  const weak = createJourneyVault(account, registry);
+  const weak = createJourneyVault(
+    account,
+    registry,
+    testKeys.map(deriveSignerPublicKey),
+  );
   weak.credentials = fictionalInstitutions.map((i) =>
     grantFictionalCredential(weak, i.id, i.id === 1 ? 1 : i.value),
   );

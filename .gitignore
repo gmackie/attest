@@ -16,3 +16,7 @@ attest-wallet-demo.json
 attest-wallet-demo.json.*
 
 apps/web/public/contracts/
+
+# Local issuer-service secrets
+.dev.vars
+.dev.vars.*

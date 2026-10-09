@@ -36,3 +36,5 @@ export const makeVerificationReceipt = async (input: VerificationAnchorInput): P
 export * from "./connected";
 
 export * from "./journey";
+
+export * from "./institution";

@@ -576,3 +576,5 @@ export * from "./supplier";
 export * from "./connected-proof";
 
 export * from "./testnet-journey";
+
+export * from "./institution-service";

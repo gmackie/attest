@@ -63,16 +63,18 @@ export const fictionalInstitutions = [
     color: "#9a713e",
   },
 ] as const;
-export const journeyProfile = "attest.fictional.contractor.v1";
+export const journeyProfile = "attest.institutional.contractor.v2";
+export { default as institutionDirectory } from "./config/institutions.json";
+import directory from "./config/institutions.json";
+export const institutionSigningKeys = directory.institutions
+  .slice(0, 3)
+  .map((i) => i.credentialPublicKey);
 export const fictionalAudience = "demo:northstar-project-817";
 const address = z
   .string()
   .regex(/^0x[0-9a-fA-F]{40}$/)
   .transform((s) => s.toLowerCase());
 const institutionId = z.union([z.literal(0), z.literal(1), z.literal(2)]);
-// Intentionally public, separate fictional issuer keys. Never use as real authority.
-export const fictionalKey = (id: number) =>
-  (7000 + id).toString(16).padStart(64, "0");
 const signature = z.custom<ReturnType<POD["toJSON"]>>((v) => {
   try {
     return POD.fromJSON(v as ReturnType<POD["toJSON"]>).verifySignature();
@@ -99,7 +101,18 @@ export const journeyVaultSchema = z
     account: address,
     id: z.string().uuid(),
     privateKey: z.string().regex(/^[0-9a-f]{64}$/),
+    issuerPublicKeys: z.array(z.string()).length(3),
     credentials: z.array(journeyCredentialSchema).max(3),
+    plans: z
+      .array(
+        z.object({
+          institution: z.union([z.literal(0), z.literal(1), z.literal(2)]),
+          value: z.number().int().nonnegative(),
+          validThrough: z.string(),
+        }),
+      )
+      .max(3)
+      .default([]),
   })
   .strict()
   .superRefine((v, ctx) => {
@@ -113,8 +126,7 @@ export const journeyVaultSchema = z
           ids.has(c.institution) ||
           c.value > institution.maximum ||
           p.contentID.toString() !== c.contentID ||
-          p.signerPublicKey !==
-            deriveSignerPublicKey(fictionalKey(c.institution)) ||
+          p.signerPublicKey !== v.issuerPublicKeys[c.institution] ||
           e.schema?.value !== `${journeyProfile}.${c.institution}` ||
           e.subject?.value !==
             `${v.chainId}:${v.registry}:${v.account}:${v.id}` ||
@@ -138,10 +150,12 @@ export type JourneyVault = z.infer<typeof journeyVaultSchema>;
 export function createJourneyVault(
   account: string,
   registry: string,
+  issuerPublicKeys: string[] = institutionSigningKeys,
 ): JourneyVault {
   return journeyVaultSchema.parse({
     version: 1,
     profile: journeyProfile,
+    issuerPublicKeys,
     chainId: 11155111,
     account,
     registry,
@@ -161,6 +175,7 @@ export const journeyRequestSchema = z
     account: address,
     journey: z.string().uuid(),
     holderPublicKey: z.string(),
+    issuerPublicKeys: z.array(z.string()).length(3),
     id: z.string().uuid(),
     audience: z.literal(fictionalAudience),
     expiresAt: z.string().datetime(),
@@ -179,7 +194,7 @@ function criteria(request: JourneyRequest, id: number): CriteriaRequest {
     schema: `${journeyProfile}.${id}`,
     subject: `11155111:${request.registry}:${request.account}:${request.journey}`,
     holderPublicKey: request.holderPublicKey,
-    issuerPublicKey: deriveSignerPublicKey(fictionalKey(id)),
+    issuerPublicKey: request.issuerPublicKeys[id]!,
     challenge: "",
     contentID: request.contentIDs[id]!,
     criteria: [
@@ -193,22 +208,27 @@ function criteria(request: JourneyRequest, id: number): CriteriaRequest {
     ],
   };
 }
-export function grantFictionalCredential(
-  vault: JourneyVault,
+export function issueInstitutionCredential(
+  input: {
+    account: string;
+    registry: string;
+    id: string;
+    holderPublicKey: string;
+    issuerPublicKeys: string[];
+  },
   id: 0 | 1 | 2,
   value: number,
+  issuerPrivateKey: string,
+  salt: string,
+  validThrough: string,
 ): JourneyCredential {
-  const v = journeyVaultSchema.parse(vault),
+  const v = input,
     i = fictionalInstitutions[id];
   if (!Number.isSafeInteger(value) || value < 0 || value > i.maximum)
     throw new Error(`Choose a whole number from 0 to ${i.maximum}`);
-  if (v.credentials.some((c) => c.institution === id))
-    throw new Error(
-      "This institution already issued for this journey. Start a new journey to change its statement.",
-    );
-  const validThrough = new Date(Date.now() + 180 * 86400000)
-    .toISOString()
-    .slice(0, 10);
+  if (deriveSignerPublicKey(issuerPrivateKey) !== v.issuerPublicKeys[id])
+    throw new Error("Issuer key mismatch");
+  if (!/^[0-9a-f]{64}$/.test(salt)) throw new Error("Invalid private salt");
   const request: JourneyRequest = {
     version: 1,
     profile: journeyProfile,
@@ -216,7 +236,8 @@ export function grantFictionalCredential(
     registry: v.registry,
     account: v.account,
     journey: v.id,
-    holderPublicKey: deriveSignerPublicKey(v.privateKey),
+    holderPublicKey: v.holderPublicKey,
+    issuerPublicKeys: v.issuerPublicKeys,
     id: crypto.randomUUID(),
     audience: fictionalAudience,
     expiresAt: new Date(Date.now() + 3600000).toISOString(),
@@ -225,18 +246,14 @@ export function grantFictionalCredential(
   const sourcePod = issueCriteriaPod(
     criteria(request, id),
     { value, validThrough },
-    fictionalKey(id),
+    issuerPrivateKey,
   );
-  // Hidden random salt prevents guessing low-entropy values from the public content ID.
-  const salt = Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) =>
-    b.toString(16).padStart(2, "0"),
-  ).join("");
   const pod = POD.sign(
     {
       ...sourcePod.content.asEntries(),
       privateSalt: { type: "string", value: salt },
     },
-    fictionalKey(id),
+    issuerPrivateKey,
   );
   return {
     institution: id,
@@ -258,6 +275,7 @@ export function requestJourney(v: JourneyVault): JourneyRequest {
     account: vault.account,
     journey: vault.id,
     holderPublicKey: deriveSignerPublicKey(vault.privateKey),
+    issuerPublicKeys: vault.issuerPublicKeys,
     id: crypto.randomUUID(),
     audience: fictionalAudience,
     expiresAt: new Date(Date.now() + 3600000).toISOString(),
@@ -275,6 +293,8 @@ export async function prepareJourney(
   const vault = journeyVaultSchema.parse(v),
     request = journeyRequestSchema.parse(input);
   if (
+    canonicalJson(request.issuerPublicKeys) !==
+      canonicalJson(vault.issuerPublicKeys) ||
     request.account !== vault.account ||
     request.registry !== vault.registry ||
     request.journey !== vault.id ||
@@ -381,6 +401,6 @@ export async function verifyJourney(
   return checks;
 }
 export const journeyNamespace = (account: string, registry: string) =>
-  `attest:journey:v1:11155111:${registry.toLowerCase()}:${account.toLowerCase()}`;
+  `attest:journey:v2:11155111:${registry.toLowerCase()}:${account.toLowerCase()}`;
 export const journeyHolderKey = (v: JourneyVault) =>
   deriveSignerPublicKey(v.privateKey);

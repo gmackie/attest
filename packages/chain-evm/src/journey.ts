@@ -1,4 +1,5 @@
 import { parseAbi, type Address, type EIP1193Provider, type Hex } from "viem";
+import {institutionAbi} from "./institution";
 import { assertContext, clients } from "./connected";
 export const journeyAbi = parseAbi([
   "function profile() pure returns (string)",
@@ -81,7 +82,7 @@ export async function journeyRecords(
     [0, 1, 2].map(async (institution) => {
       const r = await reader.readContract({
         address: registry,
-        abi: journeyAbi,
+        abi: institutionAbi,
         functionName: "records",
         args: [account, journey, institution],
         blockNumber: block.number,

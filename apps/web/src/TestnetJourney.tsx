@@ -17,7 +17,9 @@ import {
   checkedHash,
   clients,
   assertContext,
-  journeyAbi,
+  institutionAbi,
+  deployInstitutions,
+  validateInstitutions,
   journeyDeploy,
   journeyWrite,
   journeyRecords,
@@ -30,7 +32,11 @@ import {
 import {
   fictionalInstitutions,
   createJourneyVault,
-  grantFictionalCredential,
+  institutionDirectory,
+  institutionSigningKeys,
+  institutionCommandSchema,
+  commandMessage,
+  type InstitutionCommand,
   journeyVaultSchema,
   journeyHolderKey,
   journeyNamespace,
@@ -66,6 +72,7 @@ export function TestnetJourney() {
         ) ?? "",
     ),
     [ready, setReady] = useState(false);
+  const [funding, setFunding] = useState("0.004");
   const [step, setStep] = useState(0),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
@@ -100,15 +107,12 @@ export function TestnetJourney() {
     file = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (step > 0)
-      document
-        .querySelector(".journey-progress")
-        ?.scrollIntoView({
-          behavior: window.matchMedia("(prefers-reduced-motion: reduce)")
-            .matches
-            ? "auto"
-            : "smooth",
-          block: "start",
-        });
+      document.querySelector(".journey-progress")?.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth",
+        block: "start",
+      });
   }, [step]);
   const clearResult = () => {
     setRequest(null);
@@ -211,7 +215,7 @@ export function TestnetJourney() {
   };
   const build = async () => {
     if (!artifact.current) {
-      const r = await fetch("/contracts/DemoJourneyRegistry.json");
+      const r = await fetch("/contracts/InstitutionRegistry.json");
       if (!r.ok) throw new Error("Demo deployment artifact unavailable");
       artifact.current = (await r.json()) as JourneyArtifact;
     }
@@ -242,8 +246,65 @@ export function TestnetJourney() {
     }
     setVault(parsed);
   };
+  const validate = async () => {
+    const c = context();
+    await validateInstitutions(
+      c.provider,
+      c.account,
+      c.registry,
+      await build(),
+      institutionDirectory.institutions.map((i) => i.address),
+      await Promise.all(institutionSigningKeys.map(commitValue)),
+    );
+  };
+  const api = async (path: string, body: unknown) => {
+    const r = await fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: json(body),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error ?? "Institution request failed");
+    return data;
+  };
+  const authorize = async (
+    id: 0 | 1 | 2,
+    action: "issue" | "revoke",
+    v: JourneyVault,
+    value: number,
+    validThrough: string,
+    check: () => void,
+  ) => {
+    const c = context();
+    await validate();
+    const command = institutionCommandSchema.parse({
+      version: 2,
+      chainId: 11155111,
+      profile: v.profile,
+      domain: "attest.gmac.io",
+      action,
+      account: c.account,
+      registry: c.registry,
+      journey: v.id,
+      holderPublicKey: journeyHolderKey(v),
+      institution: id,
+      value,
+      validThrough,
+      expiresAt: new Date(Date.now() + 5 * 60000).toISOString(),
+      nonce: crypto.randomUUID(),
+      demoConsent: true,
+    });
+    const signature = await clients(c.provider, "testnet").wallet.signMessage({
+      account: c.account,
+      message: commandMessage(command),
+    });
+    check();
+    await assertContext(c.provider, "testnet", c.account);
+    return api("/api/v2/credentials", { command, signature });
+  };
   const refresh = async (v: JourneyVault, check: () => void) => {
     const c = context();
+    await validate();
     const state = await journeyRecords(
       c.provider,
       c.account,
@@ -319,12 +380,7 @@ export function TestnetJourney() {
   const join = () =>
     run("Checking the demo contract on Sepolia…", async (check) => {
       const c = context();
-      await validateJourneyRegistry(
-        c.provider,
-        c.account,
-        c.registry,
-        await build(),
-      );
+      await validate();
       check();
       setReady(true);
       stored.current = localStorage.getItem(
@@ -342,7 +398,28 @@ export function TestnetJourney() {
           throw new Error("Connect wallet first");
         const p = provider.current,
           a = account;
-        const hash = await journeyDeploy(p, a, await build());
+        const amount = Number(funding);
+        if (
+          !Number.isFinite(amount) ||
+          amount < 0 ||
+          amount > 0.1 ||
+          !/^\d+(\.\d{1,6})?$/.test(funding)
+        )
+          throw new Error("Choose 0–0.1 Sepolia ETH (up to 6 decimals)");
+        const wallets = institutionDirectory.institutions.map((i) =>
+          checkedAddress(i.address),
+        ) as [Address, Address, Address, Address];
+        const keys = (
+          await Promise.all(institutionSigningKeys.map(commitValue))
+        ).map(checkedHash) as [Hex, Hex, Hex];
+        const hash = await deployInstitutions(
+          p,
+          a,
+          await build(),
+          wallets,
+          keys,
+          BigInt(Math.round(amount * 1e6)) * 1000000000000n,
+        );
         check();
         setTransaction({
           hash,
@@ -452,51 +529,51 @@ export function TestnetJourney() {
   };
   const issue = (id: 0 | 1 | 2) =>
     run(
-      `Receiving ${fictionalInstitutions[id].name}’s signed statement…`,
+      `Authorize ${fictionalInstitutions[id].name} to issue and register your credential…`,
       async (check) => {
-        const c = context();
-        await assertContext(c.provider, "testnet", c.account);
         if (!vault) throw new Error("Unlock passport");
-        const credential = grantFictionalCredential(vault, id, values[id]!);
-        await save(
-          { ...vault, credentials: [...vault.credentials, credential] },
+        const plan = vault.plans.find((p) => p.institution === id) ?? {
+          institution: id,
+          value: values[id]!,
+          validThrough: new Date(Date.now() + 180 * 86400000)
+            .toISOString()
+            .slice(0, 10),
+        };
+        const pending = {
+          ...vault,
+          plans: [...vault.plans.filter((p) => p.institution !== id), plan],
+        };
+        await save(pending, check);
+        const data = await authorize(
+          id,
+          "issue",
+          pending,
+          plan.value,
+          plan.validThrough,
           check,
         );
-        clearResult();
-        setMessage(
-          "Fictional institution signed your statement locally. Review the storage map, then register its commitment with your real wallet.",
-        );
-      },
-    );
-  const anchor = (id: 0 | 1 | 2) =>
-    run(
-      "Review the credential commitment transaction in your wallet…",
-      async (check) => {
-        const c = context(),
-          v = vault!;
-        const credential = v.credentials.find((x) => x.institution === id)!;
-        const hash = await journeyWrite(
-          c.provider,
-          c.account,
-          c.registry,
-          await build(),
-          "grant",
-          [
-            checkedHash(await commitValue(v.id)),
-            id,
-            checkedHash(await commitValue(credential.contentID)),
-            checkedHash(await commitValue(journeyHolderKey(v))),
-            BigInt(Date.parse(credential.validThrough) / 1000 + 86399),
+        check();
+        const next = journeyVaultSchema.parse({
+          ...pending,
+          credentials: [
+            ...pending.credentials.filter((c) => c.institution !== id),
+            data.credential,
           ],
+        });
+        await save(next, check);
+        await wait(
+          data.transactionHash,
+          "Institution credential registered",
+          check,
         );
-        await wait(hash, "Credential commitment registered", check);
-        await refresh(v, check);
+        await refresh(next, check);
         clearResult();
         setMessage(
-          "Commitment registered on Sepolia. Your signed values and private key stayed in this browser.",
+          `${fictionalInstitutions[id].name} signed the credential and paid for its Sepolia registration from its own wallet.`,
         );
       },
     );
+  const anchor = issue;
   const evaluate = async (check: () => void) => {
     if (!request || !presentation || !vault || !consent)
       throw new Error("Prepare a proof first");
@@ -543,9 +620,7 @@ export function TestnetJourney() {
               ? `${account.slice(0, 8)}…${account.slice(-6)}`
               : "Bring your own wallet"}
           </strong>
-          <small>
-            Fictional claims. Real signatures, proofs and transactions.
-          </small>
+          <small>Fictional claims. Separate real institution wallets.</small>
           <Button disabled={busy} variant="secondary" onClick={connect}>
             {account ? "Reconnect wallet" : "Connect wallet"}
           </Button>
@@ -639,6 +714,32 @@ export function TestnetJourney() {
           )}
         </div>
       )}
+      <details className="quiet-details">
+        <summary>Meet the institution wallets</summary>
+        <div className="story-grid">
+          {institutionDirectory.institutions.map((i) => (
+            <LayerCard className="infra-card" key={i.id}>
+              <h3>{i.name}</h3>
+              <p>
+                {i.id === 3
+                  ? "Verifier wallet"
+                  : "Issuer wallet + private credential signer"}
+              </p>
+              <a
+                href={`https://sepolia.etherscan.io/address/${i.address}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {i.address}
+              </a>
+              <p className="muted">
+                Sepolia test ETH only. This account pays for its institution’s
+                transactions.
+              </p>
+            </LayerCard>
+          ))}
+        </div>
+      </details>
       {step === 0 && (
         <div className="guided-columns">
           <LayerCard className="infra-card guided-main">
@@ -648,9 +749,10 @@ export function TestnetJourney() {
               <br />A passport for private evidence.
             </h2>
             <p>
-              Your EVM wallet pays test gas and owns the public commitments. A
-              separate private credential key signs presentations. Its encrypted
-              backup stays under your control.
+              Your EVM wallet authorizes requests and owns the passport. The
+              institutions pay test gas for their transactions. A separate
+              private credential key signs presentations. Its encrypted backup
+              stays under your control.
             </p>
             <div className="guided-checklist">
               <p>
@@ -660,10 +762,11 @@ export function TestnetJourney() {
                 open this page inside your wallet browser.
               </p>
               <p>
-                <strong>2. Have a little test ETH</strong>
+                <strong>2. Institutions sponsor your transactions</strong>
                 <br />
-                Credential registration costs Sepolia gas. Test ETH has no
-                monetary value.{" "}
+                Visitors sign requests without paying gas. The host funds
+                institution wallets with Sepolia test ETH, which has no monetary
+                value.{" "}
                 <a
                   href="https://ethereum.org/en/developers/docs/networks/#sepolia"
                   target="_blank"
@@ -687,6 +790,7 @@ export function TestnetJourney() {
               disabled={busy || !!vault}
             >
               <InputGroup.Input
+                aria-label="Demo registry address"
                 value={registry}
                 placeholder="0x…"
                 onChange={(e) => {
@@ -707,7 +811,11 @@ export function TestnetJourney() {
               <details className="quiet-details">
                 <summary>Invite someone to this testnet demo</summary>
                 <InputGroup label="Public invitation link">
-                  <InputGroup.Input readOnly value={invitation} />
+                  <InputGroup.Input
+                    aria-label="Public invitation link"
+                    readOnly
+                    value={invitation}
+                  />
                 </InputGroup>
                 <Button
                   variant="secondary"
@@ -746,6 +854,7 @@ export function TestnetJourney() {
                   disabled={busy}
                 >
                   <InputGroup.Input
+                    aria-label="Passport passphrase (12+ characters)"
                     type="password"
                     autoComplete="new-password"
                     value={passphrase}
@@ -848,10 +957,11 @@ export function TestnetJourney() {
             <LayerCard className="infra-card">
               <h3>What makes this a demo?</h3>
               <p>
-                The three institutions are fictional. Their public demo signing
-                keys run locally; anybody can reproduce their signatures.
-                On-chain registration is self-service and paid by the holder. It
-                is not real institutional accreditation.
+                The institutions are fictional, but each has its own private
+                credential key and Sepolia wallet. Their service processes
+                synthetic inputs without retaining private evidence. Each
+                credential type can only be registered by its designated
+                institution wallet. This does not imply real accreditation.
               </p>
               <p>
                 The cryptographic operations and Sepolia transactions are real.
@@ -864,10 +974,25 @@ export function TestnetJourney() {
             <details className="quiet-details">
               <summary>Host: launch the shared demo</summary>
               <p>
-                One Sepolia transaction deploys the open fictional registry. No
-                private key is shared with Attest. It has no administrative
-                privileges and does not enable mainnet.
+                One Sepolia transaction deploys the institution-authorized
+                registry and distributes the chosen test ETH equally to all four
+                institution wallets. Your wallet key is never shared.
+                Institution keys stay in server secrets.
               </p>
+              <InputGroup
+                label="Sepolia ETH to fund institution wallets"
+                disabled={busy}
+              >
+                <InputGroup.Input
+                  aria-label="Sepolia ETH to fund institution wallets"
+                  type="number"
+                  min={0}
+                  max={0.1}
+                  step={0.001}
+                  value={funding}
+                  onChange={(e) => setFunding(e.target.value)}
+                />
+              </InputGroup>
               <Button disabled={busy || !account || !!vault} onClick={deploy}>
                 Launch shared demo
               </Button>
@@ -900,13 +1025,21 @@ export function TestnetJourney() {
             <p>{active.description}</p>
             <InputGroup
               label={`Synthetic ${active.field} (${active.unit})`}
-              disabled={busy || !!credential}
+              disabled={
+                busy ||
+                !!credential ||
+                !!vault.plans.find((p) => p.institution === active.id)
+              }
             >
               <InputGroup.Input
+                aria-label={`Synthetic ${active.field} (${active.unit})`}
                 type="number"
                 min={0}
                 max={active.maximum}
-                value={values[active.id]}
+                value={
+                  vault.plans.find((p) => p.institution === active.id)?.value ??
+                  values[active.id]
+                }
                 onChange={(e) =>
                   setValues((v) =>
                     v.map((x, i) =>
@@ -923,7 +1056,9 @@ export function TestnetJourney() {
             </p>
             {!credential ? (
               <Button disabled={busy} onClick={() => issue(active.id)}>
-                {active.verb} & receive credential
+                {vault.plans.some((p) => p.institution === active.id)
+                  ? "Retry institution issuance"
+                  : `${active.verb} & receive credential`}
               </Button>
             ) : (
               <>
@@ -953,12 +1088,12 @@ export function TestnetJourney() {
                 ) : (
                   <>
                     <p>
-                      Your statement is in your private wallet. Register its
-                      commitment next. Your EVM wallet will ask you to approve
-                      one real Sepolia transaction.
+                      Your statement is in your private wallet. Retry the
+                      institution’s sponsored registration with a wallet
+                      signature.
                     </p>
                     <Button disabled={busy} onClick={() => anchor(active.id)}>
-                      Register commitment on Sepolia
+                      Retry institution registration
                     </Button>
                   </>
                 )}
@@ -975,7 +1110,8 @@ export function TestnetJourney() {
                   <summary>Inspect the signed credential</summary>
                   <p>
                     These exact fields and the POD signature remain in your
-                    custody. Public demo issuer keys are teaching fixtures.
+                    custody. Institution credential signing secrets stay on the
+                    server.
                   </p>
                   <pre>{json(credential.pod)}</pre>
                 </details>
@@ -989,7 +1125,8 @@ export function TestnetJourney() {
                 <li>
                   <strong>Institution input</strong>
                   <p>
-                    {active.source}. This browser simulates its internal system.
+                    {active.source}. The institution service processes this
+                    synthetic input, signs it, and discards it.
                   </p>
                 </li>
                 <li>
@@ -1028,15 +1165,21 @@ export function TestnetJourney() {
                 onClick={() =>
                   run("Review revocation in your wallet…", async (check) => {
                     const c = context();
-                    const hash = await journeyWrite(
-                      c.provider,
-                      c.account,
-                      c.registry,
-                      await build(),
+                    const data = await authorize(
+                      active.id,
                       "revoke",
-                      [checkedHash(await commitValue(vault.id)), active.id],
+                      vault,
+                      0,
+                      new Date(Date.now() + 86400000)
+                        .toISOString()
+                        .slice(0, 10),
+                      check,
                     );
-                    await wait(hash, "Credential revoked", check);
+                    await wait(
+                      data.transactionHash,
+                      "Institution revoked credential",
+                      check,
+                    );
                     await refresh(vault, check);
                     setChecks(null);
                     setMessage(
@@ -1163,19 +1306,19 @@ export function TestnetJourney() {
                       disabled={busy || !consent}
                       onClick={() =>
                         run(
-                          "Northstar is verifying proofs and current Sepolia status…",
+                          "Checking proofs and current Sepolia status locally…",
                           async (check) => {
                             const result = await evaluate(check);
                             setMessage(
                               result.every((c) => c.pass)
-                                ? "Northstar’s demo requirements are satisfied. Exact credential values were not disclosed."
-                                : "Northstar rejected this presentation. Inspect each check below.",
+                                ? "Local checks passed. Submit to Northstar for its independent verification and approval."
+                                : "Local checks failed. Inspect each check below.",
                             );
                           },
                         )
                       }
                     >
-                      Share & verify with Northstar
+                      Check proofs locally
                     </Button>
                     <Button
                       disabled={busy || !consent}
@@ -1197,7 +1340,7 @@ export function TestnetJourney() {
               <div className="journey-result">
                 <h3>
                   {checks.every((c) => c.pass)
-                    ? "You qualify for Project 817"
+                    ? "Local eligibility checks passed"
                     : "Requirements not satisfied"}
                 </h3>
                 <p>
@@ -1216,7 +1359,7 @@ export function TestnetJourney() {
                   disabled={busy || !consent || !checks.every((c) => c.pass)}
                   onClick={() =>
                     run(
-                      "Rechecking before your optional public receipt…",
+                      "Asking Northstar to verify and record its decision…",
                       async (check) => {
                         const result = await evaluate(check);
                         if (!result.every((c) => c.pass))
@@ -1224,35 +1367,29 @@ export function TestnetJourney() {
                             "Status changed; receipt not submitted",
                           );
                         const c = context();
-                        const hash = await journeyWrite(
-                          c.provider,
-                          c.account,
-                          c.registry,
-                          await build(),
-                          "recordReceipt",
-                          [
-                            checkedHash(await commitValue(request)),
-                            checkedHash(await commitValue(presentation)),
-                          ],
-                        );
+                        const data = await api("/api/v2/decisions", {
+                          request,
+                          presentation,
+                        });
+                        check();
                         await wait(
-                          hash,
-                          "Holder demonstration receipt recorded",
+                          data.transactionHash,
+                          "Northstar verification recorded",
                           check,
                         );
                         setMessage(
-                          "Your proof-package commitment is recorded. This is your demo receipt, not an on-chain verified approval or institutional authorization.",
+                          "Northstar independently verified your proofs and sent its decision transaction from its own wallet. The contract authenticates Northstar, but does not verify GPC itself.",
                         );
                       },
                     )
                   }
                 >
-                  Record my demo receipt on Sepolia
+                  Ask Northstar to verify & record approval
                 </Button>
                 <p className="muted">
-                  Optional public transaction. The contract does not verify GPC
-                  or authenticate Northstar; it records the holder’s proof
-                  commitment.
+                  Northstar verifies the proofs on its server and pays for its
+                  own decision transaction. The contract authenticates the
+                  verifier wallet; proof verification remains off-chain.
                 </p>
               </div>
             )}
@@ -1267,8 +1404,8 @@ export function TestnetJourney() {
               </p>
               <p>
                 This does not prove the fictional source facts occurred in the
-                real world. Public demo issuer keys grant no institutional
-                authority.
+                real world. Private institution keys authenticate the fictional
+                issuer; they do not make its synthetic claims real.
               </p>
               <details className="quiet-details">
                 <summary>Inspect the request and proof package</summary>

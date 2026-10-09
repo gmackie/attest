@@ -1,0 +1,19 @@
+{
+  "name": "@attest/issuer",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@attest/chain-evm": "workspace:*",
+    "@attest/core": "workspace:*",
+    "@attest/demo": "workspace:*",
+    "@attest/proofs": "workspace:*",
+    "@noble/curves": "1.9.7",
+    "@pcd/pod": "0.5.1",
+    "effect": "4.0.2",
+    "viem": "^2.57.4",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261009.1"
+  }
+}

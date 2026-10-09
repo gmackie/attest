@@ -202,7 +202,7 @@ export async function verifyCriteria(
       }))
     )
       return false;
-    return gpc.gpcVerify(envelope.proof, bound, claims, artifacts);
+    return await gpc.gpcVerify(envelope.proof, bound, claims, artifacts);
   } catch {
     return false;
   }

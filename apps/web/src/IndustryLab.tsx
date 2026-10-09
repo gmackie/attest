@@ -1,3 +1,4 @@
+import { ContractExplorer } from "./ContractExplorer";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   Badge,
@@ -21,6 +22,10 @@ import {
 } from "@phosphor-icons/react";
 import { Effect } from "effect";
 import {
+  contractLevels,
+  withContract,
+  statementDocument,
+  type ContractLevel,
   advanceIndustryRun,
   createIndustryRun,
   defaultIndustryInputs,
@@ -62,7 +67,14 @@ function DataDrawer({ title, value }: { title: string; value: unknown }) {
     </Collapsible.Root>
   );
 }
-export function IndustryLab({ industry }: { industry: Industry }) {
+export function IndustryLab({
+  industry: baseIndustry,
+}: {
+  industry: Industry;
+}) {
+  const [industry, setIndustry] = useState(() =>
+    withContract(baseIndustry, "standard"),
+  );
   const [privateMode, setPrivateMode] = useState(true);
   const [inputs, setInputs] = useState<IndustryInputs>(() =>
     defaultIndustryInputs(industry),
@@ -83,11 +95,11 @@ export function IndustryLab({ industry }: { industry: Industry }) {
   const snapshot = history[selected] ?? run;
   const step = industrySteps[selected]!;
   const activeSource = industry.sources.find((s) => s.id === focus);
-  const reset = (next = inputs, mode = privateMode) => {
+  const reset = (next = inputs, mode = privateMode, profile = industry) => {
     generation.current++;
     locked.current = false;
     playingRef.current = false;
-    const fresh = createIndustryRun(industry, next, mode);
+    const fresh = createIndustryRun(profile, next, mode);
     current.current = fresh;
     setRun(fresh);
     setHistory([]);
@@ -236,6 +248,39 @@ export function IndustryLab({ industry }: { industry: Industry }) {
             : "All signed claims are disclosed in comparison mode. Real signatures and request binding remain checked. These fictional systems exist only in browser memory."
         }
       />
+      <div className="contract-selector">
+        <Select<string>
+          label="Approval contract"
+          value={industry.contract?.level ?? "standard"}
+          disabled={busy || playing}
+          items={contractLevels.map((l) => ({ ...l }))}
+          onValueChange={(value) => {
+            if (value) {
+              const profile = withContract(
+                baseIndustry,
+                value as ContractLevel,
+              );
+              setIndustry(profile);
+              reset(inputs, privateMode, profile);
+            }
+          }}
+        />
+        <p>
+          Compare standard, enhanced and critical contracts. Higher assurance
+          changes actual thresholds, validity requirements and the proof
+          request. Existing evidence may no longer qualify.
+        </p>
+      </div>
+      <ContractExplorer
+        industry={industry}
+        run={snapshot}
+        onSource={(id) => {
+          setFocus(id);
+          document
+            .querySelector(".institution-console")
+            ?.scrollIntoView({ block: "start" });
+        }}
+      />
       <section className="approval-sources">
         <div className="section-heading">
           <div>
@@ -367,7 +412,7 @@ export function IndustryLab({ industry }: { industry: Industry }) {
           disabled={busy || playing}
           onClick={() => change(defaultIndustryInputs(industry))}
         >
-          Successful {industry.id === "logistics" ? "shipment" : "application"}
+          Baseline {industry.id === "logistics" ? "shipment" : "application"}
         </Button>
         <Button
           size="sm"
@@ -399,7 +444,9 @@ export function IndustryLab({ industry }: { industry: Industry }) {
             }}
             aria-current={selected === index ? "step" : undefined}
           >
-            <span className="stage-index">{index < run.completed ? "✓" : `0${index + 1}`}</span>
+            <span className="stage-index">
+              {index < run.completed ? "✓" : `0${index + 1}`}
+            </span>
             {s.title}
           </Button>
         ))}
@@ -755,6 +802,14 @@ export function IndustryLab({ industry }: { industry: Industry }) {
                 <DataDrawer
                   title="Inspect mapped claims (note excluded)"
                   value={prepared ?? { state: "Claims have not been prepared" }}
+                />
+                <DataDrawer
+                  title="Read the issuer’s detailed statement"
+                  value={
+                    statementDocument(snapshot, activeSource.id) ?? {
+                      state: "Issue credentials to produce a signed statement",
+                    }
+                  }
                 />
                 <DataDrawer
                   title="Inspect issued credential + signature"

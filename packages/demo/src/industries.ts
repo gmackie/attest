@@ -1,3 +1,4 @@
+import { contractDocument, type ApprovalContract } from "./contracts";
 import {
   issueCriteriaPod,
   proveCriteria,
@@ -35,6 +36,7 @@ export type IndustryRule = Readonly<{
   value: FieldValue;
 }>;
 export type Industry = Readonly<{
+  contract?: ApprovalContract;
   id: IndustryId;
   name: string;
   headline: string;
@@ -861,8 +863,13 @@ const advanceIndustry = async (
     completed: run.completed + 1,
   });
   switch (run.completed) {
-    case 0:
-      return next({ raw: structuredClone(run.inputs) });
+    case 0: {
+      const digest = await commitValue(contractDocument(run.industry));
+      return next({
+        raw: structuredClone(run.inputs),
+        challenge: `${run.challenge}:contract:${digest}`,
+      });
+    }
     case 1: {
       const prepared = run.industry.sources.map((source) => {
         const raw = run.raw[source.id];
@@ -979,6 +986,13 @@ const advanceIndustry = async (
         const signer = POD.fromJSON(signature);
         const checks: IndustryCheck[] = [
           {
+            label: "Contract digest matches current agreement",
+            satisfied: run.challenge.endsWith(
+              `:contract:${await commitValue(contractDocument(run.industry))}`,
+            ),
+            detail: "The complete agreement is bound to this request.",
+          },
+          {
             label: "Holder signature, proof set and request challenge",
             satisfied:
               signer.verifySignature() &&
@@ -1035,6 +1049,13 @@ const advanceIndustry = async (
         /* Corrupt presentations fail closed. */
       }
       const checks: IndustryCheck[] = [
+        {
+          label: "Contract digest matches current agreement",
+          satisfied: run.challenge.endsWith(
+            `:contract:${await commitValue(contractDocument(run.industry))}`,
+          ),
+          detail: "The complete agreement is bound to this request.",
+        },
         {
           label: "Holder signature and fresh challenge",
           satisfied: holderValid,

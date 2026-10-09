@@ -1838,3 +1838,135 @@ footer p {
     font-size: 22px;
   }
 }
+.contract-selector {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin: 24px 0;
+}
+.contract-selector > p {
+  font-size: 12px;
+  max-width: 650px;
+}
+.contract-explorer {
+  padding: 28px;
+  margin: 24px 0;
+}
+.contract-explorer h3 {
+  font-size: 25px;
+  letter-spacing: -0.6px;
+  margin: 8px 0;
+}
+.contract-explorer p {
+  font-size: 12px;
+  line-height: 1.7;
+}
+.contract-parties {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  padding: 20px 0;
+  border-block: 1px solid #e1e8dc;
+  margin: 22px 0;
+}
+.contract-parties span {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 1.4px;
+  color: var(--industry-accent);
+}
+.contract-parties strong {
+  display: block;
+  font-size: 14px;
+  margin: 9px 0;
+}
+.contract-parties code {
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.contract-clauses {
+  display: grid;
+  gap: 5px;
+  margin-top: 18px;
+}
+.clause-trigger {
+  width: 100%;
+  height: auto !important;
+  padding: 14px 10px !important;
+  justify-content: flex-start !important;
+  white-space: normal !important;
+  text-align: left;
+  gap: 12px !important;
+}
+.clause-trigger > span {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+}
+.clause-trigger code {
+  font-size: 10px;
+  color: var(--industry-accent);
+  white-space: nowrap;
+}
+.clause-trigger span > span:nth-child(2) {
+  flex: 1;
+}
+.clause-body {
+  padding: 8px 20px 22px;
+  background: var(--industry-tint);
+  border-radius: 8px;
+}
+.clause-body p {
+  margin: 12px 0;
+}
+.clause-body code {
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.contract-terms {
+  display: grid;
+  gap: 18px;
+  margin: 24px 0;
+}
+.contract-terms h4 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.contract-footnote {
+  border-top: 1px solid #e0e8d9;
+  padding-top: 16px;
+  margin-top: 20px;
+  color: #61735c;
+}
+@media (max-width: 650px) {
+  .contract-selector {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .contract-explorer {
+    padding: 18px;
+  }
+  .contract-explorer > .section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .contract-explorer h3 {
+    font-size: 22px;
+  }
+  .contract-parties {
+    grid-template-columns: 1fr;
+    gap: 15px;
+  }
+  .clause-trigger {
+    font-size: 11px !important;
+  }
+  .clause-trigger > span {
+    flex-wrap: wrap;
+  }
+  .clause-body {
+    padding: 8px 12px 16px;
+  }
+}

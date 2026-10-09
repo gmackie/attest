@@ -213,3 +213,21 @@ set. Neither is a Merkle tree. All stores are logical partitions in browser memo
 with no production access isolation or persistence. Ledger inclusion is a local
 illustration, not a chain transaction. Supplier assurance retains its insurance
 proof plus local SOC 2 / ISO checks. Demo policies use fixed October 2026 dates.
+
+## Detailed approval contracts
+
+Healthcare, education and logistics include standard, enhanced and critical
+agreements. Each has ten numbered executable clauses with a named issuer, schema,
+subject, comparison, privacy explanation and failure consequence. Contract levels
+change actual thresholds and validity requirements; the baseline source records
+need not satisfy critical engagements. The explorer includes parties, scope,
+data-handling terms, re-evaluation triggers, an explicit enforcement boundary and
+a downloadable canonical JSON document. Issued-statement inspectors show the exact
+assertions and original signed record.
+
+Capture hashes the complete agreement into the request challenge. Verification
+recomputes that digest, including descriptive terms, to reject agreement
+substitution. Private proofs and holder presentations remain bound to the fresh
+challenge. All clauses are conjunctive; no alternatives or cross-source arithmetic
+are implied. Retention and future-monitoring duties are explanatory only. These
+are fictional approval specifications, not legal advice or on-chain contracts.

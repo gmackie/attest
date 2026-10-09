@@ -1,3 +1,4 @@
+import { WalletIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import {
   Badge,
@@ -66,18 +67,37 @@ export function DemoChooser() {
   return (
     <section className="page-section">
       <span className="eyebrow">REAL WALLETS · FICTIONAL INSTITUTIONS</span>
-      <h1>Choose your next decision.</h1>
+      <h1>Take the journey onchain.</h1>
       <p>
         Collect signed credentials from independent institution wallets. Prove
         the required facts privately, then ask a verifier to record its decision
         on Sepolia.
       </p>
+      <div className="testnet-mode-note">
+        <WalletIcon size={24} />
+        <div>
+          <strong>Connect your own EVM wallet · Ethereum Sepolia</strong>
+          <p>
+            Fictional institutions use real issuer wallets. Your wallet signs
+            requests; funded institution wallets submit transactions. Private
+            evidence stays in your encrypted passport.
+          </p>
+        </div>
+      </div>
+      <div className="controls">
+        <LinkButton href="#/app" variant="secondary">
+          Manage wallet, issuer & verifier tools →
+        </LinkButton>
+        <LinkButton href="#/explore" variant="ghost">
+          Try without a wallet →
+        </LinkButton>
+      </div>
       <div className="story-grid">
         <LayerCard className="infra-card">
           <Badge variant="outline">3 issuers · 1 verifier</Badge>
           <h2>Contractor passport</h2>
           <p>Training, experience and insurance for Northstar’s Project 817.</p>
-          <LinkButton href="#/demo/contractor" variant="primary">
+          <LinkButton href="#/testnet/contractor" variant="primary">
             Build a contractor passport →
           </LinkButton>
         </LayerCard>
@@ -90,7 +110,7 @@ export function DemoChooser() {
               </Badge>
               <h2>{d.name}</h2>
               <p>{d.description}</p>
-              <LinkButton href={`#/demo/${id}`} variant="primary">
+              <LinkButton href={`#/testnet/${id}`} variant="primary">
                 {d.purpose} →
               </LinkButton>
               <LinkButton href={`#/explore/${id}`} variant="ghost">

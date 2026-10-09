@@ -1,3 +1,4 @@
+import { IndustryIcon } from "./IndustryIcon";
 import { ContractExplorer } from "./ContractExplorer";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
@@ -13,9 +14,6 @@ import {
   ArrowRightIcon,
   DatabaseIcon,
   FingerprintIcon,
-  FirstAidKitIcon,
-  GraduationCapIcon,
-  TruckIcon,
   PlayIcon,
   SealCheckIcon,
   WalletIcon,
@@ -39,22 +37,6 @@ import {
 const format = (value: unknown) => JSON.stringify(value, null, 2);
 const fingerprint = (value?: string) =>
   value ? `${value.slice(0, 14)}…${value.slice(-8)}` : "Not created yet";
-export const IndustryIcon = ({
-  id,
-  size = 28,
-}: {
-  id: string;
-  size?: number;
-}) =>
-  id === "healthcare" ? (
-    <FirstAidKitIcon size={size} />
-  ) : id === "education" ? (
-    <GraduationCapIcon size={size} />
-  ) : id === "logistics" ? (
-    <TruckIcon size={size} />
-  ) : (
-    <SealCheckIcon size={size} />
-  );
 function DataDrawer({ title, value }: { title: string; value: unknown }) {
   return (
     <Collapsible.Root>
@@ -76,6 +58,7 @@ export function IndustryLab({
     withContract(baseIndustry, "standard"),
   );
   const [view, setView] = useState<"journey" | "agreement">("journey");
+  const [inspecting, setInspecting] = useState(false);
   const [privateMode, setPrivateMode] = useState(true);
   const [inputs, setInputs] = useState<IndustryInputs>(() =>
     defaultIndustryInputs(industry),
@@ -226,7 +209,7 @@ export function IndustryLab({
           ))}
         </div>
         <div>
-          <Badge variant="outline">{industry.name} / live data journey</Badge>
+          <Badge variant="outline">{industry.name} / browser demo</Badge>
           <h2>{industry.headline}</h2>
           <p>{industry.description}</p>
           <div className="industry-pills">
@@ -236,22 +219,6 @@ export function IndustryLab({
           </div>
         </div>
       </div>
-      <details className="quiet-details">
-        <summary>Privacy and demo boundaries</summary>
-        <Banner
-          variant="secondary"
-          title={
-            privateMode
-              ? "Private approval with real zero-knowledge proofs"
-              : "Disclosed credential comparison mode"
-          }
-          description={
-            privateMode
-              ? `The ${industry.sources.length} issuer-specific GPC proofs establish ${industry.rules.length} approval criteria. Exact values, dates and credential signatures stay in the wallet. Subject, holder public key, trusted issuer keys, thresholds and request challenge remain public. Equality checks imply their required value. POD/GPC is beta and unaudited.`
-              : "All signed claims are disclosed in comparison mode. Real signatures and request binding remain checked. These fictional systems exist only in browser memory."
-          }
-        />
-      </details>
       <div className="controls">
         <Button
           variant={view === "journey" ? "primary" : "secondary"}
@@ -297,6 +264,7 @@ export function IndustryLab({
           run={snapshot}
           onSource={(id) => {
             setView("journey");
+            setInspecting(true);
             setFocus(id);
             document
               .querySelector(".institution-console")
@@ -338,45 +306,52 @@ export function IndustryLab({
             </Button>
           </div>
         </LayerCard>
-        <div className="journey-presets">
-          <Select<string>
-            label="Approval privacy"
-            value={privateMode ? "private" : "disclosed"}
-            items={[
-              {
-                label: "Private proofs · hide source values",
-                value: "private",
-              },
-              { label: "Disclosed credentials · compare", value: "disclosed" },
-            ]}
-            disabled={busy || playing}
-            onValueChange={(value) => {
-              if (value) {
-                setPrivateMode(value === "private");
-                reset(inputs, value === "private");
-              }
-            }}
-          />
+        <details className="experiment-settings">
+          <summary>Customize evidence & privacy</summary>
+          <div className="journey-presets">
+            <Select<string>
+              label="Approval privacy"
+              value={privateMode ? "private" : "disclosed"}
+              items={[
+                {
+                  label: "Private proofs · hide source values",
+                  value: "private",
+                },
+                {
+                  label: "Disclosed credentials · compare",
+                  value: "disclosed",
+                },
+              ]}
+              disabled={busy || playing}
+              onValueChange={(value) => {
+                if (value) {
+                  setPrivateMode(value === "private");
+                  reset(inputs, value === "private");
+                }
+              }}
+            />
 
-          <span>TRY A SCENARIO</span>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy || playing}
-            onClick={() => change(defaultIndustryInputs(industry))}
-          >
-            Baseline {industry.id === "logistics" ? "shipment" : "application"}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy || playing}
-            onClick={loadFailure}
-          >
-            {industry.failure.label}
-          </Button>
-          <Badge variant="secondary">Editing starts a fresh request</Badge>
-        </div>
+            <span>TRY A SCENARIO</span>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy || playing}
+              onClick={() => change(defaultIndustryInputs(industry))}
+            >
+              Baseline{" "}
+              {industry.id === "logistics" ? "shipment" : "application"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy || playing}
+              onClick={loadFailure}
+            >
+              {industry.failure.label}
+            </Button>
+            <Badge variant="secondary">Editing starts a fresh request</Badge>
+          </div>
+        </details>
         <nav className="journey-stages" aria-label="Industry process stages">
           {industrySteps.map((s, index) => (
             <Button
@@ -404,570 +379,692 @@ export function IndustryLab({
             </Button>
           ))}
         </nav>
-        <div className="journey-workspace">
-          <LayerCard className="institution-map">
-            <div className="section-heading">
-              <span className="eyebrow">WHERE THE DATA LIVES</span>
-              <Badge variant="outline">{run.completed} / 7</Badge>
+        <section
+          className={`process-theater ${busy ? "is-working" : ""}`}
+          aria-label="Current data handoff"
+        >
+          <div className="theater-heading">
+            <span className="eyebrow">STEP 0{selected + 1} / 07</span>
+            <Badge variant="outline">
+              {busy ? "Processing" : pending ? "Ready to run" : "Completed"}
+            </Badge>
+          </div>
+          <div className="process-actors" aria-hidden="true">
+            <div className={selected < 3 ? "active" : ""}>
+              <DatabaseIcon size={32} />
+              <span>Institutions</span>
+              <small>{snapshot.issued.length} signed</small>
             </div>
+            <span
+              className={`process-connection ${selected === 3 ? "active" : ""}`}
+            >
+              →
+            </span>
+            <div className={selected === 3 || selected === 4 ? "active" : ""}>
+              <WalletIcon size={32} />
+              <span>Your wallet</span>
+              <small>{snapshot.wallet.length} held</small>
+            </div>
+            <span
+              className={`process-connection ${selected === 4 ? "active" : ""}`}
+            >
+              →
+            </span>
+            <div className={selected === 5 ? "active" : ""}>
+              <SealCheckIcon size={32} />
+              <span>Verifier</span>
+              <small>
+                {snapshot.receipt
+                  ? snapshot.receipt.satisfied
+                    ? "Approved"
+                    : "Declined"
+                  : "Awaiting proof"}
+              </small>
+            </div>
+            <span
+              className={`process-connection ${selected === 6 ? "active" : ""}`}
+            >
+              →
+            </span>
+            <div className={selected === 6 ? "active" : ""}>
+              <FingerprintIcon size={32} />
+              <span>Local ledger</span>
+              <small>{snapshot.ledger.length} receipts</small>
+            </div>
+          </div>
+          <div
+            className="handoff-artifact"
+            key={`${selected}-${snapshot.completed}`}
+          >
+            <FingerprintIcon size={20} />
+            <span>
+              {pending
+                ? "Waiting for this handoff"
+                : [
+                    "Source records captured",
+                    "Claims prepared; internal notes excluded",
+                    `${snapshot.issued.length} issuer signatures created`,
+                    `${snapshot.wallet.length} credentials delivered`,
+                    privateMode
+                      ? "Private proof bundle prepared"
+                      : "Signed presentation prepared",
+                    snapshot.receipt?.satisfied
+                      ? "Policy satisfied"
+                      : "Policy not satisfied",
+                    "Receipt commitment recorded locally",
+                  ][selected]}
+            </span>
+            <small>{pending ? "Pending" : "✓ Actual result"}</small>
+          </div>
+          <div className="theater-story" key={selected}>
+            <h3>
+              {privateMode && selected === 4
+                ? "Prove the criteria. Keep the details."
+                : step.verb}
+            </h3>
             <p>
-              Choose an institution to inspect its inputs, stored data and
-              outbound messages.
+              {privateMode && selected === 4
+                ? `Your wallet generates ${industry.sources.length} issuer-specific proofs. Exact values and credential signatures stay private. The first proof can take a minute or longer.`
+                : privateMode && selected === 5
+                  ? "The verifier checks the proofs, trusted issuers, holder binding and request challenge. Its decision follows the actual evidence."
+                  : step.description.replace(
+                      "five credentials",
+                      `${industry.sources.length} credentials`,
+                    )}
             </p>
-            <div className={`data-network ${playing || busy ? "moving" : ""}`}>
-              <div className="source-nodes">
-                {industry.sources.map((source) => (
-                  <Button
-                    key={source.id}
-                    variant={focus === source.id ? "secondary" : "outline"}
-                    className={`actor-node ${selected < 3 ? "processing" : ""}`}
-                    onClick={() => setFocus(source.id)}
-                  >
-                    <span className="actor-avatar">
-                      <DatabaseIcon size={19} />
-                    </span>
-                    <strong>{source.name}</strong>
-                    <small>
-                      {snapshot.raw[source.id]
-                        ? "Source record stored"
-                        : "Awaiting input"}
-                    </small>
-                    <span className="actor-count">
-                      {snapshot.issued.some(
-                        (c) => c.claims.issuer === source.id,
-                      )
-                        ? "1 signed credential"
-                        : "0 credentials"}
-                    </span>
-                  </Button>
-                ))}
-              </div>
-              <div className="data-wires">
-                <i />
-                <i />
-                <i />
-                <span>
-                  {selected < 2
-                    ? "Source → validated claims"
-                    : selected === 2
-                      ? "Issuer signatures → credentials"
-                      : "Signed credential copies"}
-                </span>
-              </div>
-              <Button
-                className={`actor-node wallet-actor ${selected === 3 || selected === 4 ? "processing" : ""}`}
-                variant={focus === "wallet" ? "secondary" : "outline"}
-                onClick={() => setFocus("wallet")}
-              >
-                <WalletIcon size={29} />
-                <span>
-                  <strong>{industry.holder}</strong>
-                  <small>
-                    Private wallet · {snapshot.wallet.length} credentials
-                  </small>
-                </span>
-              </Button>
-              <div className="data-wire">
-                <i />
-                <span>
-                  {snapshot.privateInbox
-                    ? "Zero-knowledge proofs · values stay private"
-                    : snapshot.inbox
-                      ? "Signed claims + holder signature shared"
-                      : "Holder chooses what to present"}
-                </span>
-              </div>
-              <Button
-                className={`actor-node verifier-actor ${selected === 5 ? "processing" : ""}`}
-                variant={focus === "verifier" ? "secondary" : "outline"}
-                onClick={() => setFocus("verifier")}
-              >
-                <SealCheckIcon size={29} />
-                <span>
-                  <strong>{industry.verifier}</strong>
-                  <small>
-                    {snapshot.receipt
-                      ? snapshot.receipt.satisfied
-                        ? "Verified · policy satisfied"
-                        : "Verified · policy failed"
-                      : snapshot.inbox || snapshot.privateInbox
-                        ? "Presentation received"
-                        : "Inbox empty"}
-                  </small>
-                </span>
-              </Button>
-              <div className="data-wire">
-                <i />
-                <span>Only commitments + outcome</span>
-              </div>
-              <Button
-                className="actor-node ledger-actor"
-                variant={focus === "ledger" ? "secondary" : "outline"}
-                onClick={() => setFocus("ledger")}
-              >
-                <span className="actor-avatar">#</span>
-                <span>
-                  <strong>Receipt ledger</strong>
-                  <small>
-                    {snapshot.ledger.length} simulated entries · no network
-                    transaction
-                  </small>
-                </span>
-              </Button>
-            </div>
-          </LayerCard>
-          <div className="journey-details">
-            <LayerCard className="stage-explanation">
+          </div>
+          <div className="theater-status" role="status">
+            {error
+              ? `Stopped: ${error}`
+              : busy
+                ? "Working on the actual data. This indicator does not estimate proof progress."
+                : pending
+                  ? "Run the journey or advance one stage to see the result."
+                  : `✓ ${step.title} finished. The data handoff above reflects this step.`}
+          </div>
+        </section>
+        <details
+          className="journey-inspector"
+          open={inspecting}
+          onToggle={(event) => setInspecting(event.currentTarget.open)}
+        >
+          <summary>
+            Inspect institutions, inputs, signatures & stored data{" "}
+            <span>Open the workbench</span>
+          </summary>
+          <div className="journey-workspace">
+            <LayerCard className="institution-map">
               <div className="section-heading">
-                <Badge variant="outline">
-                  {pending ? "Up next" : "Completed"}
-                </Badge>
-                <span className="eyebrow">STAGE {selected + 1}</span>
+                <span className="eyebrow">WHERE THE DATA LIVES</span>
+                <Badge variant="outline">{run.completed} / 7</Badge>
               </div>
-              <h3>
-                {privateMode && selected === 4
-                  ? "Prove the approval criteria privately"
-                  : step.verb}
-              </h3>
               <p>
-                {privateMode && selected === 4
-                  ? "The wallet checks the criteria locally, then generates one real zero-knowledge proof per issuer. Failing criteria stop the flow without sharing source values. Proof generation can take a minute or longer on the first run."
-                  : privateMode && selected === 5
-                    ? "The verifier checks every proof against its own source-specific policy, accepted issuer, subject, holder binding and challenge. It receives no raw credentials or exact field values."
-                    : step.description.replace(/three|five|3 |5 /g, () => `${industry.sources.length} `)}
+                Choose an institution to inspect its inputs, stored data and
+                outbound messages.
               </p>
-              <div className="stage-io">
-                <div>
-                  <span>INPUT</span>
-                  <strong>
-                    {
-                      [
-                        "Institution form fields",
-                        "Stored source records",
-                        "Validated credential claims",
-                        "Signed issuer credentials",
-                        "Wallet + fresh challenge",
-                        privateMode
-                          ? "Request-bound proof bundle"
-                          : "Signed presentation",
-                        "Local verification receipt",
-                      ][selected]
-                    }
-                  </strong>
+              <div
+                className={`data-network ${playing || busy ? "moving" : ""}`}
+              >
+                <div className="source-nodes">
+                  {industry.sources.map((source) => (
+                    <Button
+                      key={source.id}
+                      variant={focus === source.id ? "secondary" : "outline"}
+                      className={`actor-node ${selected < 3 ? "processing" : ""}`}
+                      onClick={() => setFocus(source.id)}
+                    >
+                      <span className="actor-avatar">
+                        <DatabaseIcon size={19} />
+                      </span>
+                      <strong>{source.name}</strong>
+                      <small>
+                        {snapshot.raw[source.id]
+                          ? "Source record stored"
+                          : "Awaiting input"}
+                      </small>
+                      <span className="actor-count">
+                        {snapshot.issued.some(
+                          (c) => c.claims.issuer === source.id,
+                        )
+                          ? "1 signed credential"
+                          : "0 credentials"}
+                      </span>
+                    </Button>
+                  ))}
                 </div>
-                <ArrowRightIcon />
-                <div>
-                  <span>OUTPUT</span>
-                  <strong>
-                    {
-                      [
-                        "Separate institution stores",
-                        "Subject + schema + claims",
-                        `${industry.sources.length} independent signatures`,
-                        `${industry.sources.length} wallet copies`,
-                        privateMode
-                          ? "Five proofs; no source claims"
-                          : "Verifier inbox",
-                        "Checks + decision receipt",
-                        "Simulated public ledger",
-                      ][selected]
-                    }
-                  </strong>
+                <div className="data-wires">
+                  <i />
+                  <i />
+                  <i />
+                  <span>
+                    {selected < 2
+                      ? "Source → validated claims"
+                      : selected === 2
+                        ? "Issuer signatures → credentials"
+                        : "Signed credential copies"}
+                  </span>
                 </div>
-              </div>
-              {error && (
-                <Banner
-                  variant="error"
-                  title="Stage stopped"
-                  description={error}
-                />
-              )}
-              <div aria-live="polite">
-                {busy ? (
-                  <p>
-                    {privateMode && selected === 4
-                      ? `Generating ${industry.sources.length} real private proofs sequentially. This can take a minute or longer; no simulated completion.`
-                      : "Processing actual local data…"}
-                  </p>
-                ) : (
-                  !pending && (
-                    <p className="stage-status">
-                      ✓ Stage completed. Inspect the resulting stores below.
-                    </p>
-                  )
-                )}
+                <Button
+                  className={`actor-node wallet-actor ${selected === 3 || selected === 4 ? "processing" : ""}`}
+                  variant={focus === "wallet" ? "secondary" : "outline"}
+                  onClick={() => setFocus("wallet")}
+                >
+                  <WalletIcon size={29} />
+                  <span>
+                    <strong>{industry.holder}</strong>
+                    <small>
+                      Private wallet · {snapshot.wallet.length} credentials
+                    </small>
+                  </span>
+                </Button>
+                <div className="data-wire">
+                  <i />
+                  <span>
+                    {snapshot.privateInbox
+                      ? "Zero-knowledge proofs · values stay private"
+                      : snapshot.inbox
+                        ? "Signed claims + holder signature shared"
+                        : "Holder chooses what to present"}
+                  </span>
+                </div>
+                <Button
+                  className={`actor-node verifier-actor ${selected === 5 ? "processing" : ""}`}
+                  variant={focus === "verifier" ? "secondary" : "outline"}
+                  onClick={() => setFocus("verifier")}
+                >
+                  <SealCheckIcon size={29} />
+                  <span>
+                    <strong>{industry.verifier}</strong>
+                    <small>
+                      {snapshot.receipt
+                        ? snapshot.receipt.satisfied
+                          ? "Verified · policy satisfied"
+                          : "Verified · policy failed"
+                        : snapshot.inbox || snapshot.privateInbox
+                          ? "Presentation received"
+                          : "Inbox empty"}
+                    </small>
+                  </span>
+                </Button>
+                <div className="data-wire">
+                  <i />
+                  <span>Only commitments + outcome</span>
+                </div>
+                <Button
+                  className="actor-node ledger-actor"
+                  variant={focus === "ledger" ? "secondary" : "outline"}
+                  onClick={() => setFocus("ledger")}
+                >
+                  <span className="actor-avatar">#</span>
+                  <span>
+                    <strong>Receipt ledger</strong>
+                    <small>
+                      {snapshot.ledger.length} simulated entries · no network
+                      transaction
+                    </small>
+                  </span>
+                </Button>
               </div>
             </LayerCard>
-            <LayerCard className="institution-console">
-              <div className="section-heading">
-                <div>
-                  <span className="eyebrow">INSTITUTION WORKSPACE</span>
-                  <h3>{allInstitutions.find((a) => a.id === focus)?.name}</h3>
+            <div className="journey-details">
+              <LayerCard className="stage-explanation">
+                <div className="section-heading">
+                  <Badge variant="outline">
+                    {pending ? "Up next" : "Completed"}
+                  </Badge>
+                  <span className="eyebrow">STAGE {selected + 1}</span>
                 </div>
-                <Badge variant="secondary">
-                  {activeSource
-                    ? "Issuer"
-                    : "wallet" === focus
-                      ? "Holder"
-                      : focus === "verifier"
-                        ? "Verifier"
-                        : "Simulation"}
-                </Badge>
-              </div>
-              {activeSource && (
-                <>
-                  <div className="system-label">
-                    <DatabaseIcon />
-                    <span>{activeSource.system}</span>
-                    <Badge variant="outline">Local memory</Badge>
+                <h3>
+                  {privateMode && selected === 4
+                    ? "Prove the approval criteria privately"
+                    : step.verb}
+                </h3>
+                <p>
+                  {privateMode && selected === 4
+                    ? "The wallet checks the criteria locally, then generates one real zero-knowledge proof per issuer. Failing criteria stop the flow without sharing source values. Proof generation can take a minute or longer on the first run."
+                    : privateMode && selected === 5
+                      ? "The verifier checks every proof against its own source-specific policy, accepted issuer, subject, holder binding and challenge. It receives no raw credentials or exact field values."
+                      : step.description.replace(
+                          /three|five|3 |5 /g,
+                          () => `${industry.sources.length} `,
+                        )}
+                </p>
+                <div className="stage-io">
+                  <div>
+                    <span>INPUT</span>
+                    <strong>
+                      {
+                        [
+                          "Institution form fields",
+                          "Stored source records",
+                          "Validated credential claims",
+                          "Signed issuer credentials",
+                          "Wallet + fresh challenge",
+                          privateMode
+                            ? "Request-bound proof bundle"
+                            : "Signed presentation",
+                          "Local verification receipt",
+                        ][selected]
+                      }
+                    </strong>
                   </div>
-                  <p className="console-intro">
-                    Staff enter or import these values in this institution’s
-                    source system. This form simulates that input. Internal
-                    notes are stored here but never signed or sent.
-                  </p>
-                  <div className="source-form">
-                    <InputGroup
-                      label="Subject / record owner"
-                      disabled={busy || playing}
-                    >
-                      <InputGroup.Input
-                        value={inputs[activeSource.id]!.subject}
-                        onChange={(e) =>
-                          change({
-                            ...inputs,
-                            [activeSource.id]: {
-                              ...inputs[activeSource.id]!,
-                              subject: e.target.value,
-                            },
-                          })
-                        }
-                      />
-                    </InputGroup>
-                    {activeSource.fields.map((field) =>
-                      field.type === "boolean" ? (
-                        <Select<string>
-                          key={field.id}
-                          label={field.label}
-                          value={String(
-                            inputs[activeSource.id]!.fields[field.id],
-                          )}
-                          items={[
-                            { label: "Yes", value: "true" },
-                            { label: "No", value: "false" },
-                          ]}
-                          disabled={busy || playing}
-                          onValueChange={(value) => {
-                            if (value)
-                              updateField(
-                                activeSource.id,
-                                field.id,
-                                value === "true",
-                              );
-                          }}
+                  <ArrowRightIcon />
+                  <div>
+                    <span>OUTPUT</span>
+                    <strong>
+                      {
+                        [
+                          "Separate institution stores",
+                          "Subject + schema + claims",
+                          `${industry.sources.length} independent signatures`,
+                          `${industry.sources.length} wallet copies`,
+                          privateMode
+                            ? `${industry.sources.length} proofs; no source claims`
+                            : "Verifier inbox",
+                          "Checks + decision receipt",
+                          "Simulated public ledger",
+                        ][selected]
+                      }
+                    </strong>
+                  </div>
+                </div>
+                {error && (
+                  <Banner
+                    variant="error"
+                    title="Stage stopped"
+                    description={error}
+                  />
+                )}
+                <div aria-live="polite">
+                  {busy ? (
+                    <p>
+                      {privateMode && selected === 4
+                        ? `Generating ${industry.sources.length} real private proofs sequentially. This can take a minute or longer; no simulated completion.`
+                        : "Processing actual local data…"}
+                    </p>
+                  ) : (
+                    !pending && (
+                      <p className="stage-status">
+                        ✓ Stage completed. Inspect the resulting stores below.
+                      </p>
+                    )
+                  )}
+                </div>
+              </LayerCard>
+              <LayerCard className="institution-console">
+                <div className="section-heading">
+                  <div>
+                    <span className="eyebrow">INSTITUTION WORKSPACE</span>
+                    <h3>{allInstitutions.find((a) => a.id === focus)?.name}</h3>
+                  </div>
+                  <Badge variant="secondary">
+                    {activeSource
+                      ? "Issuer"
+                      : "wallet" === focus
+                        ? "Holder"
+                        : focus === "verifier"
+                          ? "Verifier"
+                          : "Simulation"}
+                  </Badge>
+                </div>
+                {activeSource && (
+                  <>
+                    <div className="system-label">
+                      <DatabaseIcon />
+                      <span>{activeSource.system}</span>
+                      <Badge variant="outline">Local memory</Badge>
+                    </div>
+                    <p className="console-intro">
+                      Staff enter or import these values in this institution’s
+                      source system. This form simulates that input. Internal
+                      notes are stored here but never signed or sent.
+                    </p>
+                    <div className="source-form">
+                      <InputGroup
+                        label="Subject / record owner"
+                        disabled={busy || playing}
+                      >
+                        <InputGroup.Input
+                          value={inputs[activeSource.id]!.subject}
+                          onChange={(e) =>
+                            change({
+                              ...inputs,
+                              [activeSource.id]: {
+                                ...inputs[activeSource.id]!,
+                                subject: e.target.value,
+                              },
+                            })
+                          }
                         />
-                      ) : (
-                        <InputGroup
-                          key={field.id}
-                          label={`${field.label}${field.unit ? ` (${field.unit})` : ""}`}
-                          disabled={busy || playing}
-                        >
-                          <InputGroup.Input
-                            type={
-                              field.type === "number"
-                                ? "number"
-                                : field.type === "date"
-                                  ? "date"
-                                  : "text"
-                            }
-                            step={field.type === "number" ? "any" : undefined}
+                      </InputGroup>
+                      {activeSource.fields.map((field) =>
+                        field.type === "boolean" ? (
+                          <Select<string>
+                            key={field.id}
+                            label={field.label}
                             value={String(
-                              inputs[activeSource.id]!.fields[field.id] ?? "",
+                              inputs[activeSource.id]!.fields[field.id],
                             )}
-                            onChange={(e) =>
-                              updateField(
-                                activeSource.id,
-                                field.id,
-                                field.type === "number" && e.target.value !== ""
-                                  ? Number(e.target.value)
-                                  : e.target.value,
-                              )
-                            }
+                            items={[
+                              { label: "Yes", value: "true" },
+                              { label: "No", value: "false" },
+                            ]}
+                            disabled={busy || playing}
+                            onValueChange={(value) => {
+                              if (value)
+                                updateField(
+                                  activeSource.id,
+                                  field.id,
+                                  value === "true",
+                                );
+                            }}
                           />
-                        </InputGroup>
-                      ),
+                        ) : (
+                          <InputGroup
+                            key={field.id}
+                            label={`${field.label}${field.unit ? ` (${field.unit})` : ""}`}
+                            disabled={busy || playing}
+                          >
+                            <InputGroup.Input
+                              type={
+                                field.type === "number"
+                                  ? "number"
+                                  : field.type === "date"
+                                    ? "date"
+                                    : "text"
+                              }
+                              step={field.type === "number" ? "any" : undefined}
+                              value={String(
+                                inputs[activeSource.id]!.fields[field.id] ?? "",
+                              )}
+                              onChange={(e) =>
+                                updateField(
+                                  activeSource.id,
+                                  field.id,
+                                  field.type === "number" &&
+                                    e.target.value !== ""
+                                    ? Number(e.target.value)
+                                    : e.target.value,
+                                )
+                              }
+                            />
+                          </InputGroup>
+                        ),
+                      )}
+                      <InputGroup
+                        label="Internal note — never shared"
+                        disabled={busy || playing}
+                      >
+                        <InputGroup.Input
+                          value={inputs[activeSource.id]!.internalNote}
+                          onChange={(e) =>
+                            change({
+                              ...inputs,
+                              [activeSource.id]: {
+                                ...inputs[activeSource.id]!,
+                                internalNote: e.target.value,
+                              },
+                            })
+                          }
+                        />
+                      </InputGroup>
+                    </div>
+                    <div className="store-stats">
+                      <span>
+                        <strong>{issuerData ? 1 : 0}</strong> source records
+                      </span>
+                      <span>
+                        <strong>{prepared ? 1 : 0}</strong> prepared claims
+                      </span>
+                      <span>
+                        <strong>{credential ? 1 : 0}</strong> issued credentials
+                      </span>
+                    </div>
+                    <div className="processing-pipeline">
+                      <span className={issuerData ? "done" : ""}>Capture</span>
+                      <ArrowRightIcon />
+                      <span className={prepared ? "done" : ""}>Map schema</span>
+                      <ArrowRightIcon />
+                      <span className={credential ? "done" : ""}>Sign</span>
+                      <ArrowRightIcon />
+                      <span className={snapshot.wallet.length ? "done" : ""}>
+                        Send copy
+                      </span>
+                    </div>
+                    {credential && (
+                      <div className="credential-stamp">
+                        <FingerprintIcon size={25} />
+                        <div>
+                          <strong>
+                            {activeSource.short} signed this credential
+                          </strong>
+                          <code>{fingerprint(credential.pod.signature)}</code>
+                        </div>
+                      </div>
                     )}
-                    <InputGroup
-                      label="Internal note — never shared"
-                      disabled={busy || playing}
-                    >
-                      <InputGroup.Input
-                        value={inputs[activeSource.id]!.internalNote}
-                        onChange={(e) =>
-                          change({
-                            ...inputs,
-                            [activeSource.id]: {
-                              ...inputs[activeSource.id]!,
-                              internalNote: e.target.value,
-                            },
-                          })
+                    <DataDrawer
+                      title="Inspect this institution’s stored source record"
+                      value={
+                        issuerData ?? { state: "No source data saved yet" }
+                      }
+                    />
+                    <DataDrawer
+                      title="Inspect mapped claims (note excluded)"
+                      value={
+                        prepared ?? { state: "Claims have not been prepared" }
+                      }
+                    />
+                    <DataDrawer
+                      title="Read the issuer’s detailed statement"
+                      value={
+                        statementDocument(snapshot, activeSource.id) ?? {
+                          state:
+                            "Issue credentials to produce a signed statement",
                         }
+                      }
+                    />
+                    <DataDrawer
+                      title="Inspect issued credential + signature"
+                      value={credential ?? { state: "Nothing has been signed" }}
+                    />
+                  </>
+                )}
+                {focus === "wallet" && (
+                  <>
+                    <div className="wallet-owner">
+                      <WalletIcon size={40} />
+                      <div>
+                        <strong>{industry.holder}</strong>
+                        <p>{industry.subject}</p>
+                      </div>
+                    </div>
+                    <p>
+                      The wallet stores credential copies from each issuer.
+                      Original source records and internal notes remain in
+                      issuer stores. The holder has a separate signing key for
+                      the presentation.
+                    </p>
+                    <code className="public-key-label">
+                      Holder public key: {fingerprint(snapshot.holderPublicKey)}
+                    </code>
+                    <div className="stored-credentials">
+                      {industry.sources.map((source) => {
+                        const c = snapshot.wallet.find(
+                          (c) => c.claims.issuer === source.id,
+                        );
+                        return (
+                          <LayerCard
+                            key={source.id}
+                            className="stored-credential"
+                          >
+                            <div className="section-heading">
+                              <strong>{source.name}</strong>
+                              <Badge variant={c ? "success" : "outline"}>
+                                {c ? "Stored" : "Not received"}
+                              </Badge>
+                            </div>
+                            <p>{source.schema}</p>
+                            {c && (
+                              <>
+                                <div className="claim-chips">
+                                  {Object.entries(c.claims.fields).map(
+                                    ([key, value]) => (
+                                      <span key={key}>
+                                        {key}
+                                        <strong>{String(value)}</strong>
+                                      </span>
+                                    ),
+                                  )}
+                                </div>
+                                <DataDrawer
+                                  title="Inspect wallet copy"
+                                  value={c}
+                                />
+                              </>
+                            )}
+                          </LayerCard>
+                        );
+                      })}
+                    </div>
+                    <Banner
+                      variant="secondary"
+                      title={
+                        privateMode
+                          ? "Only proofs cross the privacy boundary"
+                          : "This presentation discloses the signed claims"
+                      }
+                      description={
+                        privateMode
+                          ? "Issuer credentials supply private witnesses. The holder signs the proof bundle for this request. Exact values and signatures remain local; the verifier sees policies, context and proofs."
+                          : `The holder signs the verifier challenge and a commitment to all ${industry.sources.length} credentials. Exact values go to the verifier in this comparison mode.`
+                      }
+                    />
+                  </>
+                )}
+                {focus === "verifier" && (
+                  <>
+                    <div className="system-label">
+                      <SealCheckIcon />
+                      <span>Application inbox & decision engine</span>
+                    </div>
+                    <p>
+                      Receives{" "}
+                      {snapshot.privateInbox
+                        ? `${snapshot.privateInbox.proofs.length} private proofs`
+                        : `${snapshot.inbox?.credentials.length ?? 0} signed credentials`}
+                      . Checks each against the expected issuer key, subject and
+                      schema, then evaluates the following requirements.
+                    </p>
+                    <div className="verifier-rules">
+                      {snapshot.checks.length
+                        ? snapshot.checks.map((check) => (
+                            <div key={check.label}>
+                              <Badge
+                                variant={check.satisfied ? "success" : "error"}
+                              >
+                                {check.satisfied ? "Pass" : "Fail"}
+                              </Badge>
+                              <span>
+                                {check.label}
+                                <small>{check.detail}</small>
+                              </span>
+                            </div>
+                          ))
+                        : industry.rules.map((rule) => (
+                            <div key={rule.label}>
+                              <Badge variant="outline">Pending</Badge>
+                              <span>{rule.label}</span>
+                            </div>
+                          ))}
+                    </div>
+                    {snapshot.receipt && (
+                      <Banner
+                        variant={
+                          snapshot.receipt.satisfied ? "secondary" : "error"
+                        }
+                        title={
+                          snapshot.receipt.satisfied
+                            ? "Application accepted by demo policy"
+                            : "Application does not meet demo policy"
+                        }
+                        description="The outcome is computed from verified proofs or disclosed credentials, depending on the selected mode. These example policies do not represent a real institution’s requirements."
                       />
-                    </InputGroup>
-                  </div>
-                  <div className="store-stats">
-                    <span>
-                      <strong>{issuerData ? 1 : 0}</strong> source records
-                    </span>
-                    <span>
-                      <strong>{prepared ? 1 : 0}</strong> prepared claims
-                    </span>
-                    <span>
-                      <strong>{credential ? 1 : 0}</strong> issued credentials
-                    </span>
-                  </div>
-                  <div className="processing-pipeline">
-                    <span className={issuerData ? "done" : ""}>Capture</span>
-                    <ArrowRightIcon />
-                    <span className={prepared ? "done" : ""}>Map schema</span>
-                    <ArrowRightIcon />
-                    <span className={credential ? "done" : ""}>Sign</span>
-                    <ArrowRightIcon />
-                    <span className={snapshot.wallet.length ? "done" : ""}>
-                      Send copy
-                    </span>
-                  </div>
-                  {credential && (
-                    <div className="credential-stamp">
-                      <FingerprintIcon size={25} />
+                    )}
+                    <DataDrawer
+                      title="Inspect exact verifier inbox"
+                      value={
+                        snapshot.privateInbox ??
+                        snapshot.inbox ?? { state: "No presentation sent" }
+                      }
+                    />
+                    <DataDrawer
+                      title="Inspect decision receipt"
+                      value={snapshot.receipt ?? { state: "Not evaluated" }}
+                    />
+                  </>
+                )}
+                {focus === "ledger" && (
+                  <>
+                    <div className="ledger-banner">
+                      <span>#</span>
                       <div>
                         <strong>
-                          {activeSource.short} signed this credential
+                          A public fingerprint, not a document store.
                         </strong>
-                        <code>{fingerprint(credential.pod.signature)}</code>
+                        <p>
+                          No credentials, private notes or secret keys are
+                          written here.
+                        </p>
                       </div>
                     </div>
-                  )}
-                  <DataDrawer
-                    title="Inspect this institution’s stored source record"
-                    value={issuerData ?? { state: "No source data saved yet" }}
-                  />
-                  <DataDrawer
-                    title="Inspect mapped claims (note excluded)"
-                    value={
-                      prepared ?? { state: "Claims have not been prepared" }
-                    }
-                  />
-                  <DataDrawer
-                    title="Read the issuer’s detailed statement"
-                    value={
-                      statementDocument(snapshot, activeSource.id) ?? {
-                        state:
-                          "Issue credentials to produce a signed statement",
-                      }
-                    }
-                  />
-                  <DataDrawer
-                    title="Inspect issued credential + signature"
-                    value={credential ?? { state: "Nothing has been signed" }}
-                  />
-                </>
-              )}
-              {focus === "wallet" && (
-                <>
-                  <div className="wallet-owner">
-                    <WalletIcon size={40} />
-                    <div>
-                      <strong>{industry.holder}</strong>
-                      <p>{industry.subject}</p>
-                    </div>
-                  </div>
-                  <p>
-                    The wallet stores credential copies from each issuer.
-                    Original source records and internal notes remain in issuer
-                    stores. The holder has a separate signing key for the
-                    presentation.
-                  </p>
-                  <code className="public-key-label">
-                    Holder public key: {fingerprint(snapshot.holderPublicKey)}
-                  </code>
-                  <div className="stored-credentials">
-                    {industry.sources.map((source) => {
-                      const c = snapshot.wallet.find(
-                        (c) => c.claims.issuer === source.id,
-                      );
-                      return (
-                        <LayerCard
-                          key={source.id}
-                          className="stored-credential"
-                        >
+                    <p>
+                      The demonstration below models receipt event data. In this
+                      repository, the contract emits a VerificationRecorded
+                      event supplied by a caller; it does not independently
+                      verify this presentation.
+                    </p>
+                    {snapshot.ledger.length ? (
+                      snapshot.ledger.map((entry, index) => (
+                        <div className="industry-block" key={index}>
                           <div className="section-heading">
-                            <strong>{source.name}</strong>
-                            <Badge variant={c ? "success" : "outline"}>
-                              {c ? "Stored" : "Not received"}
-                            </Badge>
+                            <strong>Illustrative block 01</strong>
+                            <Badge variant="outline">Local simulation</Badge>
                           </div>
-                          <p>{source.schema}</p>
-                          {c && (
-                            <>
-                              <div className="claim-chips">
-                                {Object.entries(c.claims.fields).map(
-                                  ([key, value]) => (
-                                    <span key={key}>
-                                      {key}
-                                      <strong>{String(value)}</strong>
-                                    </span>
-                                  ),
-                                )}
-                              </div>
-                              <DataDrawer
-                                title="Inspect wallet copy"
-                                value={c}
-                              />
-                            </>
-                          )}
-                        </LayerCard>
-                      );
-                    })}
-                  </div>
-                  <Banner
-                    variant="secondary"
-                    title={
-                      privateMode
-                        ? "Only proofs cross the privacy boundary"
-                        : "This presentation discloses the signed claims"
-                    }
-                    description={
-                      privateMode
-                        ? "Issuer credentials supply private witnesses. The holder signs the proof bundle for this request. Exact values and signatures remain local; the verifier sees policies, context and proofs."
-                        : `The holder signs the verifier challenge and a commitment to all ${industry.sources.length} credentials. Exact values go to the verifier in this comparison mode.`
-                    }
-                  />
-                </>
-              )}
-              {focus === "verifier" && (
-                <>
-                  <div className="system-label">
-                    <SealCheckIcon />
-                    <span>Application inbox & decision engine</span>
-                  </div>
-                  <p>
-                    Receives{" "}
-                    {snapshot.privateInbox
-                      ? `${snapshot.privateInbox.proofs.length} private proofs`
-                      : `${snapshot.inbox?.credentials.length ?? 0} signed credentials`}
-                    . Checks each against the expected issuer key, subject and
-                    schema, then evaluates the following requirements.
-                  </p>
-                  <div className="verifier-rules">
-                    {snapshot.checks.length
-                      ? snapshot.checks.map((check) => (
-                          <div key={check.label}>
-                            <Badge
-                              variant={check.satisfied ? "success" : "error"}
-                            >
-                              {check.satisfied ? "Pass" : "Fail"}
-                            </Badge>
-                            <span>
-                              {check.label}
-                              <small>{check.detail}</small>
-                            </span>
-                          </div>
-                        ))
-                      : industry.rules.map((rule) => (
-                          <div key={rule.label}>
-                            <Badge variant="outline">Pending</Badge>
-                            <span>{rule.label}</span>
-                          </div>
-                        ))}
-                  </div>
-                  {snapshot.receipt && (
-                    <Banner
-                      variant={
-                        snapshot.receipt.satisfied ? "secondary" : "error"
-                      }
-                      title={
-                        snapshot.receipt.satisfied
-                          ? "Application accepted by demo policy"
-                          : "Application does not meet demo policy"
-                      }
-                      description="The outcome is computed from verified proofs or disclosed credentials, depending on the selected mode. These example policies do not represent a real institution’s requirements."
-                    />
-                  )}
-                  <DataDrawer
-                    title="Inspect exact verifier inbox"
-                    value={
-                      snapshot.privateInbox ??
-                      snapshot.inbox ?? { state: "No presentation sent" }
-                    }
-                  />
-                  <DataDrawer
-                    title="Inspect decision receipt"
-                    value={snapshot.receipt ?? { state: "Not evaluated" }}
-                  />
-                </>
-              )}
-              {focus === "ledger" && (
-                <>
-                  <div className="ledger-banner">
-                    <span>#</span>
-                    <div>
-                      <strong>
-                        A public fingerprint, not a document store.
-                      </strong>
-                      <p>
-                        No credentials, private notes or secret keys are written
-                        here.
-                      </p>
-                    </div>
-                  </div>
-                  <p>
-                    The demonstration below models receipt event data. In this
-                    repository, the contract emits a VerificationRecorded event
-                    supplied by a caller; it does not independently verify this
-                    presentation.
-                  </p>
-                  {snapshot.ledger.length ? (
-                    snapshot.ledger.map((entry, index) => (
-                      <div className="industry-block" key={index}>
-                        <div className="section-heading">
-                          <strong>Illustrative block 01</strong>
-                          <Badge variant="outline">Local simulation</Badge>
+                          {Object.entries(entry.receipt).map(([key, value]) => (
+                            <div className="block-field" key={key}>
+                              <span>{key}</span>
+                              <code>
+                                {typeof value === "string"
+                                  ? fingerprint(value)
+                                  : String(value)}
+                              </code>
+                            </div>
+                          ))}
+                          <DataDrawer
+                            title="Inspect simulated receipt event"
+                            value={entry}
+                          />
                         </div>
-                        {Object.entries(entry.receipt).map(([key, value]) => (
-                          <div className="block-field" key={key}>
-                            <span>{key}</span>
-                            <code>
-                              {typeof value === "string"
-                                ? fingerprint(value)
-                                : String(value)}
-                            </code>
-                          </div>
-                        ))}
-                        <DataDrawer
-                          title="Inspect simulated receipt event"
-                          value={entry}
-                        />
-                      </div>
-                    ))
-                  ) : (
-                    <Banner
-                      title="No receipt entry yet"
-                      description="Run the Anchor stage after verification to populate this local illustration."
-                    />
-                  )}
-                  <p>
-                    evidenceRoot hashes the proof-commitment set in private
-                    mode, or the credential set in disclosed mode; it is not a
-                    Merkle root. proofCommitment commits to the selected
-                    presentation. The holder-derived nullifier is scoped to this
-                    request.
-                  </p>
-                </>
-              )}
-            </LayerCard>
+                      ))
+                    ) : (
+                      <Banner
+                        title="No receipt entry yet"
+                        description="Run the Anchor stage after verification to populate this local illustration."
+                      />
+                    )}
+                    <p>
+                      evidenceRoot hashes the proof-commitment set in private
+                      mode, or the credential set in disclosed mode; it is not a
+                      Merkle root. proofCommitment commits to the selected
+                      presentation. The holder-derived nullifier is scoped to
+                      this request.
+                    </p>
+                  </>
+                )}
+              </LayerCard>
+            </div>
           </div>
-        </div>
+        </details>
         <details className="data-ownership quiet-details">
           <summary>Inspect who stores and sees each piece of data</summary>
           <div className="section-heading">
@@ -1051,6 +1148,22 @@ export function IndustryLab({
           </p>
         </details>
       </div>
+      <details className="quiet-details">
+        <summary>Privacy and demo boundaries</summary>
+        <Banner
+          variant="secondary"
+          title={
+            privateMode
+              ? "Private approval with real zero-knowledge proofs"
+              : "Disclosed credential comparison mode"
+          }
+          description={
+            privateMode
+              ? `The ${industry.sources.length} issuer-specific GPC proofs establish ${industry.rules.length} approval criteria. Exact values, dates and credential signatures stay in the wallet. Subject, holder public key, trusted issuer keys, thresholds and request challenge remain public. Equality checks imply their required value. POD/GPC is beta and unaudited.`
+              : "All signed claims are disclosed in comparison mode. Real signatures and request binding remain checked. These fictional systems exist only in browser memory."
+          }
+        />
+      </details>
     </section>
   );
 }

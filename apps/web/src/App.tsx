@@ -1,8 +1,11 @@
+import { Landing, BrowserDemos } from "./Landing";
 import { lazy, Suspense, useEffect, useState } from "react";
-import { Badge, Button, LayerCard, LinkButton } from "@cloudflare/kumo";
+import { Badge, LinkButton } from "@cloudflare/kumo";
 import { FingerprintIcon } from "@phosphor-icons/react";
 import { industries, supplierIndustry } from "@attest/demo";
-import { IndustryLab, IndustryIcon } from "./IndustryLab";
+const IndustryLab = lazy(() =>
+  import("./IndustryLab").then((m) => ({ default: m.IndustryLab })),
+);
 import { WalletWorkspace } from "./WalletWorkspace";
 import { ConnectedWorkspace } from "./ConnectedWorkspace";
 import { StandardsExplorer } from "./StandardsExplorer";
@@ -18,7 +21,8 @@ const DemoChooser = lazy(() =>
 );
 const stories = [supplierIndustry, ...industries];
 function route() {
-  return location.hash.slice(1) || "/";
+  const path = location.hash.slice(1) || "/";
+  return path.replace(/^\/testnet(?=\/|\?|$)/, "/demo");
 }
 export function App() {
   const [path, setPath] = useState(route);
@@ -51,17 +55,25 @@ export function App() {
         </a>
         <nav aria-label="Primary navigation">
           {[
-            { name: "Explore", href: "/explore" },
-            { name: "Testnet demo", href: "/demo" },
-            { name: "Workspace", href: "/app" },
+            { name: "Browser demos", href: "/explore" },
+            { name: "Onchain testnet", href: "/testnet" },
+
             { name: "Learn", href: "/learn" },
             { name: "Developers", href: "/developers" },
           ].map((item) => (
             <LinkButton
               key={item.href}
               href={`#${item.href}`}
-              variant={path.startsWith(item.href) ? "secondary" : "ghost"}
-              aria-current={path.startsWith(item.href) ? "page" : undefined}
+              variant={
+                path.startsWith(item.href === "/testnet" ? "/demo" : item.href)
+                  ? "secondary"
+                  : "ghost"
+              }
+              aria-current={
+                path.startsWith(item.href === "/testnet" ? "/demo" : item.href)
+                  ? "page"
+                  : undefined
+              }
             >
               {item.name}
             </LinkButton>
@@ -69,113 +81,32 @@ export function App() {
         </nav>
       </header>
       <main>
-        {path === "/" && (
-          <>
-            <section className="landing-hero">
-              <span className="eyebrow">
-                PRIVATE EVIDENCE. EXPLAINABLE TRUST.
-              </span>
-              <h1>
-                Prove what matters.
-                <br />
-                <span>Keep the rest yours.</span>
-              </h1>
-              <p>
-                Connect credentials from independent institutions. Share the
-                evidence a decision needs, with clear control over what stays
-                private.
-              </p>
-              <div className="controls">
-                <LinkButton href="#/explore" variant="primary">
-                  Try a guided demo
-                </LinkButton>
-                <LinkButton href="#/demo" variant="secondary">
-                  Try with a real wallet
-                </LinkButton>
-              </div>
-            </section>
-            <div className="landing-flow">
-              <span>Institutions issue</span>
-              <span>→</span>
-              <span>You hold & prove</span>
-              <span>→</span>
-              <span>Verifiers decide</span>
-            </div>
-            <div className="destination-grid">
-              <LayerCard className="infra-card">
-                <h2>Understand the journey</h2>
-                <p>
-                  Follow a supplier, clinician, applicant or shipment. Inspect
-                  each handoff and the exact clauses behind the decision.
-                </p>
-                <LinkButton href="#/explore" variant="ghost">
-                  Choose a story →
-                </LinkButton>
-              </LayerCard>
-              <LayerCard className="infra-card">
-                <h2>Work with your wallet</h2>
-                <p>
-                  Connect an EVM account, manage encrypted local custody, and
-                  work with a scoped testnet registry.
-                </p>
-                <LinkButton href="#/app" variant="ghost">
-                  Connect a wallet →
-                </LinkButton>
-              </LayerCard>
-              <LayerCard className="infra-card">
-                <h2>Build on standards</h2>
-                <p>
-                  Understand credential formats, private proofs, trust
-                  registries, and what the chain does—and does not—establish.
-                </p>
-                <LinkButton href="#/learn" variant="ghost">
-                  Explore the architecture →
-                </LinkButton>
-              </LayerCard>
-            </div>
-          </>
-        )}
+        {path === "/" && <Landing />}
         {path === "/explore" && (
-          <section className="page-section">
-            <span className="eyebrow">GUIDED DEMOS</span>
-            <h1>Choose a decision to understand.</h1>
+          <section className="page-section browser-directory">
+            <span className="mode-label">
+              BROWSER EXPERIENCE · NO WALLET REQUIRED
+            </span>
+            <h1>See how a private decision happens.</h1>
             <p>
-              Fictional institutions, real signatures and private proofs.
-              Nothing is submitted to a blockchain.
+              Choose a story. Change the evidence, inspect each handoff, and see
+              what a verifier can learn. Everything runs locally; the ledger is
+              simulated.
             </p>
-            <div className="story-grid">
-              {stories.map((i) => (
-                <LayerCard key={i.id} className="infra-card">
-                  <IndustryIcon id={i.id} size={30} />
-                  <h2>{i.name}</h2>
-                  <p>{i.purpose}</p>
-                  <p className="muted">
-                    {i.sources.length} sources · {i.rules.length} clauses · 3
-                    agreement levels
-                  </p>
-                  <LinkButton href={`#/explore/${i.id}`} variant="secondary">
-                    Follow this story →
-                  </LinkButton>
-                  <LinkButton
-                    href={`#/demo/${i.id === "supplier" ? "contractor" : i.id}`}
-                    variant="primary"
-                  >
-                    Try with real Sepolia wallets →
-                  </LinkButton>
-                </LayerCard>
-              ))}
-            </div>
-            <LinkButton href="#/sandbox" variant="ghost">
-              Try the personal / institution workspace sandbox →
+            <BrowserDemos />
+            <LinkButton href="#/testnet" variant="ghost">
+              Looking for real wallets? Open the onchain testnet →
             </LinkButton>
           </section>
         )}
         {story && (
           <section className="page-section">
             <LinkButton href="#/explore" variant="ghost">
-              ← All stories
+              ← Browser demos
             </LinkButton>
-            <IndustryLab key={story.id} industry={story} />
+            <Suspense fallback={<p>Opening the browser demo…</p>}>
+              <IndustryLab key={story.id} industry={story} />
+            </Suspense>
           </section>
         )}
         {path === "/sandbox" && (

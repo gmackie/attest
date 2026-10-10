@@ -20,6 +20,10 @@ This repository contains the first end-to-end proof of concept:
 
 The experimental [agent mandate profile](specs/agent-mandates.md) adds signed operational delegation and exact transaction approvals through @attest/mandates. It binds company, tenant, subject, agent key, actions, terms, validity and money ceilings. Gatekeeper verifies the profile and enforces aggregate reservations. It is separate from the assurance graph and claims neither ZK privacy nor production PAP conformance.
 
+## Delivery
+
+ForgeGraph runs native CI and deploys the existing Cloudflare Worker. See the [delivery runbook](docs/forgegraph/setup-assessment.md) for repository mirrors, revision checks, production health evidence, Kanbanger receipts and rollback.
+
 ## The demo
 
 Live demo: https://attest.gmac.io

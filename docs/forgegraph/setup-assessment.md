@@ -21,3 +21,7 @@ After all exact-revision checks pass, approve the native PR through `forge pr ap
 No staging target is configured; staging must receive a separate Worker and domain before deployment. Do not deploy the production wrangler configuration to an unconfigured stage. External Sepolia registry activation and wallet funding remain separate requirements in GMA-727/GMA-750/ATTE-4. The mandate library added in PR #3 is not imported by the Attest website or issuer; its runtime consumer is Gatekeeper.
 
 Use `forge deploy rollback <deployment-id>` for a failed managed deployment and verify live health after rollback. The pre-enrollment successful Cloudflare version was `9891a8cb-1231-446b-bbfb-ef2808704eab`; this identifies the prior artifact, not a ForgeGraph-managed deployment.
+
+## Enrollment repair
+
+Initial CLI onboarding selected the offline `vanuc` node for all stages and the repository adopted that host on its first push. Production and repository CI were explicitly moved to `hetzner-fg`, with repository `ciProvider=manifest`. The guarded repository registry repair affected only Attest. FORGE-52 tracks online-node selection and a supported host-reassignment command; changing a target alone does not update an already pinned repository host.

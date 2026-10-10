@@ -1,0 +1,72 @@
+{
+  "profile": "attest.agent-mandate/v1",
+  "now": 1791655200000,
+  "keyId": "test-key",
+  "issuerPublicKey": {
+    "key_ops": [
+      "verify"
+    ],
+    "ext": true,
+    "kty": "EC",
+    "x": "ki_OoRuE1zYoVImUd1HBkPP5Xf9hYyU1LD9FCDczhhk",
+    "y": "vm0fRNgD9D4HW5jyC9WEtIYGKmI1VyTG8bSQd-7P8dU",
+    "crv": "P-256"
+  },
+  "agentPublicKey": {
+    "key_ops": [
+      "verify"
+    ],
+    "ext": true,
+    "kty": "EC",
+    "x": "0TL0CnT5xMhHIDPWJzpEbowf62gudjsnnrI__Bf-d_g",
+    "y": "koYV5l93Fq_qIVIXBrPM6ln3XsC9WK8vPobPS725i2E",
+    "crv": "P-256"
+  },
+  "mandate": {
+    "schema": "attest.agent-mandate/v1",
+    "id": "shared-vector-1",
+    "issuer": "authority:alice",
+    "subject": "user:alice",
+    "tenant": "shop",
+    "delegate": {
+      "clientId": "https://atlas.example/agent.json",
+      "keyThumbprint": "GZxl55UeswSKuVUJWMGNB9foGkTJ_vaPhtnVwLmMKj8"
+    },
+    "audience": "https://shop.example/poppy",
+    "actions": [
+      "orders.exchange"
+    ],
+    "constraints": {
+      "resources": [
+        "order:7"
+      ],
+      "purposes": [
+        "CustomerSupport"
+      ],
+      "terms": {
+        "recipient": {
+          "equals": "alice"
+        },
+        "replacement": {
+          "oneOf": [
+            "medium",
+            "large"
+          ]
+        }
+      },
+      "money": {
+        "currency": "USD",
+        "maxPerActionMinor": 7000,
+        "maxTotalMinor": 10000
+      }
+    },
+    "issuedAt": 1791655199000,
+    "validFrom": 1791655199000,
+    "validUntil": 1791655260000,
+    "statusRef": "status:vector-1",
+    "mayDelegate": false,
+    "maxDelegationDepth": 0
+  },
+  "token": "eyJhbGciOiJFUzI1NiIsImtpZCI6InRlc3Qta2V5IiwidHlwIjoiYXR0ZXN0LmFnZW50LW1hbmRhdGUvdjEifQ.eyJhY3Rpb25zIjpbIm9yZGVycy5leGNoYW5nZSJdLCJhdWRpZW5jZSI6Imh0dHBzOi8vc2hvcC5leGFtcGxlL3BvcHB5IiwiY29uc3RyYWludHMiOnsibW9uZXkiOnsiY3VycmVuY3kiOiJVU0QiLCJtYXhQZXJBY3Rpb25NaW5vciI6NzAwMCwibWF4VG90YWxNaW5vciI6MTAwMDB9LCJwdXJwb3NlcyI6WyJDdXN0b21lclN1cHBvcnQiXSwicmVzb3VyY2VzIjpbIm9yZGVyOjciXSwidGVybXMiOnsicmVjaXBpZW50Ijp7ImVxdWFscyI6ImFsaWNlIn0sInJlcGxhY2VtZW50Ijp7Im9uZU9mIjpbIm1lZGl1bSIsImxhcmdlIl19fX0sImRlbGVnYXRlIjp7ImNsaWVudElkIjoiaHR0cHM6Ly9hdGxhcy5leGFtcGxlL2FnZW50Lmpzb24iLCJrZXlUaHVtYnByaW50IjoiR1p4bDU1VWVzd1NLdVZVSldNR05COWZvR2tUSl92YVBodG5Wd0xtTUtqOCJ9LCJpZCI6InNoYXJlZC12ZWN0b3ItMSIsImlzc3VlZEF0IjoxNzkxNjU1MTk5MDAwLCJpc3N1ZXIiOiJhdXRob3JpdHk6YWxpY2UiLCJtYXhEZWxlZ2F0aW9uRGVwdGgiOjAsIm1heURlbGVnYXRlIjpmYWxzZSwic2NoZW1hIjoiYXR0ZXN0LmFnZW50LW1hbmRhdGUvdjEiLCJzdGF0dXNSZWYiOiJzdGF0dXM6dmVjdG9yLTEiLCJzdWJqZWN0IjoidXNlcjphbGljZSIsInRlbmFudCI6InNob3AiLCJ2YWxpZEZyb20iOjE3OTE2NTUxOTkwMDAsInZhbGlkVW50aWwiOjE3OTE2NTUyNjAwMDB9.a7Kp-UramkmV8zoeAKB9jnNC0dloGb6spDW14-iM6ESfPHXul4q9vdJbyaduzvmCFrZx2OytZKbHt_snsVtVIg",
+  "expectedDigest": "056f1b13ff649864bd3346a69e05254c5c259b19fee8f92cfd47e78ef285eed6"
+}

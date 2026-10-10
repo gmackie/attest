@@ -1,0 +1,8 @@
+{
+  "name": "@attest/mandates",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts", "./protocol": "./src/protocol.ts" },
+  "dependencies": { "effect": "4.0.2" }
+}

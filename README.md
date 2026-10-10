@@ -16,6 +16,10 @@ This repository contains the first end-to-end proof of concept:
 - a Kumo-based supplier/buyer workbench,
 - and a Solidity commitment/verification-receipt registry for Sepolia-style deployments.
 
+## Agent mandates
+
+The experimental [agent mandate profile](specs/agent-mandates.md) adds signed operational delegation and exact transaction approvals through @attest/mandates. It binds company, tenant, subject, agent key, actions, terms, validity and money ceilings. Gatekeeper verifies the profile and enforces aggregate reservations. It is separate from the assurance graph and claims neither ZK privacy nor production PAP conformance.
+
 ## The demo
 
 Live demo: https://attest.gmac.io

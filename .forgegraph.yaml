@@ -1,0 +1,6 @@
+app: attest
+server: https://forgegraf.com
+health:
+  url: https://attest.gmac.io/api/v3/institutions
+  interval: 60
+  timeout: 30

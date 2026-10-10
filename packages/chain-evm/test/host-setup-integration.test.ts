@@ -27,7 +27,7 @@ const provider = {
 } as unknown as EIP1193Provider;
 beforeAll(async () => {
   child = spawn(
-    `${homedir()}/.foundry/bin/anvil`,
+    process.env.ANVIL_BIN ?? `${homedir()}/.foundry/bin/anvil`,
     [
       "--port",
       "18559",

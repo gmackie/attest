@@ -1,0 +1,12 @@
+version = 1
+template = "vinext-cloudflare-worker"
+
+[environment]
+node = "24"
+
+[build]
+command = "pnpm install --frozen-lockfile && pnpm exec anvil --version && pnpm --filter @attest/contracts build && pnpm typecheck && pnpm build"
+artifacts = ["apps/web/dist/**", "contracts/artifacts/**"]
+
+[test]
+command = 'ANVIL_BIN="$PWD/node_modules/.bin/anvil" pnpm test'

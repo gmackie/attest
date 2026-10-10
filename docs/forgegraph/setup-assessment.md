@@ -25,3 +25,5 @@ Use `forge deploy rollback <deployment-id>` for a failed managed deployment and 
 ## Enrollment repair
 
 Initial CLI onboarding selected the offline `vanuc` node for all stages and the repository adopted that host on its first push. Production and repository CI were explicitly moved to `hetzner-fg`, with repository `ciProvider=manifest`. The guarded repository registry repair affected only Attest. FORGE-52 tracks online-node selection and a supported host-reassignment command; changing a target alone does not update an already pinned repository host.
+
+After a managed deployment, run `node scripts/verify-production.mjs` from its built checkout to verify exact public asset bytes and both configured institution directories. The JSON output records resource hashes and health observations for the delivery issue. Override `ATTEST_VERIFY_URL` only when validating a separately configured environment.

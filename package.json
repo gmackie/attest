@@ -19,6 +19,7 @@
     "attest": "tsx packages/cli/src/launch.mjs"
   },
   "devDependencies": {
+    "@foundry-rs/anvil": "1.7.1",
     "@pcd/pod": "0.5.1",
     "@types/node": "^25.0.0",
     "tsx": "^4.23.15",

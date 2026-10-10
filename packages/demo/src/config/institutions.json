@@ -1,0 +1,29 @@
+{
+  "chainId": 11155111,
+  "institutions": [
+    {
+      "id": 0,
+      "name": "Cedar Skills Academy",
+      "address": "0x9847AEC7c2520CfB00b7d8188D75154319ED9923",
+      "credentialPublicKey": "cUBYGuHQ6K7VSSlOaXlftIyg5PlItsvtvg3B3JkSUxc"
+    },
+    {
+      "id": 1,
+      "name": "Atlas Field Services",
+      "address": "0x151C629eA4e0a8D38d1c0Cd669b4D45dF9C33971",
+      "credentialPublicKey": "bx0+ZTKxb7DM3xN/IMdEKep+HqM+P6klmKYYdd1OKBw"
+    },
+    {
+      "id": 2,
+      "name": "Harbor Mutual",
+      "address": "0xA3e21dBE25e308959ba4297E16FaB59c0FbdADA2",
+      "credentialPublicKey": "+18Gb3+VRJ7SQo/a9m3dNML4Yy46oVxe5vZr0EqhfRA"
+    },
+    {
+      "id": 3,
+      "name": "Northstar Procurement",
+      "address": "0x9165815817E3C92Dda2773Ea6fC2345EB84191c2",
+      "credentialPublicKey": "d9i2iXsBU9YsLZMzMNaHEL6bT6j6I7pFQLhkmrGzxx8"
+    }
+  ]
+}

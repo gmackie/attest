@@ -1,0 +1,24 @@
+{
+  "name": "@attest/proofs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@attest/core": "workspace:*",
+    "@attest/domain": "workspace:*",
+    "@pcd/gpc": "0.4.1",
+    "@pcd/pod": "0.5.1",
+    "@semaphore-protocol/core": "^4.0.3",
+    "effect": "4.0.2"
+  },
+  "scripts": {
+    "proof:smoke": "tsx scripts/smoke.ts"
+  },
+  "devDependencies": {
+    "@pcd/proto-pod-gpc-artifacts": "0.13.0",
+    "tsx": "^4.20.6"
+  }
+}

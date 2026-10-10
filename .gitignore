@@ -1,0 +1,22 @@
+node_modules/
+dist/
+coverage/
+.vite/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+contracts/artifacts/
+.DS_Store
+
+.wrangler/
+
+# Local wallet CLI demo state
+attest-wallet-demo.json
+attest-wallet-demo.json.*
+
+apps/web/public/contracts/
+
+# Local issuer-service secrets
+.dev.vars
+.dev.vars.*

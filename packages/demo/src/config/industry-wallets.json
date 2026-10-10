@@ -1,0 +1,119 @@
+{
+  "chainId": 11155111,
+  "profiles": {
+    "healthcare": [
+      {
+        "id": 0,
+        "name": "Aster Nursing Board",
+        "address": "0x97f42AfC6f3b46cCEBCEc1e719a228AfE6705843",
+        "credentialPublicKey": "CBp1Bmk/jWCq2eMwmu5DUvNXtvrbiyWI5kkYOhTsWCI"
+      },
+      {
+        "id": 1,
+        "name": "Pulse Training Institute",
+        "address": "0x01C965C12DFF938063ed7D887a2CbA66405e0ABc",
+        "credentialPublicKey": "RjjHSnMQEDI+M7F5Xz1ES3YmKHnBDmnjrw8akH3AcRM"
+      },
+      {
+        "id": 2,
+        "name": "Harbor Community Clinic",
+        "address": "0x413e1B4dE5F3AfB63c2815B82b60ad4a0d59dFE2",
+        "credentialPublicKey": "VAmIrHFU6/j4kMx8Rz/g1yqXmZU45j881yhwclL7oRc"
+      },
+      {
+        "id": 3,
+        "name": "ClearPath Screening",
+        "address": "0xac2E3fb7f584C4ec6c1c97622fF80c87c86ae53c",
+        "credentialPublicKey": "kS2JVgb4qSI7fu9s0F8az+9ZPX3vCN5XsL/JzlyjyoI"
+      },
+      {
+        "id": 4,
+        "name": "Everwell Occupational Health",
+        "address": "0x54c1686F7EdfFA17e028D12546e1Fd86F6d1A8F5",
+        "credentialPublicKey": "4UcAuPDeWkfuMpSzXMvt81NivRgX0ePvPDcN+TNP1hE"
+      },
+      {
+        "id": 5,
+        "name": "Willow Creek Hospital",
+        "address": "0xC2DE50727aEAb0887E16B2Ee8e01125396dcA36F",
+        "credentialPublicKey": "qfyr40RX9WhMVDz4Lb7eteGf73B7A0+7A6MvpKyfFoE"
+      }
+    ],
+    "education": [
+      {
+        "id": 0,
+        "name": "Westhaven University",
+        "address": "0x01D993C46b52B274FCfEe8dc76b0F91b56471D64",
+        "credentialPublicKey": "LFn/ptp4W7eg3FcGXXiohmNwUtSryhSySMs2X4uv7R4"
+      },
+      {
+        "id": 1,
+        "name": "Lingua Assessment",
+        "address": "0x11d093F4bE389D6C1Ca3c65da80946Af48E00BD8",
+        "credentialPublicKey": "S0DXfMrPo8rgbwKEHf99nuGyeWTLJMFJpsiXyMXYTDA"
+      },
+      {
+        "id": 2,
+        "name": "Brightpath Foundation",
+        "address": "0x3AEF598B76e941D2a3cdE50e47b244F8D3b96709",
+        "credentialPublicKey": "EGOJDCA1nZiqvsYScgj7flDmYjA5l3WD15J8G5zW7p4"
+      },
+      {
+        "id": 3,
+        "name": "Summit Course Registry",
+        "address": "0x3D734670388ad6A43eF05952ba740DD72141b47E",
+        "credentialPublicKey": "hOLb9cYpzKJ4oKonoCVx5ZFycO3gCmLg2ndSA70OrCM"
+      },
+      {
+        "id": 4,
+        "name": "Crescent Education Trust",
+        "address": "0x122EA08f12661e92053FB9dE831597b10E47B207",
+        "credentialPublicKey": "Rdlkw3iPD6jfUNFjQkkbAvRlpOB1j2sEf5iIbyB49JM"
+      },
+      {
+        "id": 5,
+        "name": "Northbridge Graduate School",
+        "address": "0xF52F931beCB74D24F62a70d8A9e7560d2Ce3684F",
+        "credentialPublicKey": "0soVeJ58bMmsldQaFpM4kV8HK3Vr67pa8OYc5wjLaCQ"
+      }
+    ],
+    "logistics": [
+      {
+        "id": 0,
+        "name": "ThermoTrace Monitoring",
+        "address": "0x99c33458aa0971De8c59663e5DdAcf59B2cB3a52",
+        "credentialPublicKey": "pohRgrWpRWH38krijdZghBXF0vsmf3K98a0XF5I4qYQ"
+      },
+      {
+        "id": 1,
+        "name": "Clearwell Laboratories",
+        "address": "0xadE9d66DbFA22cF24Fa46e989A06dA2088835E2C",
+        "credentialPublicKey": "y3VFfYUnTAnZCtL3efOx6a8kOZv3jTkxczZvQhL2Rxg"
+      },
+      {
+        "id": 2,
+        "name": "Polar Route Transport",
+        "address": "0x6C9dae3641ea14f72274dF0C30E391b8aCACAd2d",
+        "credentialPublicKey": "0Ixo3oKbgFz/ee66LEdurnLBj3fhSPHJy9ec2C3ENqk"
+      },
+      {
+        "id": 3,
+        "name": "Precision Calibration Bureau",
+        "address": "0xa5c11edC2fa37B8cF9d69085a2Eb17b60d23D118",
+        "credentialPublicKey": "yRiiWDddjLSDQ+A7ZGmFvZNaFNuJiNws+L1VV5ddmhA"
+      },
+      {
+        "id": 4,
+        "name": "Alpine Manufacturing QA",
+        "address": "0xdD63F58463490Dbf75d6763d927a048da120D5aC",
+        "credentialPublicKey": "6zkP64FixN101JL+AnKnePKA6sFnhpqlvpz8iErooKM"
+      },
+      {
+        "id": 5,
+        "name": "Cedarway Pharmacy",
+        "address": "0x38A908BFa8c000944a753d74589fEa0b45dd9F7a",
+        "credentialPublicKey": "6W6NDC/O4pPPeVwrOTLaDFwgczFb9V0BAc/V+zcypo0"
+      }
+    ]
+  }
+}

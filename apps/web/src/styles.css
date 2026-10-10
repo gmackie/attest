@@ -3529,3 +3529,51 @@ footer p {
   margin: 6px 0;
   padding: 12px 0;
 }
+.host-setup > .eyebrow {
+  display: block;
+  margin-top: 24px;
+}
+.host-setup > .controls {
+  margin: 24px 0;
+}
+.host-setup > .journey-notice {
+  margin: 24px 0;
+  overflow-wrap: anywhere;
+}
+.host-wallets {
+  list-style: none;
+  padding: 0;
+  margin: 22px 0;
+  display: grid;
+  gap: 14px;
+}
+.host-wallets li {
+  border-top: 1px solid #dbe3d6;
+  padding-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+.host-wallets li > div {
+  flex: 1;
+  min-width: 170px;
+}
+.host-wallets small {
+  display: block;
+  color: #65776c;
+  margin-top: 4px;
+}
+.host-wallets a {
+  color: #32634b;
+}
+.host-setup .infra-card {
+  min-width: 0;
+}
+.host-setup .infra-card > div {
+  margin-top: 12px;
+}
+.host-setup > p {
+  overflow-wrap: anywhere;
+}

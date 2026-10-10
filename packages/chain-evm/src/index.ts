@@ -39,3 +39,5 @@ export * from "./journey";
 
 export * from "./institution";
 export * from './industry';
+
+export * from "./host-setup";

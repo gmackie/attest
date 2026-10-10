@@ -85,6 +85,9 @@ export function DemoChooser() {
         </div>
       </div>
       <div className="controls">
+        <LinkButton href="#/testnet/setup" variant="primary">
+          Host: set up and fund all four demos →
+        </LinkButton>
         <LinkButton href="#/app" variant="secondary">
           Manage wallet, issuer & verifier tools →
         </LinkButton>

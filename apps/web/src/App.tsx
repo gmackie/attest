@@ -1,3 +1,6 @@
+const HostSetup = lazy(() =>
+  import("./HostSetup").then((m) => ({ default: m.HostSetup })),
+);
 import { Landing, BrowserDemos } from "./Landing";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Badge, LinkButton } from "@cloudflare/kumo";
@@ -128,7 +131,10 @@ export function App() {
               <p className="page-section">Opening the testnet journey…</p>
             }
           >
-            {path.split("?")[0] === "/demo" && !path.includes("registry=") ? (
+            {path === "/demo/setup" ? (
+              <HostSetup />
+            ) : path.split("?")[0] === "/demo" &&
+              !path.includes("registry=") ? (
               <DemoChooser />
             ) : (["healthcare", "education", "logistics"] as const).find(
                 (id) => path.split("?")[0] === `/demo/${id}`,

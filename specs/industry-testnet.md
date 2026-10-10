@@ -80,3 +80,30 @@ POD/GPC and the Worker verifier remain experimental and unaudited. Mainnet stays
 disabled. Source defaults and agreement clauses are illustrative; future production
 profiles require issuer governance, current temporal policy, audits, secure key
 management and operational abuse controls (GMA-748).
+
+## Host setup for all four demos
+
+`/#/testnet/setup` reuses the provisioned 22 institution identities. Connect a host
+wallet on Sepolia, check readiness, then launch/resume all four demos. The host
+approves a separate deployment or top-up transaction for each profile that needs
+one. Empty wallets need 0.022 Sepolia ETH plus deployment gas in total; the target
+is 0.001 test ETH per wallet. Registry funding splits equally, so top-ups use the
+lowest balance and may leave other wallets above target.
+
+Before writing, the coordinator validates existing runtime code, profile and
+pinned EVM/POD identities. It estimates gas and checks host funds. Public progress
+is journaled locally per host account; cross-tab Web Locks prevent simultaneous
+setup. A submission marker is written before the wallet call, and its returned
+hash is saved before waiting for two confirmations. Resume recovers that exact
+transaction, checking sender, recipient, calldata and value; it never silently
+resubmits an unresolved operation. If the browser closes before the hash is
+saved, use MetaMask activity to provide the hash for verified recovery. Explicit
+wallet rejection clears the marker; other ambiguous failures remain pending.
+Do not clear browser storage while a transaction is unresolved. Reverted/replaced
+transactions require explicit inspection rather than automatic retry.
+
+The setup page provides one invitation per registry and an export containing only
+public addresses and transaction metadata. These invitations work immediately
+once funded. Publishing registry addresses in the checked-in deployment manifests
+is a separate operator step after independent Sepolia verification; local setup
+state does not silently change global site defaults.

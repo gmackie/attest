@@ -1,5 +1,8 @@
 # Threat model
 
+See [Ethereum production readiness](production-readiness.md) for the reviewed
+code controls, trust boundaries, and unresolved mainnet release requirements.
+
 ## Semantic attacks
 
 - mixing claims from different subjects, policies, periods or projects;

@@ -22,6 +22,8 @@ The experimental [agent mandate profile](specs/agent-mandates.md) adds signed op
 
 ## Delivery
 
+Ethereum mainnet writes remain gated. The [production readiness review](specs/production-readiness.md) records existing controls and the evidence required before enabling them.
+
 ForgeGraph runs native CI and deploys the existing Cloudflare Worker. See the [delivery runbook](docs/forgegraph/setup-assessment.md) for repository mirrors, revision checks, production health evidence, Kanbanger receipts and rollback.
 
 ## The demo

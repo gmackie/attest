@@ -76,12 +76,15 @@ template PrivateConversionV1() {
 
     // Leaf binds event, original holder, minimum eligibility evidence,
     // validity and issuer. Authenticity comes from the issuer's current root.
-    component leaf = Poseidon(5);
+    component leaf = Poseidon(6);
     leaf.inputs[0] <== eventSecret;
     leaf.inputs[1] <== holderSecret;
     leaf.inputs[2] <== score;
     leaf.inputs[3] <== validUntil;
     leaf.inputs[4] <== issuer;
+    // Make an issued claim redeemable ONLY to its issuer-committed wallet,
+    // not to a relayer or bearer who later learns the witness.
+    leaf.inputs[5] <== recipient;
 
     // A simple 16-leaf (depth 4) Poseidon Merkle path. Untrusted witnesses
     // cannot select arbitrarily non-Boolean left/right directions.

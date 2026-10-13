@@ -6,7 +6,7 @@ export default defineConfig({
     // Proof generation is CPU-heavy; avoid oversubscribing CI and use its real budget.
     maxWorkers: 1,
     testTimeout: 120000,
-    include: ["packages/*/test/**/*.test.ts"],
+    include: ["packages/*/test/**/*.test.ts", "zk/tests/**/*.test.ts"],
     coverage: { reporter: ["text", "json", "html"] },
     deps: {
       optimizer: {

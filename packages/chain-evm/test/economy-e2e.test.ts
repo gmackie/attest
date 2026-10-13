@@ -111,6 +111,7 @@ it.skipIf(!existsSync(binary))("converts a privately-proven anchored claim into 
   };
   const ports: ConversionVerifierPorts = {
     nowMs: () => Date.now(),
+    resolvePolicy: async (id) => id === policy.id ? policy : null,
     readCredential: async () => {
       const proof = await readPublicClaimSnapshot(reader,claimContract,1n,{
         holder:holderEvm,issuer:issuerEvm,scope:policy.scope,contentID:claim.contentID,

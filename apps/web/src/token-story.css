@@ -237,3 +237,10 @@
   white-space:nowrap;
   border:0;
 }
+
+/* The homepage trust hero now has four clickable actors instead of three. */
+@media (max-width:540px) {
+  .trust-nodes { gap:3px; }
+  .trust-nodes .trust-node { min-width:0; padding:10px 2px; overflow-wrap:anywhere; }
+  .trust-nodes .trust-node svg { width:24px; height:24px; }
+}

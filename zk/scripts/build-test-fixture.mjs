@@ -20,7 +20,7 @@ function execute(name,args) {
   const result=spawnSync(path.join(bins,name),args,{
     cwd:root, encoding:"utf8",maxBuffer:15*1024*1024,timeout:600_000
   });
-  if(result.status!==0 || /\\[ERROR\\]|circuit too big/.test(result.stdout ?? ""))throw new Error(`${name} exited ${result.status}: ${result.stderr}\n${result.stdout}`);
+  if(result.status!==0 || /\[ERROR\]|circuit too big/.test(result.stdout ?? ""))throw new Error(`${name} exited ${result.status}: ${result.stderr}\n${result.stdout}`);
   const message=(result.stdout||result.stderr).trim();
   if(message)console.log(message.slice(-2500));
 }

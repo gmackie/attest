@@ -42,6 +42,7 @@ const artifacts = path.resolve(import.meta.dirname, "../../proofs/node_modules/@
 let presentation: PrivateConversionPresentation;
 const makePorts = (): ConversionVerifierPorts => ({
   nowMs: now,
+  resolvePolicy: async (policyId) => policyId === policy.id ? policy : null,
   readCredential: async () => ({
     id, contentID: claim.contentID, issuerAccount, issuerPublicKey: issuerPub,
     subject: intent.subject, holderPublicKey: holderPub,
@@ -113,6 +114,8 @@ describe("private claim-to-ATTEST conversion", () => {
         active: true, observedAtMs: now() - 15_000, validUntilSeconds: deadline + 86_400,
       }) },
       { ...makePorts(), acceptedIssuer: async () => false },
+      { ...makePorts(), resolvePolicy: async () => null },
+      { ...makePorts(), resolvePolicy: async () => ({ ...policy, mintAmount: 900n * 10n ** 18n }) },
     ] satisfies ConversionVerifierPorts[]) {
       await expect(verifyPrivateConversion(presentation, intent, policy, ports, artifacts)).rejects.toThrow();
     }

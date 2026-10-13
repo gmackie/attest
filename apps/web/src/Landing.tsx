@@ -9,6 +9,7 @@ import {
 } from "@phosphor-icons/react";
 import { industries, supplierIndustry } from "@attest/demo";
 import { IndustryIcon } from "./IndustryIcon";
+import { TokenStory } from "./TokenStory";
 
 const moments = [
   {
@@ -29,6 +30,12 @@ const moments = [
     label: "Decision receipt",
     private: "Public receipts contain commitments, not raw evidence",
   },
+  {
+    title: "A separate token economy can grow from eligible claims.",
+    text: "An experimental conversion can release test $ATTEST without publishing the private score. An opt-in ERC-721 artwork visualizes economic holdings—not transferable qualifications.",
+    label: "Test $ATTEST + living artwork",
+    private: "Professional credentials and private evidence do not move with ERC-20 tokens",
+  },
 ];
 export function TrustAnimation() {
   const [moment, setMoment] = useState(0);
@@ -37,15 +44,15 @@ export function TrustAnimation() {
     <div className="trust-animation">
       <div className="trust-caption">
         <span className="eyebrow">HOW TRUST MOVES</span>
-        <span>0{moment + 1} / 03</span>
+        <span>0{moment + 1} / 0{moments.length}</span>
       </div>
       <div className="trust-nodes" aria-label="Explore the trust flow">
-        {[DatabaseIcon, WalletIcon, SealCheckIcon].map((Icon, index) => (
+        {[DatabaseIcon, WalletIcon, SealCheckIcon, FingerprintIcon].map((Icon, index) => (
           <Button
             key={index}
             variant="ghost"
             className={`trust-node ${moment === index ? "active" : ""}`}
-            aria-label={["Institutions", "Your wallet", "Verifier"][index]}
+            aria-label={["Institutions", "Your wallet", "Verifier", "Token art"][index]}
             aria-pressed={moment === index}
             onClick={() => setMoment(index)}
           >
@@ -68,7 +75,7 @@ export function TrustAnimation() {
         <Button
           variant="ghost"
           aria-label="Next explanation"
-          onClick={() => setMoment((moment + 1) % 3)}
+          onClick={() => setMoment((moment + 1) % moments.length)}
         >
           <ArrowRightIcon size={22} />
         </Button>
@@ -81,12 +88,12 @@ export function BrowserDemos({ compact = false }: { compact?: boolean }) {
     <section className={`browser-catalog ${compact ? "compact" : ""}`}>
       <div className="catalog-heading">
         <div>
-          <span className="eyebrow">FOUR BROWSER DEMOS</span>
+          <span className="eyebrow">FIVE BROWSER EXPERIENCES</span>
           <h2>Different decisions. The same trust.</h2>
         </div>
         <p>
-          No wallet or test ETH needed. Edit fictional records and follow real
-          signatures and private proofs in your browser.
+          Four industry evidence journeys plus the $ATTEST economy lab.
+          Real private predicates, simulated token transfers, no wallet needed.
         </p>
       </div>
       <div className="browser-cards">
@@ -111,6 +118,16 @@ export function BrowserDemos({ compact = false }: { compact?: boolean }) {
             </div>
           </a>
         ))}
+        <a className="browser-card theme-teal token-browser-card" href="#/economy">
+          <div className="browser-card-top">
+            <FingerprintIcon size={30} aria-hidden />
+            <span>05</span>
+          </div>
+          <h3>$ATTEST token economy</h3>
+          <p>Verify a fictional claim privately. Animate optional Claim NFTs, minting, color-mixing transfers and living ERC-721 artwork.</p>
+          <div className="browser-card-meta">Real GPC proof <span>·</span> simulated $ATTEST</div>
+          <div className="browser-card-action">Explore the token lab <ArrowRightIcon size={19} aria-hidden /></div>
+        </a>
       </div>
     </section>
   );
@@ -142,6 +159,7 @@ export function Landing() {
         </div>
         <TrustAnimation />
       </section>
+      <TokenStory />
       <section className="landing-wallet-guide">
         <div className="landing-wallet-guide-icon">
           <WalletIcon size={30} />

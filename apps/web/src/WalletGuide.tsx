@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { TokenStory } from "./TokenStory";
 import { Badge, Button, LayerCard, LinkButton } from "@cloudflare/kumo";
 import {
   ArrowRightIcon,
@@ -132,6 +133,11 @@ export function WalletGuide() {
           </span>
         </div>
       </section>
+      <details className="token-story-disclosure">
+        <summary>What about Claim NFTs and $ATTEST? Explore the animated token layer</summary>
+        <p>The wallet guide below teaches ordinary private credential presentations; it does not issue tokens. The optional walkthrough shows how an additional experimental token economy could work.</p>
+        <TokenStory compact />
+      </details>
 
       <section
         className="guide-story"

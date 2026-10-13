@@ -1,5 +1,6 @@
 import { IndustryIcon } from "./IndustryIcon";
 import { ContractExplorer } from "./ContractExplorer";
+import { TokenStory } from "./TokenStory";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   Badge,
@@ -219,6 +220,11 @@ export function IndustryLab({
           </div>
         </div>
       </div>
+      <details className="token-story-disclosure">
+        <summary>How could these verified claims produce NFTs, $ATTEST and living artwork?</summary>
+        <p>This industry scenario only verifies an evidence request. Token conversion is a separate experimental opt-in feature; this panel shows a fictional token lifecycle.</p>
+        <TokenStory compact />
+      </details>
       <div className="controls">
         <Button
           variant={view === "journey" ? "primary" : "secondary"}

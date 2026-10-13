@@ -1,0 +1,37 @@
+name: Token Demo UX
+
+on:
+  pull_request:
+    paths:
+      - "apps/web/src/**"
+      - "packages/demo/src/token-story.ts"
+      - "packages/demo/test/token-story.test.ts"
+      - "specs/token-animation-guide.md"
+      - ".github/workflows/token-demos.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  token-animation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Compile reference contract artifacts for the UI
+        run: pnpm --filter @attest/contracts build
+      - name: Typecheck interactive React/Kumo demos
+        run: pnpm typecheck
+      - name: Verify seven scenes and conservation mathematics
+        run: pnpm exec vitest run packages/demo/test/token-story.test.ts
+      - name: Bundle production website
+        run: pnpm --filter @attest/web build

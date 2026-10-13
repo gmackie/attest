@@ -1,3 +1,4 @@
+import { TokenStory } from "./TokenStory";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import {
   Badge,
@@ -626,6 +627,11 @@ export function TestnetJourney() {
           </Button>
         </div>
       </div>
+      <details className="token-story-disclosure">
+        <summary>Optional token layer: how private claims can release test $ATTEST</summary>
+        <p>The current Sepolia contractor journey records issuer claims and verifier receipts; it does not mint $ATTEST. This animation explains the separate experimental token conversion and artwork.</p>
+        <TokenStory compact />
+      </details>
       <nav className="journey-progress" aria-label="Passport steps">
         {[
           "Your wallet",

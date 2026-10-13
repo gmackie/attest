@@ -1,3 +1,4 @@
+import { TokenStory } from "./TokenStory";
 import { WalletIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import {
@@ -98,6 +99,11 @@ export function DemoChooser() {
           Try without a wallet →
         </LinkButton>
       </div>
+      <details className="token-story-disclosure">
+        <summary>Explore Claim NFTs, $ATTEST minting, and living economic artwork</summary>
+        <p>The industry journeys remain credential-verification demos. The animated token economy is a separate educational simulation, not an extra transaction step.</p>
+        <TokenStory compact />
+      </details>
       <div className="story-grid">
         <LayerCard className="infra-card">
           <Badge variant="outline">3 issuers · 1 verifier</Badge>
@@ -619,6 +625,11 @@ export function IndustryJourney({ industry }: { industry: ConnectedIndustry }) {
           </Button>
         </div>
       </div>
+      <details className="token-story-disclosure">
+        <summary>How might $ATTEST follow a private credential proof?</summary>
+        <p>This walkthrough separately explains optional public claims and experimental token conversion. Your industry demo does not mint $ATTEST.</p>
+        <TokenStory compact />
+      </details>
       <nav className="journey-progress" aria-label="Industry passport steps">
         {[
           "Your wallet",

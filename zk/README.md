@@ -23,7 +23,7 @@ A holder privately knows:
   16-leaf Poseidon commitment tree;
 
 whose leaf was `Poseidon(eventSecret, holderSecret, score, validUntil,
-issuerAddress)`. The proof establishes a live issuer root, and derives:
+issuerAddress, recipientAddress)`. The proof establishes a live issuer root, and derives:
 
 - `nullifier = Poseidon(eventSecret, 81501)` (stable across recipient,
   policy, proof challenge, root versions, and verifier addresses);
@@ -31,8 +31,11 @@ issuerAddress)`. The proof establishes a live issuer root, and derives:
 
 while constraining public `policyId=1`, `chainId=11155111`,
 `amount=200e18`, a four-channel `palette`, valid timestamps and bounded
-addresses. The zero-knowledge proof does not reveal score, event ID, holder
-secret, or Merkle path. Issuer root, issuer address, recipient, expiry,
+addresses. The issuer commits the intended recipient address in the same private
+claim leaf, preventing a stolen witness from redirecting mint proceeds to
+another wallet. The zero-knowledge proof does not reveal score, event ID,
+holder secret, or Merkle path. (This does not prevent deliberate key sale or
+bearer witness sharing.) Issuer root, issuer address, recipient, expiry,
 amount, palette, nullifier and provenance commitment are public.
 
 The Solidity `ZkAttestMinterV1` additionally checks live, authorized
@@ -91,10 +94,12 @@ pnpm exec vitest run zk/tests/onchain.test.ts
 ```
 
 The generated verification key, Solidity verifier, circuit wasm, and zkey are
-intentionally excluded from Git history under `zk/.generated/`. CI fetches the
+intentionally excluded from Git history under `zk/.generated/`. CI attempts to fetch the
 Hermez 2^14 phase-1 `powersOfTau28_hez_final_14.ptau` file and checks its
-Blake2b-512 digest against the official snarkjs-published checksum. The
-subsequent circuit-specific **phase-2 contribution uses disclosed deterministic
+Blake2b-512 digest against the official snarkjs-published checksum. If CI
+cannot fetch it (HTTP 403 from some environments), the build creates a
+**deliberately insecure test-only phase-1 ceremony locally**. The
+circuit-specific **phase-2 contribution also uses disclosed deterministic
 test entropy**, so the generated key is **insecure** and can never be used to
 secure real assets. No permanent audited verification key is committed.
 

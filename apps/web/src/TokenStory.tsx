@@ -13,11 +13,12 @@ const colors = ["#48b9d8", "#a78ce8", "#f1c46a", "#69d1ad"] as const;
 const colorNames = ["Experience", "Qualifications", "Assurance", "Participation"] as const;
 
 function WalletArtwork({
-  wallet, label, highlighted,
+  wallet, label, highlighted, passportVisible,
 }: {
   wallet: TokenWallet;
   label: string;
   highlighted: boolean;
+  passportVisible: boolean;
 }) {
   let x = 0;
   const stripes = wallet.composition.map((count, index) => {
@@ -28,7 +29,7 @@ function WalletArtwork({
     return <rect key={index} x={from} y="0" width={width} height="100" fill={colors[index]} />;
   });
   return (
-    <div className={`token-wallet ${highlighted ? "token-wallet--highlight" : ""}`}>
+    <div className={`token-wallet ${highlighted ? "token-wallet--highlight" : ""} ${passportVisible ? "token-wallet--passport" : ""}`}>
       <div className="token-wallet__heading">
         <WalletIcon aria-hidden size={19} />
         <strong>{label}</strong>
@@ -41,7 +42,7 @@ function WalletArtwork({
           <path d="M0 25H100M0 50H100M0 75H100M25 0V100M50 0V100M75 0V100" />
         </g>
       </svg>
-      <div className="token-wallet__footer">Live balance composition · fictional</div>
+      <div className="token-wallet__footer">{passportVisible ? "PASSPORT ERC-721 · soulbound artwork" : "Balance preview · no passport NFT yet"}</div>
     </div>
   );
 }
@@ -67,7 +68,8 @@ function TokenDiagram({
             <span /><span /><span /><span /><span /><span /><span /><span /><span />
           </div>
           <strong>{frame.claimRevoked ? "Claim revoked" : "Signed claim"}</strong>
-          <small>{frame.claimNftVisible ? "Optional ERC-721 commitment" : "Not a public NFT"}</small>
+          {frame.claimNftVisible && <span className="token-object__nft-stamp">CLAIM ERC-721 · OPT-IN</span>}
+          <small>{frame.claimNftVisible ? "Public commitment; private values stay hidden" : "Not a public NFT"}</small>
         </div>
         <div className={`token-flow-arrow ${frame.privateProofPrepared ? "token-flow-arrow--active" : ""}`} aria-hidden="true">
           <span className="token-flow-arrow__line" />
@@ -99,13 +101,13 @@ function TokenDiagram({
         <span>{frame.transferRecorded ? "TRANSFER • PROPORTIONAL COLOR MIXING" : "WALLETS • ECONOMIC PROVENANCE"}</span>
       </div>
       <div className="token-diagram__wallets">
-        <WalletArtwork wallet={frame.alice} label="Alice" highlighted={frame.issuanceRecorded && !frame.transferRecorded} />
+        <WalletArtwork wallet={frame.alice} label="Alice" highlighted={frame.issuanceRecorded && !frame.transferRecorded} passportVisible={frame.passportVisible} />
         <div className={`token-transfer-bridge ${frame.transferRecorded ? "token-transfer-bridge--sent" : ""}`}>
           <span className="token-transfer-bridge__packet" aria-hidden="true">A</span>
           <ArrowRightIcon size={21} aria-hidden />
           <strong>{frame.transferRecorded ? "50 sent" : "Transfer"}</strong>
         </div>
-        <WalletArtwork wallet={frame.bob} label="Bob" highlighted={frame.transferRecorded} />
+        <WalletArtwork wallet={frame.bob} label="Bob" highlighted={frame.transferRecorded} passportVisible={frame.passportVisible} />
       </div>
       <div className="token-diagram__flags">
         {frame.passportVisible ? (

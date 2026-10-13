@@ -18,9 +18,9 @@ mkdirSync(output,{recursive:true});
 function execute(name,args) {
   console.log(`$ ${name} ${args.join(" ")}`);
   const result=spawnSync(path.join(bins,name),args,{
-    cwd:root, encoding:"utf8",maxBuffer:15*1024*1024,timeout:180_000
+    cwd:root, encoding:"utf8",maxBuffer:15*1024*1024,timeout:600_000
   });
-  if(result.status!==0)throw new Error(`${name} exited ${result.status}: ${result.stderr}\n${result.stdout}`);
+  if(result.status!==0 || /\\[ERROR\\]|circuit too big/.test(result.stdout ?? ""))throw new Error(`${name} exited ${result.status}: ${result.stderr}\n${result.stdout}`);
   const message=(result.stdout||result.stderr).trim();
   if(message)console.log(message.slice(-2500));
 }
@@ -37,7 +37,7 @@ writeFileSync(compiledSource,readFileSync(source,"utf8")
 execute("circom2",[compiledSource,"--r1cs","--wasm","--sym","-o",output]);
 const r1cs=file("private-conversion-v1.r1cs");
 const prefix=file("private-conversion-v1");
-execute("snarkjs",["powersoftau","new","bn128","12",file("pot0.ptau")]);
+execute("snarkjs",["powersoftau","new","bn128","14",file("pot0.ptau")]);
 execute("snarkjs",["powersoftau","contribute",file("pot0.ptau"),file("pot1.ptau"),
   "--name=synthetic-only", "-e=DO_NOT_USE_THIS_DETERMINISTIC_ENTROPY_FOR_PRODUCTION"]);
 execute("snarkjs",["powersoftau","prepare","phase2",file("pot1.ptau"),file("pot-final.ptau")]);

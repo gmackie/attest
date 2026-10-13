@@ -121,7 +121,14 @@ it.skipIf(!existsSync(binary))("enforces signed proof-verifier vouchers, supply 
 
   // A second mint with a different palette, then mix portions through ERC-20 transfer.
   const second = { ...make(hash("a"), b), palette: packPalette([0, 10000, 0, 0]) };
-  await write(stranger, "mintWithAuthorization", [second, await sign(second)]);
+  const secondSignature = await sign(second);
+  await expect(write(stranger, "setMintingPaused", [true])).rejects.toThrow();
+  await write(accounts[0]!, "setMintingPaused", [true]);
+  expect(await reader.readContract({ address: token, abi: artifact.abi, functionName: "mintingPaused" })).toBe(true);
+  await expect(write(stranger, "mintWithAuthorization", [second, secondSignature])).rejects.toThrow();
+  expect(await reader.readContract({ address: token, abi: artifact.abi, functionName: "spentNullifiers", args: [second.nullifier] })).toBe(false);
+  await write(accounts[0]!, "setMintingPaused", [false]);
+  await write(stranger, "mintWithAuthorization", [second, secondSignature]);
   const before = await reader.readContract({ address: token, abi: artifact.abi, functionName: "compositionOf", args: [a] }) as bigint[];
   expect(before.reduce((x, y) => x + y, 0n)).toBe(parseEther("100"));
   await write(a, "transfer", [b, parseEther("40")]);

@@ -42,6 +42,7 @@ function WalletArtwork({
           <path d="M0 25H100M0 50H100M0 75H100M25 0V100M50 0V100M75 0V100" />
         </g>
       </svg>
+      <span className="token-visually-hidden">Four-channel composition: {colorNames.map((name, index) => `${name} ${wallet.composition[index]}`).join("; ")}.</span>
       <div className="token-wallet__footer">{passportVisible ? "PASSPORT ERC-721 · soulbound artwork" : "Balance preview · no passport NFT yet"}</div>
     </div>
   );

@@ -1,5 +1,5 @@
 import {
-  encodePacked, getAddress, isAddress, keccak256, parseAbi,
+  encodePacked, getAddress, isAddress, keccak256, parseAbi, type PublicClient,
   type Address, type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -150,4 +150,61 @@ export async function submitSignedConversion(
   });
   await assertContext(provider, "testnet", connectedAccount, true);
   return wallet.writeContract(simulated.request);
+}
+
+/** Public Claim NFT binding is OPTIONAL and privacy-reducing. Only use when
+ * the holder opted into an on-chain representation of its private POD.
+ * All reads are pinned to one finalized block for consistency. */
+export function publicPodCommitment(contentID: string): Hex {
+  if (!/^\\d+$/.test(contentID)) throw new Error("Invalid POD content ID");
+  return keccak256(encodePacked(["string", "string"], ["attest:pod-content-id:v1", contentID]));
+}
+
+export async function readPublicClaimSnapshot(
+  reader: PublicClient,
+  claimContract: Address,
+  tokenId: bigint,
+  expected: Readonly<{
+    holder: Address;
+    issuer: Address;
+    scope: Hex;
+    contentID: string;
+  }>,
+  blockTag: "latest" | "finalized" = "finalized",
+): Promise<{
+  blockNumber: bigint;
+  observedAtMs: number;
+  validUntilSeconds: number;
+  issuerAccount: Address;
+  active: true;
+}> {
+  const block = await reader.getBlock({ blockTag });
+  const [owner, claim, active] = await Promise.all([
+    reader.readContract({
+      address: claimContract, abi: attestClaimsAbi,
+      functionName: "ownerOf", args: [tokenId], blockNumber: block.number,
+    }),
+    reader.readContract({
+      address: claimContract, abi: attestClaimsAbi,
+      functionName: "claims", args: [tokenId], blockNumber: block.number,
+    }),
+    reader.readContract({
+      address: claimContract, abi: attestClaimsAbi,
+      functionName: "isActive", args: [tokenId], blockNumber: block.number,
+    }),
+  ]);
+  const [issuer, commitment, scope, validUntilSeconds] = claim;
+  if (!active || owner.toLowerCase() !== expected.holder.toLowerCase() ||
+      issuer.toLowerCase() !== expected.issuer.toLowerCase() ||
+      scope.toLowerCase() !== expected.scope.toLowerCase() ||
+      commitment.toLowerCase() !== publicPodCommitment(expected.contentID).toLowerCase() ||
+      validUntilSeconds <= block.timestamp)
+    throw new Error("Public claim NFT is revoked, expired or not bound to the expected POD/holder/issuer/scope");
+  return {
+    blockNumber: block.number,
+    observedAtMs: Date.now(),
+    validUntilSeconds: Number(validUntilSeconds),
+    issuerAccount: issuer,
+    active: true,
+  };
 }

@@ -106,6 +106,8 @@ export const attestClaimsAbi = parseAbi([
   "function claims(uint256) view returns (address issuer,bytes32 commitment,bytes32 scope,uint64 expiresAt,bool revoked)",
   "function isActive(uint256) view returns (bool)",
   "function locked(uint256) view returns (bool)",
+  "function tokenURI(uint256) view returns (string)",
+  "function refresh(uint256)",
 ]);
 export const attestPassportAbi = parseAbi([
   "function claim() returns (uint256)",

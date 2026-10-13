@@ -41,3 +41,4 @@ export * from "./institution";
 export * from './industry';
 
 export * from "./host-setup";
+export * from "./economy";

@@ -47,7 +47,7 @@ jobs:
       - name: Typecheck workspace
         run: pnpm typecheck
       - name: Native proof and Anvil end-to-end verification
-        run: pnpm exec vitest run zk/tests/onchain.test.ts
+        run: pnpm exec vitest run packages/chain-evm/test/economy-native-zk.test.ts
       - name: Print experimental verifier fingerprints
         if: always()
         run: |

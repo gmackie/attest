@@ -34,6 +34,7 @@ contract AttestToken {
 
     address public immutable administrator;
     address public authorizer;
+    bool public mintingPaused;
     uint256 public immutable maxSupply;
     uint256 public totalSupply;
     mapping(address => uint256) public balanceOf;
@@ -52,10 +53,12 @@ contract AttestToken {
     error PolicyDisabled();
     error SupplyCapExceeded();
     error AuthorizationExpired();
+    error MintingPaused();
 
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
     event AuthorizerChanged(address indexed previousAuthorizer, address indexed nextAuthorizer);
+    event MintingPauseChanged(bool paused);
     event PolicyConfigured(bytes32 indexed policyId, uint256 cap, bool enabled);
     event ConversionMinted(
         bytes32 indexed policyId, bytes32 indexed nullifier, address indexed recipient,
@@ -79,6 +82,11 @@ contract AttestToken {
         if (next == address(0)) revert InvalidInput();
         emit AuthorizerChanged(authorizer, next);
         authorizer = next;
+    }
+
+    function setMintingPaused(bool paused) external onlyAdministrator {
+        mintingPaused = paused;
+        emit MintingPauseChanged(paused);
     }
 
     function configurePolicy(bytes32 policyId, uint256 cap, bool enabled) external onlyAdministrator {
@@ -106,6 +114,7 @@ contract AttestToken {
     /// @notice Open relayer entry point. Only the configured proof-verifier's signed
     ///         authorization can mint. The signature commits to every public output.
     function mintWithAuthorization(Conversion calldata c, bytes calldata signature) external {
+        if (mintingPaused) revert MintingPaused();
         if (c.policyId == bytes32(0) || c.nullifier == bytes32(0) ||
             c.proofCommitment == bytes32(0) || c.provenanceCommitment == bytes32(0) ||
             c.recipient == address(0) || c.amount == 0) revert InvalidInput();

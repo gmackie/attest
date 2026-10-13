@@ -302,3 +302,22 @@ transaction, shares the generated invitation, and supplies its public address fo
 shows the pending setup rather than inventing a deployment. See
 [guided-testnet.md](specs/guided-testnet.md) for host activation, custody, wallet
 requirements, fictional issuer semantics and the on-chain data boundary.
+
+## Experimental $ATTEST economy (Sepolia-only)
+
+A research proof of concept under [PR #4](https://github.com/gmackie/attest/pull/4)
+adds nontransferable public claim NFTs, private GPC claim-to-token eligibility
+verification, a capped $ATTEST ERC-20 with conserved four-channel provenance,
+and an opt-in dynamic economic passport ERC-721.
+
+Try the [interactive browser lab](https://attest.gmac.io/#/economy) **once the
+site is updated from this branch**. Its claim issuer/status and token transfers
+are fictional simulations, although the browser runs a real GPC private proof.
+It does not deploy or mint on-chain assets.
+
+Read [the protocol, threat model and implementation limits](specs/private-conversion.md).
+The minting contract currently trusts a separately secured EIP-712 authorizer
+after off-chain proof verification; it does **not** verify GPC on-chain. See
+[the native-ZK follow-up](https://github.com/gmackie/attest/issues/5).
+None of these tokens measures objective trustworthiness, provides financial
+backing, or is intended for real-money use. No production/mainnet gates change.

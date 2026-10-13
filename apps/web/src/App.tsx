@@ -1,3 +1,4 @@
+const EconomyLab = lazy(() => import("./EconomyLab"));
 const HostSetup = lazy(() =>
   import("./HostSetup").then((m) => ({ default: m.HostSetup })),
 );
@@ -52,7 +53,8 @@ export function App() {
     path.startsWith("/app") ||
     path === "/learn" ||
     path.startsWith("/learn/") ||
-    path === "/developers";
+    path === "/developers" ||
+    path === "/economy";
   return (
     <div className="app redesigned">
       <header className="topbar">
@@ -67,6 +69,7 @@ export function App() {
 
             { name: "Your wallet", href: "/wallet-guide" },
             { name: "Learn", href: "/learn" },
+            { name: "$ATTEST Lab", href: "/economy" },
             { name: "Developers", href: "/developers" },
           ].map((item) => (
             <LinkButton
@@ -191,6 +194,11 @@ export function App() {
               <StandardsExplorer />
             )}
           </section>
+        )}
+        {path === "/economy" && (
+          <Suspense fallback={<p className="page-section">Opening the economy lab…</p>}>
+            <EconomyLab />
+          </Suspense>
         )}
         {path === "/developers" && (
           <section className="page-section narrow">

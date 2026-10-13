@@ -90,7 +90,7 @@ npm install --prefix /tmp/attest-zk-toolchain --no-save --no-package-lock \
 node zk/scripts/build-test-fixture.mjs
 pnpm --filter @attest/contracts build
 node contracts/scripts/compile-zk.mjs
-pnpm exec vitest run zk/tests/onchain.test.ts
+pnpm exec vitest run packages/chain-evm/test/economy-native-zk.test.ts
 ```
 
 The generated verification key, Solidity verifier, circuit wasm, and zkey are

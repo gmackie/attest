@@ -234,6 +234,7 @@ contract AttestClaims {
     event Locked(uint256 indexed id);
     event ClaimIssued(uint256 indexed id, address indexed issuer, bytes32 commitment, bytes32 scope);
     event ClaimRevoked(uint256 indexed id);
+    event MetadataUpdate(uint256 indexed id);
     error Unauthorized(); error InvalidInput(); error NonTransferable(); error NotFound();
     constructor() {
         if (block.chainid != 11155111) revert InvalidInput();
@@ -264,6 +265,7 @@ contract AttestClaims {
         if (c.revoked) revert InvalidInput();
         c.revoked = true;
         emit ClaimRevoked(id);
+        emit MetadataUpdate(id);
     }
     function isActive(uint256 id) external view returns (bool) {
         return owners[id] != address(0) && !claims[id].revoked && claims[id].expiresAt > block.timestamp;
@@ -274,8 +276,42 @@ contract AttestClaims {
         return owner;
     }
     function locked(uint256 id) external view returns (bool) { ownerOf(id); return true; }
+    function refresh(uint256 id) external { ownerOf(id); emit MetadataUpdate(id); }
+    /// @notice Geometric art is seeded from an opaque commitment, not private values.
+    function tokenURI(uint256 id) external view returns (string memory) {
+        ownerOf(id);
+        Claim memory c = claims[id];
+        bool active = !c.revoked && c.expiresAt > block.timestamp;
+        string[4] memory colors = ["#3a9bd2", "#9874d0", "#d8a448", "#49bb9a"];
+        uint256 seed = uint256(c.commitment);
+        bytes memory shapes;
+        for (uint256 i; i < 8; ++i) {
+            uint256 x = 20 + i * 45;
+            uint256 height = 50 + ((seed >> (i * 8)) & 0xff);
+            if (height > 290) height = 290;
+            shapes = abi.encodePacked(shapes, "<rect x='", AttestText.decimal(x),
+                "' y='", AttestText.decimal(320 - height),
+                "' width='38' height='", AttestText.decimal(height),
+                "' fill='", colors[(seed >> (i * 2)) & 3], "'/>");
+        }
+        bytes memory svg = abi.encodePacked(
+            "<svg xmlns='http://www.w3.org/2000/svg' width='400' height='400' viewBox='0 0 400 400'>",
+            "<rect width='400' height='400' fill='#142239'/>", shapes,
+            "<rect x='0' y='320' width='400' height='80' fill='#142239'/>",
+            "<text x='20' y='354' fill='white' font-size='20' font-family='monospace'>CLAIM #",
+            AttestText.decimal(id), "</text><text x='20' y='382' fill='#b8cedb' font-size='15' font-family='monospace'>",
+            active ? "ACTIVE" : "INACTIVE", " / PUBLIC COMMITMENT</text></svg>"
+        );
+        bytes memory metadata = abi.encodePacked(
+            '{"name":"Attest Public Claim #', AttestText.decimal(id),
+            '","description":"Opaque public commitment. Not proof of qualification; independently verify issuer, status and scope.",',
+            '"image":"data:image/svg+xml;base64,', AttestText.base64(svg), '"}'
+        );
+        return string.concat("data:application/json;base64,", AttestText.base64(metadata));
+    }
     function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == 0x01ffc9a7 || id == 0x80ac58cd || id == 0xb45a3c0e;
+        return id == 0x01ffc9a7 || id == 0x80ac58cd || id == 0x5b5e139f ||
+            id == 0xb45a3c0e || id == 0x49064906;
     }
     function approve(address, uint256) external pure { revert NonTransferable(); }
     function setApprovalForAll(address, bool) external pure { revert NonTransferable(); }

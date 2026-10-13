@@ -11,8 +11,11 @@ for (const name of [
   "AttestToken",
   "AttestClaims",
   "AttestPassport",
+  "PrivateClaimRoots",
+  "ZkAttestMinterV1",
 ]) {
-  const sourceFile = ["AttestToken", "AttestClaims", "AttestPassport"].includes(name) ? "AttestEconomy" : name;
+  const sourceFile = ["AttestToken", "AttestClaims", "AttestPassport"].includes(name) ? "AttestEconomy" :
+    ["PrivateClaimRoots", "ZkAttestMinterV1"].includes(name) ? "AttestZkMinter" : name;
   const sourcePath = new URL(`../src/${sourceFile}.sol`, import.meta.url);
   const source = await fs.readFile(sourcePath, "utf8");
   const input = {

@@ -94,6 +94,8 @@ export const attestTokenAbi = parseAbi([
   "function policies(bytes32) view returns (uint256 cap,uint256 minted,bool enabled)",
   "function configurePolicy(bytes32,uint256,bool)",
   "function setAuthorizer(address)",
+  "function mintingPaused() view returns (bool)",
+  "function setMintingPaused(bool)",
   "function mintWithAuthorization((bytes32 policyId,bytes32 nullifier,bytes32 proofCommitment,bytes32 provenanceCommitment,address recipient,uint256 amount,uint64 expiresAt,uint64 palette),bytes)",
   "function transfer(address,uint256) returns (bool)",
   "function transferFrom(address,address,uint256) returns (bool)",

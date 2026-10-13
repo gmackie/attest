@@ -93,7 +93,7 @@ async function makeProof(eventSecret:bigint,holderSecret:bigint,score:bigint):Pr
   const expiry=timestamp+600n;
   const validUntil=timestamp+86400n;
   const siblings=[11n,22n,33n,44n],directions=[0n,1n,0n,1n];
-  const leaf=phash([eventSecret,holderSecret,score,validUntil,issuer]);
+  const leaf=phash([eventSecret,holderSecret,score,validUntil,issuer,recipient]);
   let level=leaf;
   for(let i=0;i<4;i++){
     level=directions[i]===0n?phash([level,siblings[i]!]):phash([siblings[i]!,level]);

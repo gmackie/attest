@@ -15,6 +15,7 @@ contract AttestToken {
     bytes32 private constant VERSION_HASH = keccak256("1");
     uint256 private constant SECP256K1_HALF_ORDER = 0x7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a0;
     uint256 private constant BPS = 10_000;
+    bytes32 private constant NATIVE_POLICY_ID = bytes32(uint256(1));
 
     struct Conversion {
         bytes32 policyId;
@@ -122,6 +123,8 @@ contract AttestToken {
     /// @notice Trusted verifier bridge retained for backward-compatible Sepolia
     /// experiments; new Groth16 minter uses mintFromZk instead.
     function mintWithAuthorization(Conversion calldata c, bytes calldata signature) external {
+        // Reserve the native policy namespace for Groth16 proofs only.
+        if (c.policyId == NATIVE_POLICY_ID) revert PolicyDisabled();
         if (mintingPaused) revert MintingPaused();
         if (c.expiresAt <= block.timestamp || c.expiresAt > block.timestamp + 1 days) revert AuthorizationExpired();
         if (_recover(authorizationDigest(c), signature) != authorizer) revert InvalidSignature();
@@ -136,6 +139,7 @@ contract AttestToken {
         bytes32 provenanceCommitment, address recipient, uint256 amount, uint64 palette
     ) external {
         if (msg.sender != zkMinter) revert Unauthorized();
+        if (policyId != NATIVE_POLICY_ID) revert PolicyDisabled();
         _mintEligible(policyId,nullifier,proofCommitment,provenanceCommitment,recipient,amount,palette);
     }
 

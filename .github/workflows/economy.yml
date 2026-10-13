@@ -1,0 +1,39 @@
+name: ATTEST Economy POC
+
+on:
+  pull_request:
+    paths:
+      - "contracts/src/AttestEconomy.sol"
+      - "contracts/scripts/compile.mjs"
+      - "packages/chain-evm/src/economy.ts"
+      - "packages/chain-evm/test/economy*.test.ts"
+      - "packages/demo/src/conversion.ts"
+      - "packages/demo/test/conversion.test.ts"
+      - "apps/web/src/EconomyLab.tsx"
+      - "apps/web/src/economy.css"
+      - ".github/workflows/economy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  economy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @attest/contracts build
+      - run: pnpm typecheck
+      - run: pnpm exec vitest run packages/chain-evm/test/economy.test.ts packages/chain-evm/test/economy-e2e.test.ts packages/demo/test/conversion.test.ts

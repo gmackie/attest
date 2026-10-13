@@ -157,11 +157,18 @@ it.skipIf(!existsSync(binary))("provides non-transferable claim NFTs and live ba
   await write(claims, claimAbi, b, "issue", [a, hash("2"), hash("3"), BigInt(Math.floor(Date.now()/1000)+86400)]);
   expect(await reader.readContract({ address: claims, abi: claimAbi, functionName: "ownerOf", args: [1n] })).toBe(a);
   expect(await reader.readContract({ address: claims, abi: claimAbi, functionName: "locked", args: [1n] })).toBe(true);
+  const activeClaimUri = await reader.readContract({ address: claims, abi: claimAbi, functionName: "tokenURI", args: [1n] }) as string;
+  const activeClaimJson = JSON.parse(Buffer.from(activeClaimUri.split(",")[1]!, "base64").toString("utf8"));
+  expect(activeClaimJson.name).toContain("Public Claim");
+  expect(Buffer.from(activeClaimJson.image.split(",")[1]!, "base64").toString("utf8")).toContain("ACTIVE / PUBLIC COMMITMENT");
   await expect(write(claims, claimAbi, a, "transferFrom", [a, b, 1n])).rejects.toThrow();
   await expect(write(claims, claimAbi, b, "issue", [a, hash("2"), hash("3"), BigInt(Math.floor(Date.now()/1000)+86400)])).rejects.toThrow();
   await expect(write(claims, claimAbi, a, "revoke", [1n])).rejects.toThrow();
   await write(claims, claimAbi, b, "revoke", [1n]);
   expect(await reader.readContract({ address: claims, abi: claimAbi, functionName: "isActive", args: [1n] })).toBe(false);
+  const revokedUri = await reader.readContract({ address: claims, abi: claimAbi, functionName: "tokenURI", args: [1n] }) as string;
+  const revokedJson = JSON.parse(Buffer.from(revokedUri.split(",")[1]!, "base64").toString("utf8"));
+  expect(Buffer.from(revokedJson.image.split(",")[1]!, "base64").toString("utf8")).toContain("INACTIVE / PUBLIC COMMITMENT");
   await expect(write(claims, claimAbi, b, "revoke", [1n])).rejects.toThrow();
 
   await write(passport, passportAbi, a, "claim");

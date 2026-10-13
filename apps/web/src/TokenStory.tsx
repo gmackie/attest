@@ -5,8 +5,7 @@ import {
   PauseIcon, SealCheckIcon, WalletIcon,
 } from "@phosphor-icons/react";
 import {
-  getTokenStoryFrame, tokenScenes, type TokenComposition,
-  type TokenProofPath, type TokenWallet,
+  getTokenStoryFrame, tokenScenes, type TokenProofPath, type TokenWallet,
 } from "@attest/demo";
 import "./token-story.css";
 
@@ -75,12 +74,12 @@ function TokenDiagram({
           <span className="token-flow-arrow__packet" />
           <ArrowRightIcon size={18} />
         </div>
-        <div className={`token-object token-object--proof ${frame.privateProofPrepared ? "token-object--verified" : ""}`}>
+        <div className={`token-object token-object--proof ${frame.privateProofPrepared && !frame.claimRevoked ? "token-object--verified" : ""}`}>
           <div className="token-object__eyebrow"><SealCheckIcon size={15} aria-hidden /> ZERO-KNOWLEDGE</div>
           <div className="token-proof-symbol" aria-hidden="true">
-            <span className="token-proof-symbol__shield">{frame.privateProofPrepared ? "✓" : "?"}</span>
+            <span className="token-proof-symbol__shield">{frame.claimRevoked ? "!" : frame.privateProofPrepared ? "✓" : "?"}</span>
           </div>
-          <strong>{frame.privateProofPrepared ? "Eligible proof" : "Prove privately"}</strong>
+          <strong>{frame.claimRevoked ? "Prior proof only" : frame.privateProofPrepared ? "Eligible proof" : "Prove privately"}</strong>
           <small>{proofPath === "bridge" ? "GPC → trusted verifier" : "Issuer root → Groth16"}</small>
         </div>
         <div className={`token-flow-arrow ${frame.issuanceRecorded ? "token-flow-arrow--active" : ""}`} aria-hidden="true">

@@ -150,7 +150,7 @@ describe.skipIf(!available)("native Groth16 private claim conversion",()=>{
     const newSignal=(index:number,value:bigint)=>a.signals.map((x,i)=>i===index?value:x);
     for (const [index,value] of [
       [2,a.signals[2]!+1n],[3,BigInt(outsider)],[4,BigInt(outsider)],
-      [5,1n],[7,parseEther("201")],[8,a.signals[8]!+1n],
+      [5,1n],[6,a.signals[6]!+1n],[7,parseEther("201")],[8,a.signals[8]!+1n],
       [9,2n],[10,a.signals[10]!+1n],
     ] as const){
        await expect(attemptProof(a,newSignal(index,value))).rejects.toThrow();
@@ -165,6 +165,16 @@ describe.skipIf(!available)("native Groth16 private claim conversion",()=>{
     expect(await reader.readContract({address:token,abi:attestTokenAbi,functionName:"balanceOf",args:[recipient]})).toBe(parseEther("200"));
     expect(await reader.readContract({address:token,abi:attestTokenAbi,functionName:"spentNullifiers",args:[toHex(a.signals[2]!,{size:32})]})).toBe(true);
     await expect(attemptProof(a)).rejects.toThrow();
+
+    // A reissued claim referencing the SAME issuer-controlled event secret
+    // but different holder/score must share the spent nullifier.
+    const rewritten=await makeProof(123456789123456789123456789n,7777777777n,999n);
+    expect(rewritten.signals[2]).toBe(a.signals[2]);
+    await transaction(roots,privateClaimRootsAbi,issuer,"replaceRoot",[rewritten.commitmentRoot]);
+    await expect(attemptProof(rewritten)).rejects.toThrow();
+
+    await expect(makeProof(88881n,77772n,400n)).rejects.toThrow();
+    await expect(makeProof(0n,77772n,900n)).rejects.toThrow();
 
     // Second unique event proves independently; emergency pause and issuer revocation gate it.
     const b=await makeProof(22446688113355779911n,4422118855771199n,950n);

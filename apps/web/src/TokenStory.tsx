@@ -186,8 +186,8 @@ export function TokenStory({ compact = false }: { compact?: boolean }) {
             {index === 2 || index === 3 ? (
               <p className="token-story__path-caption">
                 {path === "bridge"
-                  ? "Bridge path: a real GPC proof is checked off-chain; a trusted signer authorizes a testnet mint. This is not on-chain proof verification."
-                  : "Native path: a separate experimental Groth16 circuit verifies an issuer-managed Poseidon-root claim on-chain. It does not directly verify an Attest POD."}
+                  ? "Bridge path: a GPC proof can be verified off-chain before a trusted signer authorizes a separate testnet mint. The animation never signs or mints."
+                  : "Native path: a separate experimental Groth16 circuit verifies an issuer-managed Poseidon-root claim in Anvil tests. It does not directly verify Attest PODs."}
               </p>
             ) : null}
           </div>
@@ -205,7 +205,7 @@ export function TokenStory({ compact = false }: { compact?: boolean }) {
                 Native ZK
               </Button>
             </div>
-            <p>{path === "bridge" ? "POD/GPC → off-chain verification → EIP-712 authorization" : "Issuer Poseidon root → Groth16 on-chain verifier → mint"}</p>
+            <p>{path === "bridge" ? "POD/GPC → off-chain verification → EIP-712 authorization" : "Issuer Poseidon root → Groth16 contract (Anvil test) → mint"}</p>
           </div>
         </div>
       </div>

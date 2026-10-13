@@ -28,7 +28,7 @@ export const tokenScenes = [
     label: "Private proof",
     title: "Prove eligibility, not the secret.",
     explanation: "The holder demonstrates a defined requirement without publishing the private score or evidence. Who verifies the proof matters to the conversion path.",
-    publicText: "A specific requirement and permitted proof outputs",
+    publicText: "No public chain data is required for the proof itself; permitted results go to its intended verifier.",
     privateText: "Signed claim, witness and hidden qualifying score",
   },
   {
@@ -60,7 +60,7 @@ export const tokenScenes = [
     label: "Revocation",
     title: "Revocation blocks new conversion, not history.",
     explanation: "An issuer can revoke the claim. A revoked claim must not authorize fresh issuance. Previously minted $ATTEST remains transferable unless an explicit token policy says otherwise.",
-    publicText: "Updated public claim status; already minted supply remains",
+    publicText: "If a public Claim NFT exists, its status updates; previously minted supply remains.",
     privateText: "Revoked evidence record stays available for historical inspection",
   },
 ] as const;

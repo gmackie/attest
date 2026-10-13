@@ -22,6 +22,9 @@ const IndustryJourney = lazy(() =>
 const DemoChooser = lazy(() =>
   import("./IndustryJourney").then((m) => ({ default: m.DemoChooser })),
 );
+const WalletGuide = lazy(() =>
+  import("./WalletGuide").then((m) => ({ default: m.WalletGuide })),
+);
 const stories = [supplierIndustry, ...industries];
 function route() {
   const path = location.hash.slice(1) || "/";
@@ -41,6 +44,7 @@ export function App() {
   const known =
     path === "/" ||
     path === "/explore" ||
+    path === "/wallet-guide" ||
     !!story ||
     path === "/sandbox" ||
     path.split("?")[0] === "/demo" ||
@@ -61,6 +65,7 @@ export function App() {
             { name: "Browser demos", href: "/explore" },
             { name: "Onchain testnet", href: "/testnet" },
 
+            { name: "Your wallet", href: "/wallet-guide" },
             { name: "Learn", href: "/learn" },
             { name: "Developers", href: "/developers" },
           ].map((item) => (
@@ -85,6 +90,15 @@ export function App() {
       </header>
       <main>
         {path === "/" && <Landing />}
+        {path === "/wallet-guide" && (
+          <Suspense
+            fallback={
+              <p className="page-section">Opening your wallet guide…</p>
+            }
+          >
+            <WalletGuide />
+          </Suspense>
+        )}
         {path === "/explore" && (
           <section className="page-section browser-directory">
             <span className="mode-label">

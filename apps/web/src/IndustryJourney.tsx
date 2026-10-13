@@ -73,6 +73,9 @@ export function DemoChooser() {
         the required facts privately, then ask a verifier to record its decision
         on Sepolia.
       </p>
+      <LinkButton href="#/wallet-guide" variant="ghost">
+        New to wallets? Follow the animated guide →
+      </LinkButton>
       <div className="testnet-mode-note">
         <WalletIcon size={24} />
         <div>

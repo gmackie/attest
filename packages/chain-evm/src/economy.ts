@@ -94,6 +94,9 @@ export const attestTokenAbi = parseAbi([
   "function policies(bytes32) view returns (uint256 cap,uint256 minted,bool enabled)",
   "function configurePolicy(bytes32,uint256,bool)",
   "function setAuthorizer(address)",
+  "function zkMinter() view returns (address)",
+  "function setZkMinter(address)",
+  "function mintFromZk(bytes32,bytes32,bytes32,bytes32,address,uint256,uint64)",
   "function mintingPaused() view returns (bool)",
   "function setMintingPaused(bool)",
   "function mintWithAuthorization((bytes32 policyId,bytes32 nullifier,bytes32 proofCommitment,bytes32 provenanceCommitment,address recipient,uint256 amount,uint64 expiresAt,uint64 palette),bytes)",
@@ -209,4 +212,88 @@ export async function readPublicClaimSnapshot(
     issuerAccount: issuer,
     active: true,
   };
+}
+
+export const privateClaimRootsAbi = parseAbi([
+  "function administrator() view returns (address)",
+  "function issuers(address) view returns (bool)",
+  "function activeRoot(address) view returns (uint256)",
+  "function epoch(address) view returns (uint64)",
+  "function configureIssuer(address issuer,bool accepted)",
+  "function replaceRoot(uint256 root)",
+]);
+
+export const zkAttestMinterAbi = parseAbi([
+  "function token() view returns (address)",
+  "function roots() view returns (address)",
+  "function verifier() view returns (address)",
+  "function POLICY() view returns (uint256)",
+  "function AMOUNT() view returns (uint256)",
+  "function PALETTE() view returns (uint64)",
+  "function mintWithProof(uint256[2] a,uint256[2][2] b,uint256[2] c,uint256[11] signals)",
+]);
+
+/** Proof values from a *reviewed* Groth16 circuit. The generated verifier checks
+ * their cryptographic validity; no caller-controlled JS proof flag is trusted. */
+export type NativeZkConversion = Readonly<{
+  a: readonly [bigint, bigint];
+  b: readonly [readonly [bigint,bigint], readonly [bigint,bigint]];
+  c: readonly [bigint,bigint];
+  signals: readonly bigint[];
+}>;
+export const BN254_SCALAR_FIELD =
+  21888242871839275222246405745257275088696311157297823662689037894645226208583n;
+
+/** Defensive validation before handing the proof to an on-chain verifier.
+ * Order: issuer, root, nullifier, recipient, token, chain, expiry,
+ * amount, palette, policy, provenance. */
+export function validateNativeZkConversion(
+  payload: NativeZkConversion,
+  token: Address,
+  minter: Address,
+  nowSeconds: bigint,
+): void {
+  const p = payload.signals;
+  if (p.length !== 11 ||
+      p.some(x => typeof x !== "bigint" || x < 0n || x >= BN254_SCALAR_FIELD))
+    throw new Error("Invalid BN254 field public signals");
+  if (p[0] === 0n || p[1] === 0n || p[2] === 0n || p[10] === 0n ||
+      p[3] === 0n || p[3]! >= 1n << 160n ||
+      p[4] !== BigInt(token) ||
+      p[5] !== 11155111n || p[7] !== 200n * 10n ** 18n ||
+      p[8] !== 1125912791875585000n || p[9] !== 1n ||
+      p[6]! <= nowSeconds || p[6]! > nowSeconds + 3600n)
+    throw new Error("Native proof domain, expiration or policy mismatch");
+  const points = [...payload.a,...payload.b[0],...payload.b[1],...payload.c];
+  if (points.length !== 8 || points.some(x => typeof x !== "bigint" || x < 0n))
+    throw new Error("Malformed Groth16 proof points");
+  if (!isAddress(minter)) throw new Error("Invalid proof minter address");
+}
+
+/** Browser wallet path for a native on-chain-proof testnet deployment. Only
+ * an actual Groth16 verifier can accept the proof; the app cannot sign it.
+ * Mainnet remains unreachable through assertContext. */
+export async function submitNativeZkConversion(
+  provider: EIP1193Provider,
+  connectedAccount: Address,
+  minter: Address,
+  payload: NativeZkConversion,
+): Promise<Hex> {
+  await assertContext(provider, "testnet", connectedAccount, true);
+  const {reader,wallet} = clients(provider, "testnet");
+  if (!(await reader.getCode({address:minter}))) throw new Error("Unknown native minter");
+  const token = await reader.readContract({
+    address:minter,abi:zkAttestMinterAbi,functionName:"token",
+  });
+  const block = await reader.getBlock({blockTag:"latest"});
+  validateNativeZkConversion(payload, token, minter, block.timestamp);
+  const request = await reader.simulateContract({
+    address:minter,abi:zkAttestMinterAbi,functionName:"mintWithProof",
+    args: [payload.a,payload.b,payload.c,payload.signals as unknown as readonly [
+      bigint,bigint,bigint,bigint,bigint,bigint,bigint,bigint,bigint,bigint,bigint
+    ]],
+    account:connectedAccount,
+  });
+  await assertContext(provider,"testnet",connectedAccount,true);
+  return wallet.writeContract(request.request);
 }

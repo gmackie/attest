@@ -20,3 +20,6 @@ apps/web/public/contracts/
 # Local issuer-service secrets
 .dev.vars
 .dev.vars.*
+
+# Unsafe ephemeral Circom/Groth16 test artifacts; NEVER commit test proving keys.
+zk/.generated/

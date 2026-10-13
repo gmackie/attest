@@ -15,6 +15,7 @@ contract AttestToken {
     bytes32 private constant VERSION_HASH = keccak256("1");
     uint256 private constant SECP256K1_HALF_ORDER = 0x7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a0;
     uint256 private constant BPS = 10_000;
+    bytes32 private constant NATIVE_POLICY_ID = bytes32(uint256(1));
 
     struct Conversion {
         bytes32 policyId;
@@ -34,6 +35,7 @@ contract AttestToken {
 
     address public immutable administrator;
     address public authorizer;
+    address public zkMinter;
     bool public mintingPaused;
     uint256 public immutable maxSupply;
     uint256 public totalSupply;
@@ -59,6 +61,7 @@ contract AttestToken {
     event Approval(address indexed owner, address indexed spender, uint256 value);
     event AuthorizerChanged(address indexed previousAuthorizer, address indexed nextAuthorizer);
     event MintingPauseChanged(bool paused);
+    event ZkMinterChanged(address indexed previousMinter, address indexed nextMinter);
     event PolicyConfigured(bytes32 indexed policyId, uint256 cap, bool enabled);
     event ConversionMinted(
         bytes32 indexed policyId, bytes32 indexed nullifier, address indexed recipient,
@@ -82,6 +85,12 @@ contract AttestToken {
         if (next == address(0)) revert InvalidInput();
         emit AuthorizerChanged(authorizer, next);
         authorizer = next;
+    }
+
+    function setZkMinter(address next) external onlyAdministrator {
+        if (next == address(0)) revert InvalidInput();
+        emit ZkMinterChanged(zkMinter, next);
+        zkMinter = next;
     }
 
     function setMintingPaused(bool paused) external onlyAdministrator {
@@ -111,35 +120,55 @@ contract AttestToken {
         return keccak256(abi.encodePacked("\x19\x01", domainSeparator(), structHash));
     }
 
-    /// @notice Open relayer entry point. Only the configured proof-verifier's signed
-    ///         authorization can mint. The signature commits to every public output.
+    /// @notice Trusted verifier bridge retained for backward-compatible Sepolia
+    /// experiments; new Groth16 minter uses mintFromZk instead.
     function mintWithAuthorization(Conversion calldata c, bytes calldata signature) external {
+        // Reserve the native policy namespace for Groth16 proofs only.
+        if (c.policyId == NATIVE_POLICY_ID) revert PolicyDisabled();
         if (mintingPaused) revert MintingPaused();
-        if (c.policyId == bytes32(0) || c.nullifier == bytes32(0) ||
-            c.proofCommitment == bytes32(0) || c.provenanceCommitment == bytes32(0) ||
-            c.recipient == address(0) || c.amount == 0) revert InvalidInput();
-        if (spentNullifiers[c.nullifier]) revert AlreadySpent();
         if (c.expiresAt <= block.timestamp || c.expiresAt > block.timestamp + 1 days) revert AuthorizationExpired();
-        Policy storage p = policies[c.policyId];
-        if (!p.enabled) revert PolicyDisabled();
-        if (c.amount > maxSupply - totalSupply || c.amount > p.cap - p.minted) revert SupplyCapExceeded();
-        uint256[4] memory parts = _parts(c.palette);
-        address recovered = _recover(authorizationDigest(c), signature);
-        if (recovered != authorizer) revert InvalidSignature();
+        if (_recover(authorizationDigest(c), signature) != authorizer) revert InvalidSignature();
+        _mintEligible(c.policyId,c.nullifier,c.proofCommitment,c.provenanceCommitment,
+                      c.recipient,c.amount,c.palette);
+    }
 
-        spentNullifiers[c.nullifier] = true;
-        p.minted += c.amount;
-        totalSupply += c.amount;
-        balanceOf[c.recipient] += c.amount;
+    /// @notice Proof-verifier contract can mint ONLY after it verified a valid
+    /// Groth16 proof. The configured minter is an admin-controlled trust root.
+    function mintFromZk(
+        bytes32 policyId, bytes32 nullifier, bytes32 proofCommitment,
+        bytes32 provenanceCommitment, address recipient, uint256 amount, uint64 palette
+    ) external {
+        if (msg.sender != zkMinter) revert Unauthorized();
+        if (policyId != NATIVE_POLICY_ID) revert PolicyDisabled();
+        _mintEligible(policyId,nullifier,proofCommitment,provenanceCommitment,recipient,amount,palette);
+    }
+
+    function _mintEligible(
+        bytes32 policyId, bytes32 nullifier, bytes32 proofCommitment,
+        bytes32 provenanceCommitment, address recipient, uint256 amount, uint64 palette
+    ) internal {
+        if (mintingPaused) revert MintingPaused();
+        if (policyId == bytes32(0) || nullifier == bytes32(0) ||
+            proofCommitment == bytes32(0) || provenanceCommitment == bytes32(0) ||
+            recipient == address(0) || amount == 0) revert InvalidInput();
+        if (spentNullifiers[nullifier]) revert AlreadySpent();
+        Policy storage p = policies[policyId];
+        if (!p.enabled) revert PolicyDisabled();
+        if (amount > maxSupply - totalSupply || amount > p.cap - p.minted) revert SupplyCapExceeded();
+        uint256[4] memory parts = _parts(palette);
+        spentNullifiers[nullifier] = true;
+        p.minted += amount;
+        totalSupply += amount;
+        balanceOf[recipient] += amount;
         uint256 assigned;
         for (uint256 i; i < 3; ++i) {
-            uint256 share = (c.amount * parts[i]) / BPS;
-            mixtures[c.recipient][i] += share;
+            uint256 share = (amount * parts[i]) / BPS;
+            mixtures[recipient][i] += share;
             assigned += share;
         }
-        mixtures[c.recipient][3] += c.amount - assigned;
-        emit Transfer(address(0), c.recipient, c.amount);
-        emit ConversionMinted(c.policyId, c.nullifier, c.recipient, c.amount, c.proofCommitment, c.provenanceCommitment, c.palette);
+        mixtures[recipient][3] += amount - assigned;
+        emit Transfer(address(0), recipient, amount);
+        emit ConversionMinted(policyId,nullifier,recipient,amount,proofCommitment,provenanceCommitment,palette);
     }
 
     function _parts(uint64 palette) internal pure returns (uint256[4] memory parts) {

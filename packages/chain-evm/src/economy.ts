@@ -156,7 +156,7 @@ export async function submitSignedConversion(
  * the holder opted into an on-chain representation of its private POD.
  * All reads are pinned to one finalized block for consistency. */
 export function publicPodCommitment(contentID: string): Hex {
-  if (!/^\\d+$/.test(contentID)) throw new Error("Invalid POD content ID");
+  if (!/^\d+$/.test(contentID)) throw new Error("Invalid POD content ID");
   return keccak256(encodePacked(["string", "string"], ["attest:pod-content-id:v1", contentID]));
 }
 

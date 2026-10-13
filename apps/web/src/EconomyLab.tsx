@@ -7,6 +7,7 @@ import {
   type ConversionPolicy,
 } from "@attest/demo";
 import type { ConversionVoucher, Hex } from "@attest/chain-evm";
+import { TokenStory } from "./TokenStory";
 import "./economy.css";
 
 const issuerAccount = "0x3333333333333333333333333333333333333333" as const;
@@ -61,6 +62,7 @@ export default function EconomyLab() {
   const [revoked, setRevoked] = useState(false);
   const [alice, setAlice] = useState<Mix>(zero);
   const [bob, setBob] = useState<Mix>(initialBob);
+  const [transfers, setTransfers] = useState(0);
   const issue = () => {
     try {
       setMessage("");
@@ -87,6 +89,7 @@ export default function EconomyLab() {
       setRevoked(false);
       setAlice(zero);
       setBob(initialBob);
+      setTransfers(0);
       setMessage("Synthetic private claim issued locally. Its signed score is in memory, not on a blockchain.");
     } catch (err) { setMessage(err instanceof Error ? err.message : String(err)); }
   };
@@ -130,6 +133,7 @@ export default function EconomyLab() {
     const moved = alice.colors.map((p) => p * n / alice.amount) as Mix["colors"];
     setAlice({ amount: alice.amount - n, colors: alice.colors.map((p,i) => p - moved[i]!) as Mix["colors"] });
     setBob({ amount: bob.amount + n, colors: bob.colors.map((p,i) => p + moved[i]!) as Mix["colors"] });
+    setTransfers((count) => count + 1);
   };
   return <section className="page-section economy-lab">
     <div className="economy-head">
@@ -144,6 +148,7 @@ export default function EconomyLab() {
       <p><strong>Claim NFT:</strong> optional, opaque public record. <strong>$ATTEST:</strong> fixed policy-authorized economic units. <strong>Passport NFT:</strong> live artwork derived from wallet balance and provenance mix.</p>
       <p>All issuers and statuses in this page are fictional. The proof is cryptographic; the example issuer registry and token mint are simulated.</p>
     </div>
+    <TokenStory compact />
     <div className="economy-step">
       <div className="economy-stephead"><h2>1. Issue a private claim</h2><Badge variant="outline">Signed POD</Badge></div>
       <p>The hidden score is signed by a fictional issuer. Conversion requires at least 700; eligibility releases a fixed 200 test units.</p>
@@ -180,13 +185,13 @@ export default function EconomyLab() {
       </div>
       <div className="economy-picks">
         <Button onClick={move} disabled={!voucher || alice.amount===0}>Simulate transfer: 50 ATTEST → Bob</Button>
-        <Button variant="secondary" onClick={() => {setAlice(zero);setBob(initialBob);setVoucher(null);setRecord(null);setMessage("");setRevoked(false);}}>Reset lab</Button>
+        <Button variant="secondary" onClick={() => {setAlice(zero);setBob(initialBob);setTransfers(0);setVoucher(null);setRecord(null);setMessage("");setRevoked(false);}}>Reset lab</Button>
       </div>
       <div className="economy-legend">{labels.map((label,i)=><span key={label}><i style={{backgroundColor:colors[i]}}/>{label}</span>)}</div>
     </div>
     <div className="economy-info">
-      <strong>Actual system status:</strong> experimental Sepolia contracts and a verifier-bridge adapter exist in the source PR. This page does not deploy contracts, issue real tokens or sign mint receipts. Mainnet remains disabled.
-      <div style={{marginTop:12}}><LinkButton href="https://github.com/gmackie/attest/blob/feat/private-attest-economy-poc/specs/private-conversion.md" variant="secondary">Read the protocol boundary ↗</LinkButton></div>
+      <strong>Actual system status:</strong> experimental Sepolia contracts, a verifier bridge, and a separate native-ZK test circuit are in merged source. This page does not deploy contracts, issue real tokens or sign mint receipts. Mainnet remains disabled.
+      <div style={{marginTop:12}}><LinkButton href="https://github.com/gmackie/attest/blob/main/specs/private-conversion.md" variant="secondary">Read the protocol boundary ↗</LinkButton></div>
     </div>
   </section>;
 }

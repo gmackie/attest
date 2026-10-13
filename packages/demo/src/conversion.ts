@@ -75,6 +75,8 @@ export type CredentialSnapshot = Readonly<{
 
 export type ConversionVerifierPorts = Readonly<{
   nowMs: () => number;
+  /** Trusted policy registry; callers cannot change the payout under a known policy ID. */
+  resolvePolicy: (policyId: Hex) => Promise<ConversionPolicy | null>;
   readCredential: (intent: ConversionIntent) => Promise<CredentialSnapshot | null>;
   acceptedIssuer: (issuer: Address, signingKey: string, scope: Hex) => Promise<boolean>;
   /** Optional early check. The EVM contract remains the final spend-once authority. */
@@ -220,6 +222,13 @@ export async function verifyPrivateConversion(
   artifacts?: string,
 ): Promise<VerifiedConversion> {
   validateConversionPolicy(policy);
+  // Fail closed: never let the requester supply a conversion policy with an
+  // arbitrary amount, palette or score threshold under an enrolled policy ID.
+  const enrolledPolicy = await ports.resolvePolicy(policy.id);
+  if (enrolledPolicy === null ||
+      canonicalJson(enrolledPolicy) !== canonicalJson(policy)) {
+    throw new Error("Conversion policy not enrolled or does not match trusted registry");
+  }
   const nowMs = ports.nowMs();
   validateIntent(intent, policy, nowMs);
   const intentCommitment = await commitValue(intent);

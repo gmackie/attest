@@ -72,7 +72,7 @@ describe("private claim-to-ATTEST conversion", () => {
 
   it("signs an exact EIP-712 voucher only AFTER real GPC verification", async () => {
     const authorization = await authorizePrivateConversion(
-      presentation, intent, policy, makePorts(), digest("f"), artifacts,
+      presentation, intent, policy, makePorts(), digest("a"), artifacts,
     );
     expect(authorization.signature).toMatch(/^0x[0-9a-f]{130}$/);
     expect(authorization.voucher.palette).toBeGreaterThan(0n);

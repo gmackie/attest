@@ -94,6 +94,9 @@ export const attestTokenAbi = parseAbi([
   "function policies(bytes32) view returns (uint256 cap,uint256 minted,bool enabled)",
   "function configurePolicy(bytes32,uint256,bool)",
   "function setAuthorizer(address)",
+  "function zkMinter() view returns (address)",
+  "function setZkMinter(address)",
+  "function mintFromZk(bytes32,bytes32,bytes32,bytes32,address,uint256,uint64)",
   "function mintingPaused() view returns (bool)",
   "function setMintingPaused(bool)",
   "function mintWithAuthorization((bytes32 policyId,bytes32 nullifier,bytes32 proofCommitment,bytes32 provenanceCommitment,address recipient,uint256 amount,uint64 expiresAt,uint64 palette),bytes)",
@@ -210,3 +213,22 @@ export async function readPublicClaimSnapshot(
     active: true,
   };
 }
+
+export const privateClaimRootsAbi = parseAbi([
+  "function administrator() view returns (address)",
+  "function issuers(address) view returns (bool)",
+  "function activeRoot(address) view returns (uint256)",
+  "function epoch(address) view returns (uint64)",
+  "function configureIssuer(address issuer,bool accepted)",
+  "function replaceRoot(uint256 root)",
+]);
+
+export const zkAttestMinterAbi = parseAbi([
+  "function token() view returns (address)",
+  "function roots() view returns (address)",
+  "function verifier() view returns (address)",
+  "function POLICY() view returns (uint256)",
+  "function AMOUNT() view returns (uint256)",
+  "function PALETTE() view returns (uint64)",
+  "function mintWithProof(uint256[2] a,uint256[2][2] b,uint256[2] c,uint256[11] signals)",
+]);

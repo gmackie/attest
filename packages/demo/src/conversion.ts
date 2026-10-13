@@ -231,6 +231,9 @@ export async function verifyPrivateConversion(
       holder.content.asEntries().consent?.value !== consentPayload(intent, presentation.proof.proofCommitment))
     throw new Error("Holder did not approve this exact mint");
   const snapshot = await ports.readCredential(intent);
+  // The trusted status service may finish the read AFTER our initial timestamp.
+  // Validate freshness against an observation captured after the awaited read.
+  const checkedAtMs = ports.nowMs();
   if (snapshot === null || !snapshot.active ||
       snapshot.id !== intent.id || snapshot.contentID !== intent.contentID ||
       snapshot.subject !== intent.subject ||
@@ -238,8 +241,8 @@ export async function verifyPrivateConversion(
       snapshot.issuerAccount.toLowerCase() !== intent.issuerAccount.toLowerCase() ||
       snapshot.issuerPublicKey !== intent.issuerPublicKey ||
       snapshot.scope.toLowerCase() !== policy.scope.toLowerCase() ||
-      !Number.isSafeInteger(snapshot.observedAtMs) || snapshot.observedAtMs > nowMs ||
-      nowMs - snapshot.observedAtMs > maxStatusAgeMs ||
+      !Number.isSafeInteger(snapshot.observedAtMs) || snapshot.observedAtMs > checkedAtMs ||
+      checkedAtMs - snapshot.observedAtMs > maxStatusAgeMs ||
       snapshot.validUntilSeconds < intent.expiresAt)
     throw new Error("Missing, stale, expired or mismatched anchored credential");
   if (!await ports.acceptedIssuer(intent.issuerAccount, intent.issuerPublicKey, policy.scope))

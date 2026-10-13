@@ -100,6 +100,7 @@ export default function EconomyLab() {
       const presentation = await preparePrivateConversion(claim, intent, POLICY, holderKey);
       const output = await verifyPrivateConversion(presentation, intent, POLICY, {
         nowMs: () => Date.now(),
+        resolvePolicy: async (id) => id === POLICY.id ? POLICY : null,
         readCredential: async () => ({
           id: claim.id, contentID: claim.contentID, issuerAccount,
           issuerPublicKey: claim.issuerPublicKey, subject: claim.subject,

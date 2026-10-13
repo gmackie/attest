@@ -66,7 +66,7 @@ describe("private claim-to-ATTEST conversion", () => {
     expect(verified.voucher.recipient).toBe(account);
     expect(verified.voucher.proofCommitment).toBe(presentation.proof.proofCommitment);
     // Signed private score and raw credential are not part of the mint output.
-    expect(JSON.stringify(verified)).not.toContain("claim_score");
+    expect(JSON.stringify(verified, (_key, value) => typeof value === "bigint" ? value.toString() : value)).not.toContain("claim_score");
     expect(presentation.proof.revealedClaims.pods.credential?.entries?.claim_score).toBeUndefined();
   });
 

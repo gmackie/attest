@@ -204,3 +204,36 @@
   .trust-nodes .trust-node { font-size:10px; }
   .trust-nodes .trust-node svg { width:24px; height:24px; }
 }
+
+.token-object__nft-stamp {
+  display:inline-block;
+  border-radius:5px;
+  border:1px solid #b8a3df;
+  background:#8d67c034;
+  color:#e6d5ff;
+  padding:4px 6px;
+  font-size:9px;
+  font-weight:750;
+  letter-spacing:.035em;
+  animation:token-confirm .6s ease-out both;
+}
+.token-wallet--passport {
+  border-color:#b6d6f6;
+  box-shadow:inset 0 0 0 1px #83b7e238;
+  animation:token-wallet-reveal .55s ease-out both;
+}
+.token-wallet--passport .token-wallet__footer {
+  color:#d0eaff;
+  font-weight:700;
+}
+.token-visually-hidden {
+  position:absolute;
+  width:1px;
+  height:1px;
+  padding:0;
+  margin:-1px;
+  overflow:hidden;
+  clip:rect(0,0,0,0);
+  white-space:nowrap;
+  border:0;
+}

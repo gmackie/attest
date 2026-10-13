@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, existsSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdirSync, existsSync, writeFileSync, readFileSync, cpSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
@@ -25,7 +25,16 @@ function execute(name,args) {
   if(message)console.log(message.slice(-2500));
 }
 const file = (x)=>path.join(output,x);
-execute("circom2",[source,"--r1cs","--wasm","--sym","-l",circuits,"-o",output]);
+// circom2's WASM package can fail to resolve -l absolute paths. Copy the
+// pinned library to the generated directory and compile a path-rewritten
+// ephemeral source so imports are reproducible without altering the repo.
+cpSync(circuits,file("circomlib"),{recursive:true});
+const compiledSource=file("private-conversion-v1.circom");
+writeFileSync(compiledSource,readFileSync(source,"utf8")
+  .replaceAll('include "poseidon.circom";','include "circomlib/poseidon.circom";')
+  .replaceAll('include "comparators.circom";','include "circomlib/comparators.circom";')
+  .replaceAll('include "bitify.circom";','include "circomlib/bitify.circom";'));
+execute("circom2",[compiledSource,"--r1cs","--wasm","--sym","-o",output]);
 const r1cs=file("private-conversion-v1.r1cs");
 const prefix=file("private-conversion-v1");
 execute("snarkjs",["powersoftau","new","bn128","12",file("pot0.ptau")]);

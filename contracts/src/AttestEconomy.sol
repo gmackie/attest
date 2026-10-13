@@ -410,7 +410,7 @@ contract AttestPassport {
         bytes memory stripes;
         uint256 x = 20;
         for (uint256 i; i < 4; ++i) {
-            uint256 width = balance == 0 ? 0 : i == 3 ? 360 - (x - 20) : channels[i] * 360 / balance;
+            uint256 width = balance == 0 ? 0 : (i == 3 ? 360 - (x - 20) : channels[i] * 360 / balance);
             stripes = abi.encodePacked(stripes, "<rect x='", x.decimal(), "' y='20' width='", width.decimal(),
                 "' height='300' fill='", colors[i], "'/>");
             x += width;

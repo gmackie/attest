@@ -142,6 +142,22 @@ export function Landing() {
         </div>
         <TrustAnimation />
       </section>
+      <section className="landing-wallet-guide">
+        <div className="landing-wallet-guide-icon">
+          <WalletIcon size={30} />
+        </div>
+        <div>
+          <span className="eyebrow">NEW TO WALLETS?</span>
+          <h2>Your credentials. Your private passport.</h2>
+          <p>
+            See how your Ethereum wallet, signed claims and private proofs work
+            together. Follow the animated guide at your own pace.
+          </p>
+        </div>
+        <LinkButton href="#/wallet-guide" variant="secondary">
+          Understand your wallet <ArrowRightIcon />
+        </LinkButton>
+      </section>
       <BrowserDemos compact />
       <section className="testnet-invitation">
         <div>

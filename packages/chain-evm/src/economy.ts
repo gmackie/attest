@@ -3,6 +3,7 @@ import {
   type Address, type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { assertContext, clients, type EIP1193Provider } from "./connected";
 
 /** Public fields a trusted proof verifier signs after independently checking a GPC proof. */
 export type ConversionVoucher = Readonly<{
@@ -121,4 +122,32 @@ export const attestPassportAbi = parseAbi([
 /** Production restriction also exists in the Solidity constructors. */
 export function assertPrototypeNetwork(chainId: number): void {
   if (chainId !== 11155111) throw new Error("ATTEST economy writes are Sepolia-only");
+}
+
+/** Browser wallet submission after a REMOTE trusted verifier provided a signed
+ * voucher. The authorizer's private key must never appear in the browser. */
+export async function submitSignedConversion(
+  provider: EIP1193Provider,
+  connectedAccount: Address,
+  token: Address,
+  voucher: ConversionVoucher,
+  signature: Hex,
+): Promise<Hex> {
+  await assertContext(provider, "testnet", connectedAccount, true);
+  if (!isAddress(token) || voucher.recipient === "0x0000000000000000000000000000000000000000" ||
+      !/^0x[0-9a-fA-F]{130}$/.test(signature))
+    throw new Error("Malformed authorization or contract address");
+  const { reader, wallet } = clients(provider, "testnet");
+  if (!(await reader.getCode({ address: token }))) throw new Error("Missing ATTEST contract code");
+  if (await reader.readContract({ address: token, abi: attestTokenAbi, functionName: "spentNullifiers", args: [voucher.nullifier] }))
+    throw new Error("Entitlement already spent");
+  const simulated = await reader.simulateContract({
+    address: token,
+    abi: attestTokenAbi,
+    functionName: "mintWithAuthorization",
+    args: [voucher, signature],
+    account: connectedAccount,
+  });
+  await assertContext(provider, "testnet", connectedAccount, true);
+  return wallet.writeContract(simulated.request);
 }

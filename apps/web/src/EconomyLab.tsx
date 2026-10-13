@@ -179,10 +179,16 @@ export default function EconomyLab() {
     <div className="economy-step">
       <div className="economy-stephead"><h2>3. Living economic passports</h2><Badge variant="outline">Transfer simulation</Badge></div>
       <p>Bob begins with a fictional 80-unit gold position, so incoming provenance visibly combines with an existing mixture. These are mathematical previews, not wallet balances.</p>
-      <div className="economy-portraits">
+      <div className={`economy-portraits ${transfers > 0 ? "economy-portraits--transfer" : ""}`} key={transfers}>
         <Portrait name="Alice" mix={alice}/>
+        <span className="economy-portrait-arrow" aria-hidden="true">→</span>
         <Portrait name="Bob" mix={bob}/>
       </div>
+      <p className="economy-transfer-note" role="status" aria-live="polite">
+        {transfers > 0
+          ? `${transfers * 50} simulated units transferred to Bob. The original signed claim never moved.`
+          : "Select an eligible private claim, prove it, and watch a 50-unit ERC-20 transfer mix the colors."}
+      </p>
       <div className="economy-picks">
         <Button onClick={move} disabled={!voucher || alice.amount===0}>Simulate transfer: 50 ATTEST → Bob</Button>
         <Button variant="secondary" onClick={() => {setAlice(zero);setBob(initialBob);setTransfers(0);setVoucher(null);setRecord(null);setMessage("");setRevoked(false);}}>Reset lab</Button>

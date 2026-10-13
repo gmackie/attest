@@ -8,12 +8,16 @@ for (const name of [
   "DemoJourneyRegistry",
   "InstitutionRegistry",
   "IndustryRegistry",
+  "AttestToken",
+  "AttestClaims",
+  "AttestPassport",
 ]) {
-  const sourcePath = new URL(`../src/${name}.sol`, import.meta.url);
+  const sourceFile = ["AttestToken", "AttestClaims", "AttestPassport"].includes(name) ? "AttestEconomy" : name;
+  const sourcePath = new URL(`../src/${sourceFile}.sol`, import.meta.url);
   const source = await fs.readFile(sourcePath, "utf8");
   const input = {
     language: "Solidity",
-    sources: { [`${name}.sol`]: { content: source } },
+    sources: { [`${sourceFile}.sol`]: { content: source } },
     settings: {
       evmVersion: "paris",
       outputSelection: {
@@ -31,7 +35,7 @@ for (const name of [
     for (const error of fatal) console.error(error.formattedMessage);
     process.exit(1);
   }
-  const contract = output.contracts[`${name}.sol`][name];
+  const contract = output.contracts[`${sourceFile}.sol`][name];
   const destination = path.resolve(`artifacts/${name}.json`);
   await fs.mkdir(path.dirname(destination), { recursive: true });
   await fs.writeFile(

@@ -83,7 +83,9 @@ it.skipIf(!existsSync(binary))("enforces signed proof-verifier vouchers, supply 
       args: args as never, account,
     });
     const tx = await wallet.writeContract(simulated.request);
-    return reader.waitForTransactionReceipt({ hash: tx });
+    const receipt = await reader.waitForTransactionReceipt({ hash: tx });
+    if (receipt.status !== "success") throw new Error("Transaction reverted");
+    return receipt;
   };
   const make = (nullifier: Hex, recipient = a): ConversionVoucher => ({
     policyId, nullifier, proofCommitment: hash("b"), provenanceCommitment: hash("c"),
@@ -146,7 +148,9 @@ it.skipIf(!existsSync(binary))("provides non-transferable claim NFTs and live ba
   const write = async (address: Address, abi: any, account: Address, functionName: string, args: readonly unknown[] = []) => {
     const sim = await reader.simulateContract({ address, abi, account, functionName, args: args as never });
     const tx = await wallet.writeContract(sim.request);
-    return reader.waitForTransactionReceipt({ hash: tx });
+    const receipt = await reader.waitForTransactionReceipt({ hash: tx });
+    if (receipt.status !== "success") throw new Error("Transaction reverted");
+    return receipt;
   };
   await expect(write(claims, claimAbi, a, "issue", [a, hash("2"), hash("3"), BigInt(Math.floor(Date.now()/1000)+86400)])).rejects.toThrow();
   await write(claims, claimAbi, accounts[0]!, "configureIssuer", [b, true]);
@@ -166,7 +170,8 @@ it.skipIf(!existsSync(binary))("provides non-transferable claim NFTs and live ba
   const meta = JSON.parse(Buffer.from(uri.split(",")[1]!, "base64").toString("utf8"));
   expect(meta.name).toContain("Economic Passport");
   const svg = Buffer.from(meta.image.split(",")[1]!, "base64").toString("utf8");
-  expect(svg).toContain("50 ATTEST");
+  const currentBalance = await reader.readContract({ address: token, abi: artifacts.AttestToken!.abi, functionName: "balanceOf", args: [a] }) as bigint;
+  expect(svg).toContain(`${currentBalance / 10n ** 18n} ATTEST`);
   expect(svg).toContain("#40a9db");
   await expect(write(passport, passportAbi, a, "transferFrom", [a, b, id])).rejects.toThrow();
   await expect(write(passport, passportAbi, a, "claim")).rejects.toThrow();

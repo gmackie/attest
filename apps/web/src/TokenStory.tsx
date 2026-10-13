@@ -179,6 +179,13 @@ export function TokenStory({ compact = false }: { compact?: boolean }) {
         </div>
         <Badge variant="outline">Educational simulation</Badge>
       </div>
+      <nav className="token-story__chapters" aria-label="Token lifecycle scenes">
+        {tokenScenes.map((stage, step) => (
+          <Button key={stage.id} size="sm" variant={step === index ? "primary" : "ghost"} onClick={() => go(step)} aria-current={step === index ? "step" : undefined}>
+            <span>{String(step + 1).padStart(2, "0")}</span> {stage.label}
+          </Button>
+        ))}
+      </nav>
       <div className="token-story__grid">
         <TokenDiagram frameIndex={index} proofPath={path} />
         <div className="token-story__copy">
@@ -212,13 +219,7 @@ export function TokenStory({ compact = false }: { compact?: boolean }) {
           </div>
         </div>
       </div>
-      <nav className="token-story__chapters" aria-label="Token lifecycle scenes">
-        {tokenScenes.map((stage, step) => (
-          <Button key={stage.id} size="sm" variant={step === index ? "primary" : "ghost"} onClick={() => go(step)} aria-current={step === index ? "step" : undefined}>
-            <span>{String(step + 1).padStart(2, "0")}</span> {stage.label}
-          </Button>
-        ))}
-      </nav>
+
       <div className="token-story__controls">
         <div className="token-story__controls-buttons">
           <Button size="sm" variant="secondary" onClick={() => go(index - 1)} disabled={index === 0}>

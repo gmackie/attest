@@ -42,13 +42,26 @@ const prefix=file("private-conversion-v1");
 // contribution below is still deliberately deterministic and UNSAFE.
 const ptau=file("pot-final.ptau");
 const uri="https://storage.googleapis.com/zkevm/ptau/powersOfTau28_hez_final_14.ptau";
-const fetched=spawnSync("curl",["--fail","--location","--silent","--show-error",
-  "--retry","3","--output",ptau,uri],{encoding:"utf8",timeout:180_000});
-if(fetched.status!==0)throw new Error("Failed to retrieve pinned phase-1 ptau: "+fetched.stderr);
 const expected="eeefbcf7c3803b523c94112023c7ff89558f9b8e0cf5d6cdcba3ade60f168af4a181c9c21774b94fbae6c90411995f7d854d02ebd93fb66043dbb06f17a831c1";
-const actual=createHash("blake2b512").update(readFileSync(ptau)).digest("hex");
-if(actual!==expected)throw new Error("HERMEZ phase-1 powers of tau digest mismatch");
-console.log("Verified official Hermez 2^14 powers of tau (blake2b512)");
+const fetched=spawnSync("curl",["--fail","--location","--silent","--show-error",
+  "--retry","1","--output",ptau,uri],{encoding:"utf8",timeout:180_000});
+let sourceTag;
+if(fetched.status===0){
+  const actual=createHash("blake2b512").update(readFileSync(ptau)).digest("hex");
+  if(actual!==expected)throw new Error("HERMEZ phase-1 powers of tau digest mismatch");
+  sourceTag="official-hermez-2^14-blake2b512-verified";
+  console.log("Verified official Hermez 2^14 powers of tau");
+}else{
+  // Some CI networks return HTTP 403 for this optional public download. We
+  // fail CLOSED for production; only the synthetic experiment may fall back
+  // to a self-generated ceremony with publicly disclosed entropy.
+  console.warn("No external ptau available; generating UNSAFE LOCAL TEST-ONLY phase 1");
+  execute("snarkjs",["powersoftau","new","bn128","14",file("pot0.ptau")]);
+  execute("snarkjs",["powersoftau","contribute",file("pot0.ptau"),file("pot1.ptau"),
+    "--name=synthetic-only", "-e=DO_NOT_USE_THIS_DETERMINISTIC_ENTROPY_FOR_PRODUCTION"]);
+  execute("snarkjs",["powersoftau","prepare","phase2",file("pot1.ptau"),ptau]);
+  sourceTag="DELIBERATELY_INSECURE_SELF_GENERATED_TEST_ONLY";
+}
 execute("snarkjs",["groth16","setup",r1cs,ptau,file("initial.zkey")]);
 execute("snarkjs",["zkey","contribute",file("initial.zkey"),file("final.zkey"),
   "--name=test-unsafe", "-e=DO_NOT_USE_THIS_DETERMINISTIC_PHASE2_ENTROPY_FOR_PRODUCTION"]);
@@ -60,8 +73,9 @@ const manifest={
   compiler:"circom2@0.2.23",
   library:"circomlib@2.0.5",
   snarkjs:"snarkjs@0.7.5",
-  ptauUrl:uri,
-  ptauBlake2b512:expected,
+  ptauSource:sourceTag,
+  ptauUrl:sourceTag.startsWith("official-") ? uri : null,
+  ptauBlake2b512:sourceTag.startsWith("official-") ? expected : null,
   circuitSha256:createHash("sha256").update(readFileSync(source)).digest("hex"),
   verifierSha256:createHash("sha256").update(readFileSync(file("Groth16Verifier.sol"))).digest("hex"),
   provingArtifact:"zk/.generated/private-conversion-v1_js/private-conversion-v1.wasm",

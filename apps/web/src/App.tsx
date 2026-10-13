@@ -3,6 +3,7 @@ const HostSetup = lazy(() =>
   import("./HostSetup").then((m) => ({ default: m.HostSetup })),
 );
 import { Landing, BrowserDemos } from "./Landing";
+import { TokenStory } from "./TokenStory";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Badge, LinkButton } from "@cloudflare/kumo";
 import { FingerprintIcon } from "@phosphor-icons/react";
@@ -114,6 +115,7 @@ export function App() {
               simulated.
             </p>
             <BrowserDemos />
+            <TokenStory compact />
             <LinkButton href="#/testnet" variant="ghost">
               Looking for real wallets? Open the onchain testnet →
             </LinkButton>

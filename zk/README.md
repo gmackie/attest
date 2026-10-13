@@ -91,10 +91,12 @@ pnpm exec vitest run zk/tests/onchain.test.ts
 ```
 
 The generated verification key, Solidity verifier, circuit wasm, and zkey are
-intentionally excluded from Git history under `zk/.generated/`. CI repeats
-the full synthetic setup. Artifacts are pinned by compiler/package versions
-but the deliberately ephemeral unsafe ceremony is **not** a usable mainnet
-setup or an audited, deployed verifier.
+intentionally excluded from Git history under `zk/.generated/`. CI fetches the
+Hermez 2^14 phase-1 `powersOfTau28_hez_final_14.ptau` file and checks its
+Blake2b-512 digest against the official snarkjs-published checksum. The
+subsequent circuit-specific **phase-2 contribution uses disclosed deterministic
+test entropy**, so the generated key is **insecure** and can never be used to
+secure real assets. No permanent audited verification key is committed.
 
 ## Test cases
 

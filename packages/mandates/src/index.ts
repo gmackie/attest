@@ -3,6 +3,7 @@ import {MandateError, signDocument, verifyMandateChain, verifyTransactionApprova
 import type {AgentMandate, TransactionApproval, VerificationPorts} from "./protocol.ts";
 export * from "./protocol.ts";
 export * from "./status.ts";
+export * from "./oauth.ts";
 const failure = (cause: unknown): MandateError =>
   cause instanceof MandateError ? cause : new MandateError("mandate_verification_unavailable");
 export const issueMandate = (value: AgentMandate, keyId: string, key: JsonWebKey) =>

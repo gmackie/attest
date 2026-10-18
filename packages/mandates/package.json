@@ -3,6 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts", "./protocol": "./src/protocol.ts" },
+  "exports": { ".": "./src/index.ts", "./protocol": "./src/protocol.ts", "./oauth": "./src/oauth.ts" },
   "dependencies": { "effect": "4.0.2" }
 }

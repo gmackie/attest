@@ -108,21 +108,30 @@ const material = (r: CriteriaRequest) => {
   r.criteria.forEach((c, index) => {
     const value = criterionValue(c.value, c.kind);
     const name = `claim_${c.field}`;
+    // Every criterion constrains the same signed field, regardless of order.
+    const entry = config.pods.credential!.entries[name] ?? { isRevealed: false };
     if (c.operator === "eq") {
+      if (entry.isMemberOf !== undefined) {
+        if (canonicalJson(lists[entry.isMemberOf]) !== canonicalJson([value]))
+          throw new Error(`Conflicting equality criteria for ${c.field}`);
+        return;
+      }
       const list = `rule_${index}`;
       lists[list] = [value];
       config.pods.credential!.entries[name] = {
-        isRevealed: false,
+        ...entry,
         isMemberOf: list,
       };
     } else {
       if (value.type !== "int")
         throw new Error("Range criterion must be numeric or a date");
+      const min = c.operator === "gte" ? value.value : POD_INT_MIN;
+      const max = c.operator === "lte" ? value.value : POD_INT_MAX;
       config.pods.credential!.entries[name] = {
-        isRevealed: false,
+        ...entry,
         inRange: {
-          min: c.operator === "gte" ? value.value : POD_INT_MIN,
-          max: c.operator === "lte" ? value.value : POD_INT_MAX,
+          min: entry.inRange && entry.inRange.min > min ? entry.inRange.min : min,
+          max: entry.inRange && entry.inRange.max < max ? entry.inRange.max : max,
         },
       };
     }

@@ -1,3 +1,4 @@
+import { track } from "./analytics";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import {
   Badge,
@@ -236,6 +237,7 @@ export function ConnectedWorkspace() {
         invalidate();
       setAccount(checkedAddress(accounts[0]));
       setChainId(Number(chain));
+      track("wallet_connected", { surface: "workspace", network });
       setRegistry(
         localStorage.getItem(
           `attest:registry:${networks[network].id}:${accounts[0].toLowerCase()}`,

@@ -1,3 +1,4 @@
+import { track } from "./analytics";
 import { IndustryIcon } from "./IndustryIcon";
 import { ContractExplorer } from "./ContractExplorer";
 import { TokenStory } from "./TokenStory";
@@ -135,6 +136,7 @@ export function IndustryLab({
       setRun(result.success);
       setHistory((h) => [...h, result.success]);
       if (result.success.completed === 7) {
+        track("demo_completed", { industry: baseIndustry.id });
         setPlaying(false);
         playingRef.current = false;
       }

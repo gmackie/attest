@@ -1,3 +1,4 @@
+import { track } from "./analytics";
 import { TokenStory } from "./TokenStory";
 import { WalletIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
@@ -377,6 +378,7 @@ export function IndustryJourney({ industry }: { industry: ConnectedIndustry }) {
       await assertContext(p, "testnet", a, true);
       check();
       setAccount(a);
+      track("wallet_connected", { surface: "testnet", industry });
       setMessage("Connected. Join or launch the registry for this industry.");
     });
   const join = () =>
@@ -1229,6 +1231,7 @@ export function IndustryJourney({ industry }: { industry: ConnectedIndustry }) {
                       );
                       check();
                       setPresentation(p);
+                      track("proofs_generated", { industry });
                       setMessage(
                         "Five private proofs ready. Check locally or submit to the verifier.",
                       );
@@ -1282,6 +1285,7 @@ export function IndustryJourney({ industry }: { industry: ConnectedIndustry }) {
                               await wait(data.transactionHash, check);
                               setChecks(data.checks);
                               setApproved(true);
+                              track("decision_recorded", { industry });
                               setMessage(
                                 `${definition.verifier} verified your proofs and recorded approval from its own wallet at checked block ${data.checkedBlock}.`,
                               );

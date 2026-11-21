@@ -72,7 +72,7 @@ the status lists in ATTE-24 replace per-credential lookups. Hidden values stay h
 4. The credential issuer is accepted by the definition *and* currently authorized for the requirement (the authority port).
 5. The holder signature covers the entire presentation. This is checked first, so enrollment cannot be probed with arbitrary public keys. The holder key must also be enrolled to the request subject (the `holderBound` port).
 6. The GPC proof verifies against criteria rebuilt from the definition, with the request digest as watermark.
-7. Status is `active`, observed at most `maxStatusAgeMs` (≤ 60 s) ago, and still within its validity. ChainStatusReader (ATTE-18) supplies chain evidence at a finalized block.
+7. Status is `active`, observed at most `maxStatusAgeMs` (≤ 60 s) ago, and still within its validity. `createChainStatusReader` and `workspaceAnchorStatus` in `@attest/chain-evm` (ATTE-18) supply this. They read at a finalized (or N-confirmation) block, and by default require two independent RPC endpoints that agree on the chain ID, the block hash and every read value. They re-check the block hash after reading (reorg detection) and refuse stale heads. The status they return also covers the issuer's on-chain grant and signing-key commitment.
 8. The request ID is consumed atomically. This step runs last, so a failed attempt never burns a legitimate request.
 
 Error codes are stable strings, for example `holder_not_bound`, `status_stale` and `request_replayed`.

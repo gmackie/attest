@@ -10,5 +10,8 @@
     "@attest/core": "workspace:*",
     "@attest/domain": "workspace:*",
     "viem": "^2.57.4"
+  },
+  "devDependencies": {
+    "@attest/verifier": "workspace:*"
   }
 }

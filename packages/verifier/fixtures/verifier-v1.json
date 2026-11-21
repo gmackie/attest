@@ -1,0 +1,100 @@
+{
+  "description": "Synthetic attest.proof-request/v1 and attest.verification-result/v1 interop vector. Not real credentials.",
+  "now": 1795300000000,
+  "requirement": {
+    "id": "insurance.cgl.min-2m",
+    "schema": "attest:insurance:cgl:v1",
+    "criteria": [
+      {
+        "field": "aggregate",
+        "kind": "number",
+        "operator": "gte",
+        "value": 2000000
+      },
+      {
+        "field": "per_occurrence",
+        "kind": "number",
+        "operator": "gte",
+        "value": 1000000
+      }
+    ],
+    "acceptedIssuers": [
+      {
+        "id": "carrier:northwind",
+        "publicKey": "synthetic-eddsa-public-key-placeholder"
+      }
+    ]
+  },
+  "request": {
+    "schema": "attest.proof-request/v1",
+    "id": "req-fixture-1",
+    "issuer": "https://gatekeeper.example/tenants/acme",
+    "audience": "https://verify.attest.example",
+    "subject": {
+      "issuer": "https://login.acme.example/api/auth",
+      "subject": "user_8f2c"
+    },
+    "credentialSubject": "supplier:acme",
+    "requirement": {
+      "id": "insurance.cgl.min-2m",
+      "digest": "1fcf61d86466f736f169a9046fcd1c4fcd10b80b6b907ea2383ef14ad746118a"
+    },
+    "decisionId": "dec-fixture-1",
+    "nonce": "fixture-nonce-0123456789ab",
+    "issuedAt": 1795299999000,
+    "expiresAt": 1795300300000
+  },
+  "requestDigest": "5e177c4c5cbd8eda21ed1295de6bed6b5703ab359d124c9aa09415b018034af5",
+  "requestToken": "eyJhbGciOiJFUzI1NiIsImtpZCI6InBlcC0xIiwidHlwIjoiYXR0ZXN0LnByb29mLXJlcXVlc3QvdjEifQ.eyJhdWRpZW5jZSI6Imh0dHBzOi8vdmVyaWZ5LmF0dGVzdC5leGFtcGxlIiwiY3JlZGVudGlhbFN1YmplY3QiOiJzdXBwbGllcjphY21lIiwiZGVjaXNpb25JZCI6ImRlYy1maXh0dXJlLTEiLCJleHBpcmVzQXQiOjE3OTUzMDAzMDAwMDAsImlkIjoicmVxLWZpeHR1cmUtMSIsImlzc3VlZEF0IjoxNzk1Mjk5OTk5MDAwLCJpc3N1ZXIiOiJodHRwczovL2dhdGVrZWVwZXIuZXhhbXBsZS90ZW5hbnRzL2FjbWUiLCJub25jZSI6ImZpeHR1cmUtbm9uY2UtMDEyMzQ1Njc4OWFiIiwicmVxdWlyZW1lbnQiOnsiZGlnZXN0IjoiMWZjZjYxZDg2NDY2ZjczNmYxNjlhOTA0NmZjZDFjNGZjZDEwYjgwYjZiOTA3ZWEyMzgzZWYxNGFkNzQ2MTE4YSIsImlkIjoiaW5zdXJhbmNlLmNnbC5taW4tMm0ifSwic2NoZW1hIjoiYXR0ZXN0LnByb29mLXJlcXVlc3QvdjEiLCJzdWJqZWN0Ijp7Imlzc3VlciI6Imh0dHBzOi8vbG9naW4uYWNtZS5leGFtcGxlL2FwaS9hdXRoIiwic3ViamVjdCI6InVzZXJfOGYyYyJ9fQ.BW2AC26ggryicdqr5sM1k-6JkOl5mnsnBx-B3xkLNzCvkv7qxvG3b7sTR_5eYlwhfGlMNVtr4lN4Ope1KpNyqg",
+  "pepKid": "pep-1",
+  "pepPublicKey": {
+    "key_ops": [
+      "verify"
+    ],
+    "ext": true,
+    "kty": "EC",
+    "x": "scTjhqRCH3uMWI3BQ_RD8-8pBNC8HGzf6T6brTjZXBE",
+    "y": "WCzs5KjRFjXh46tKuzn3uoOq0DyOxuVCuhEArY0qJXo",
+    "crv": "P-256"
+  },
+  "result": {
+    "schema": "attest.verification-result/v1",
+    "id": "res-fixture-1",
+    "issuer": "https://verify.attest.example",
+    "audience": "https://gatekeeper.example/tenants/acme",
+    "requestId": "req-fixture-1",
+    "requestDigest": "5e177c4c5cbd8eda21ed1295de6bed6b5703ab359d124c9aa09415b018034af5",
+    "decisionId": "dec-fixture-1",
+    "subject": {
+      "issuer": "https://login.acme.example/api/auth",
+      "subject": "user_8f2c"
+    },
+    "credentialSubject": "supplier:acme",
+    "requirement": {
+      "id": "insurance.cgl.min-2m",
+      "digest": "1fcf61d86466f736f169a9046fcd1c4fcd10b80b6b907ea2383ef14ad746118a"
+    },
+    "credentialIssuer": "carrier:northwind",
+    "status": {
+      "source": "chain",
+      "observedAt": 1795299998000,
+      "chainId": 11155111,
+      "blockNumber": 7000000,
+      "blockHash": "0xabababababababababababababababababababababababababababababababab"
+    },
+    "issuedAt": 1795300000000,
+    "expiresAt": 1795300028000
+  },
+  "resultToken": "eyJhbGciOiJFUzI1NiIsImtpZCI6InZlcmlmaWVyLTEiLCJ0eXAiOiJhdHRlc3QudmVyaWZpY2F0aW9uLXJlc3VsdC92MSJ9.eyJhdWRpZW5jZSI6Imh0dHBzOi8vZ2F0ZWtlZXBlci5leGFtcGxlL3RlbmFudHMvYWNtZSIsImNyZWRlbnRpYWxJc3N1ZXIiOiJjYXJyaWVyOm5vcnRod2luZCIsImNyZWRlbnRpYWxTdWJqZWN0Ijoic3VwcGxpZXI6YWNtZSIsImRlY2lzaW9uSWQiOiJkZWMtZml4dHVyZS0xIiwiZXhwaXJlc0F0IjoxNzk1MzAwMDI4MDAwLCJpZCI6InJlcy1maXh0dXJlLTEiLCJpc3N1ZWRBdCI6MTc5NTMwMDAwMDAwMCwiaXNzdWVyIjoiaHR0cHM6Ly92ZXJpZnkuYXR0ZXN0LmV4YW1wbGUiLCJyZXF1ZXN0RGlnZXN0IjoiNWUxNzdjNGM1Y2JkOGVkYTIxZWQxMjk1ZGU2YmVkNmI1NzAzYWIzNTlkMTI0YzlhYTA5NDE1YjAxODAzNGFmNSIsInJlcXVlc3RJZCI6InJlcS1maXh0dXJlLTEiLCJyZXF1aXJlbWVudCI6eyJkaWdlc3QiOiIxZmNmNjFkODY0NjZmNzM2ZjE2OWE5MDQ2ZmNkMWM0ZmNkMTBiODBiNmI5MDdlYTIzODNlZjE0YWQ3NDYxMThhIiwiaWQiOiJpbnN1cmFuY2UuY2dsLm1pbi0ybSJ9LCJzY2hlbWEiOiJhdHRlc3QudmVyaWZpY2F0aW9uLXJlc3VsdC92MSIsInN0YXR1cyI6eyJibG9ja0hhc2giOiIweGFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWIiLCJibG9ja051bWJlciI6NzAwMDAwMCwiY2hhaW5JZCI6MTExNTUxMTEsIm9ic2VydmVkQXQiOjE3OTUyOTk5OTgwMDAsInNvdXJjZSI6ImNoYWluIn0sInN1YmplY3QiOnsiaXNzdWVyIjoiaHR0cHM6Ly9sb2dpbi5hY21lLmV4YW1wbGUvYXBpL2F1dGgiLCJzdWJqZWN0IjoidXNlcl84ZjJjIn19.sXCarHff8UUCTO5lf41bPL6XDoedvBNELqPuRCyRRCPSiizh_PVqmlzj6j2TFl4yQMDxnAnrYcTejijIA3uqJg",
+  "verifierKid": "verifier-1",
+  "verifierPublicKey": {
+    "key_ops": [
+      "verify"
+    ],
+    "ext": true,
+    "kty": "EC",
+    "x": "q2F-ueEGE9p2B9A1JLhhk1rdVkLC03Bpa1eWhWAyhRs",
+    "y": "2VRIDuwg_9zEqq1zi3s4ET6CCv1mTqaOmwsI2sxHHPQ",
+    "crv": "P-256"
+  }
+}

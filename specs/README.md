@@ -10,6 +10,7 @@ The [agent mandate profile](agent-mandates.md) specifies experimental operationa
 - [`authority.md`](authority.md) — scoped recognition and delegation.
 - [`private-presentations.md`](private-presentations.md) — private graph representation, witness planning and proof relation.
 - [`threat-model.md`](threat-model.md) — privacy, semantic and authority attacks.
+- [`proof-requests.md`](proof-requests.md) — experimental signed proof requests, holder presentations and short-lived verification results for enforcement points such as Gatekeeper.
 
 The normative direction is: standardize facts, provenance, authority and proof
 interfaces—not a universal reputation score or a single global credential root.

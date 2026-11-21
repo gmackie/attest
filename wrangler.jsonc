@@ -10,7 +10,11 @@
   },
   "limits": { "cpu_ms": 30000 },
   "compatibility_flags": ["nodejs_compat"],
-  "vars": { "SEPOLIA_RPC_URL": "https://ethereum-sepolia-rpc.publicnode.com" },
+  "vars": {
+    "SEPOLIA_RPC_URL": "https://ethereum-sepolia-rpc.publicnode.com",
+    // Independent second provider: decision reads must agree across both (ATTE-27).
+    "SEPOLIA_RPC_URL_SECONDARY": "https://sepolia.gateway.tenderly.co",
+  },
   "durable_objects": {
     "bindings": [
       { "name": "INSTITUTIONS", "class_name": "InstitutionService" },

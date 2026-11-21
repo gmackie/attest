@@ -1,4 +1,5 @@
-import { industryAbi } from "@attest/chain-evm";
+import { industryAbi, ChainStatusError, publicClientEndpoint, type ChainReadClient } from "@attest/chain-evm";
+import { AwaitingConfirmations, confirmedRead, decisionReader } from "./confirmed";
 import {
   industryProfile,
   industryWallets,
@@ -59,6 +60,8 @@ type Env = {
   INSTITUTION_WALLETS: string;
   INDUSTRY_WALLETS: string;
   SEPOLIA_RPC_URL: string;
+  /** Independent second provider; decisions require both to agree (ATTE-27). */
+  SEPOLIA_RPC_URL_SECONDARY?: string;
 };
 const rpc = (env: Env) =>
   createPublicClient({
@@ -77,8 +80,40 @@ class ServiceError extends Error {
   constructor(
     public status: number,
     message: string,
+    public extra: Record<string, unknown> = {},
   ) {
     super(message);
+  }
+}
+/** Decision-time chain reads at a confirmed block, agreed by every configured RPC. */
+async function confirmedRecords<T>(
+  env: Env,
+  read: (client: ChainReadClient, blockNumber: bigint) => Promise<T>,
+) {
+  const primary = publicClientEndpoint("primary", rpc(env));
+  const endpoints = [primary];
+  if (env.SEPOLIA_RPC_URL_SECONDARY)
+    endpoints.push(
+      publicClientEndpoint(
+        "secondary",
+        createPublicClient({
+          chain: sepolia,
+          transport: http(env.SEPOLIA_RPC_URL_SECONDARY, { timeout: 15000, retryCount: 1 }),
+        }),
+      ),
+    );
+  try {
+    return await confirmedRead(decisionReader(endpoints), primary.client, read);
+  } catch (e) {
+    if (e instanceof AwaitingConfirmations)
+      throw new ServiceError(
+        409,
+        `Waiting for ${e.confirmations} block confirmations before verifying. Retrying shortly…`,
+        { code: e.code, retryAfterSeconds: e.retryAfterSeconds, confirmations: e.confirmations },
+      );
+    if (e instanceof ChainStatusError)
+      throw new ServiceError(503, `Chain status unavailable (${e.code}). Retry shortly.`, { code: e.code });
+    throw e;
   }
 }
 const signedSchema = z
@@ -255,7 +290,10 @@ export class InstitutionService {
       return await result;
     } catch (e) {
       return response(
-        { error: e instanceof Error ? e.message : "Service unavailable" },
+        {
+          error: e instanceof Error ? e.message : "Service unavailable",
+          ...(e instanceof ServiceError ? e.extra : {}),
+        },
         e instanceof ServiceError ? e.status : 503,
       );
     }
@@ -567,28 +605,23 @@ export class InstitutionService {
       return response({ credential, transactionHash: hash });
     }
     const req = industryRequestSchema.parse(input.request),
-      client = await this.industryRegistry(
-        req.industry,
-        req.registry as Address,
-      ),
-      block = await client.getBlock({ blockTag: "latest" }),
       journey = checkedHash(await commitValue(req.journey));
-    const records = await Promise.all(
-      [0, 1, 2, 3, 4].map(async (i) => {
-        const r = await client.readContract({
-          address: req.registry as Address,
-          abi: industryAbi,
-          functionName: "records",
-          args: [req.account as Address, journey, i],
-          blockNumber: block.number,
-        });
-        return {
-          content: r[0],
-          holderKey: r[1],
-          validUntil: r[2],
-          revoked: r[3],
-        };
-      }),
+    await this.industryRegistry(req.industry, req.registry as Address);
+    const { value: records, snapshot: block } = await confirmedRecords(
+      this.env,
+      (client, blockNumber) =>
+        Promise.all(
+          [0, 1, 2, 3, 4].map(async (i) => {
+            const r = (await client.readContract({
+              address: req.registry as Address,
+              abi: industryAbi,
+              functionName: "records",
+              args: [req.account as Address, journey, i],
+              blockNumber,
+            })) as readonly [Hex, Hex, bigint, boolean];
+            return { content: r[0], holderKey: r[1], validUntil: r[2], revoked: r[3] };
+          }),
+        ),
     );
     let checks;
     try {
@@ -620,7 +653,9 @@ export class InstitutionService {
     return response({
       checks,
       transactionHash: hash,
-      checkedBlock: block.number.toString(),
+      checkedBlock: block.blockNumber.toString(),
+      checkedBlockHash: block.blockHash,
+      confirmations: 3,
     });
   }
   private async handle(request: Request): Promise<Response> {
@@ -750,25 +785,23 @@ export class InstitutionService {
       canonicalJson(institutionSigningKeys)
     )
       throw new ServiceError(403, "Unrecognized issuer keys");
-    const client = await registryCheck(this.env, req.registry as Address),
-      block = await client.getBlock({ blockTag: "latest" }),
-      journey = checkedHash(await commitValue(req.journey));
-    const records = await Promise.all(
-      [0, 1, 2].map(async (i) => {
-        const r = await client.readContract({
-          address: req.registry as Address,
-          abi: institutionAbi,
-          functionName: "records",
-          args: [req.account as Address, journey, i],
-          blockNumber: block.number,
-        });
-        return {
-          content: r[0],
-          holderKey: r[1],
-          validUntil: r[2],
-          revoked: r[3],
-        };
-      }),
+    await registryCheck(this.env, req.registry as Address);
+    const journey = checkedHash(await commitValue(req.journey));
+    const { value: records, snapshot: block } = await confirmedRecords(
+      this.env,
+      (client, blockNumber) =>
+        Promise.all(
+          [0, 1, 2].map(async (i) => {
+            const r = (await client.readContract({
+              address: req.registry as Address,
+              abi: institutionAbi,
+              functionName: "records",
+              args: [req.account as Address, journey, i],
+              blockNumber,
+            })) as readonly [Hex, Hex, bigint, boolean];
+            return { content: r[0], holderKey: r[1], validUntil: r[2], revoked: r[3] };
+          }),
+        ),
     );
     const checks = await verifyJourney(
       input.presentation,
@@ -794,7 +827,9 @@ export class InstitutionService {
     return response({
       checks,
       transactionHash: hash,
-      checkedBlock: block.number.toString(),
+      checkedBlock: block.blockNumber.toString(),
+      checkedBlockHash: block.blockHash,
+      confirmations: 3,
     });
   }
 }

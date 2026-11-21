@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Attest × Gatekeeper × Nathan — on-chain trust stack roadmap</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; color: var(--foreground, #202124); font: 14px/1.5 var(--font-sans, system-ui, sans-serif); }
+  main { width: 100%; min-width: 0; }
+  h1 { font-size: 1.25rem; margin: 0 0 .25rem; line-height: 1.3; }
+  h2 { font-size: 1.02rem; margin: 1.75rem 0 .5rem; }
+  h3 { font-size: .9rem; margin: 0 0 .25rem; }
+  p { max-width: 78ch; margin: .45rem 0; }
+  a { color: var(--accent-surface-foreground, #2458ac); }
+  .meta, .muted { color: var(--muted-foreground, #606773); }
+  .small { font-size: .8rem; }
+  :focus-visible { outline: 2px solid var(--ring, #2458ac); outline-offset: 3px; }
+  code, pre { font-family: var(--font-mono, Menlo, Consolas, monospace); background: var(--code-background, #f1f3f5); color: var(--code-foreground, #202124); font-size: .78rem; border-radius: 4px; }
+  code { padding: 0 .25rem; }
+  pre { padding: .6rem; white-space: pre; }
+  pre, .table-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  th, td { text-align: left; vertical-align: top; padding: .45rem .5rem; border-bottom: 1px solid var(--border, #d8dce2); }
+  th { font-weight: 600; color: var(--muted-foreground, #606773); font-size: .74rem; text-transform: uppercase; letter-spacing: .03em; }
+  svg { max-width: 100%; }
+
+  .badge, .chip { display: inline-block; border-radius: 999px; padding: .08rem .5rem; font-size: .7rem; font-weight: 600; white-space: nowrap; }
+  .badge { background: var(--accent-surface, #eaf0ff); color: var(--accent-surface-foreground, #2458ac); }
+  td .chip { white-space: normal; }
+  .chip.done { background: color-mix(in srgb, var(--success, #1e8e3e) 18%, transparent); color: var(--success, #1e8e3e); }
+  .chip.active { background: var(--accent-surface, #eaf0ff); color: var(--accent-surface-foreground, #2458ac); }
+  .chip.todo { background: var(--muted, #f1f3f5); color: var(--muted-foreground, #606773); }
+  .chip.risk { background: var(--warning-surface, #fff4d6); color: var(--warning-foreground, #7a5200); }
+  .chip.bad { background: var(--destructive-surface, #fde7e7); color: var(--destructive, #b3261e); }
+  .chip.n { background: color-mix(in srgb, var(--chart-1, #2458ac) 18%, transparent); color: var(--foreground, #202124); }
+  .chip.a { background: color-mix(in srgb, var(--chart-2, #1e8e3e) 18%, transparent); color: var(--foreground, #202124); }
+  .chip.g { background: color-mix(in srgb, var(--chart-3, #b06000) 20%, transparent); color: var(--foreground, #202124); }
+  .chip.c { background: color-mix(in srgb, var(--chart-4, #8e24aa) 18%, transparent); color: var(--foreground, #202124); }
+
+  .callout { border-left: 3px solid var(--accent, #2458ac); background: var(--accent-surface, #eaf0ff); color: var(--accent-surface-foreground, #1a2b4d); border-radius: 0 var(--radius, .625rem) var(--radius, .625rem) 0; padding: .65rem .85rem; margin: .75rem 0; }
+  .callout.warn { border-left-color: var(--warning, #b08000); background: var(--warning-surface, #fff4d6); color: var(--warning-foreground, #7a5200); }
+  .callout p { max-width: none; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: .65rem; }
+  .card { border: 1px solid var(--border, #d8dce2); border-radius: var(--radius, .625rem); background: var(--card, #f7f8fa); color: var(--card-foreground, #202124); padding: .7rem .8rem; min-width: 0; }
+  .card.recommended { border-color: var(--accent, #2458ac); box-shadow: 0 0 0 1px var(--accent, #2458ac); }
+  .card ul { margin: .35rem 0 0; padding-left: 1.05rem; }
+  .card li { margin: .15rem 0; }
+  .card .q { font-size: .78rem; color: var(--muted-foreground, #606773); margin: 0 0 .35rem; }
+
+  /* Layer stack */
+  .stack { display: grid; gap: 6px; margin: .5rem 0 .25rem; }
+  .layer { display: grid; grid-template-columns: 7.5rem 1fr; gap: .6rem; align-items: start; border-radius: var(--radius, .625rem); border: 1px solid var(--border, #d8dce2); padding: .55rem .7rem; background: var(--card, #f7f8fa); }
+  .layer b { display: block; }
+  .layer .who { font-size: .72rem; color: var(--muted-foreground, #606773); }
+  .layer.n { border-left: 4px solid var(--chart-1, #2458ac); }
+  .layer.a { border-left: 4px solid var(--chart-2, #1e8e3e); }
+  .layer.g { border-left: 4px solid var(--chart-3, #b06000); }
+  .layer.c { border-left: 4px solid var(--chart-4, #8e24aa); }
+  @media (max-width: 480px) { .layer { grid-template-columns: 1fr; gap: .2rem; } }
+
+  /* Sequence flow */
+  .flow { list-style: none; margin: .5rem 0; padding: 0; counter-reset: s; }
+  .flow li { counter-increment: s; position: relative; padding: .4rem .2rem .4rem 2.2rem; border-bottom: 1px dashed var(--border, #d8dce2); }
+  .flow li::before { content: counter(s); position: absolute; left: 0; top: .42rem; width: 1.55rem; height: 1.55rem; border-radius: 50%; display: grid; place-items: center; font-size: .72rem; font-weight: 700; background: var(--secondary, #eef0f3); color: var(--secondary-foreground, #202124); }
+  .flow li.key::before { background: var(--accent, #2458ac); color: var(--accent-foreground, #fff); }
+  .flow .arrow { color: var(--muted-foreground, #606773); }
+
+  /* Timeline */
+  .progress { display: flex; gap: 3px; height: 8px; margin: .5rem 0 1rem; }
+  .progress span { flex: 1; border-radius: 3px; background: var(--muted, #e6e8eb); transform-origin: left; }
+  .progress span.active { background: var(--accent, #2458ac); }
+  .timeline { list-style: none; margin: 0; padding: 0; position: relative; }
+  .timeline::before { content: ""; position: absolute; left: 7px; top: 6px; bottom: 6px; width: 2px; background: var(--border, #d8dce2); }
+  .timeline > li { position: relative; padding: 0 0 1.1rem 1.75rem; }
+  .timeline > li::before { content: ""; position: absolute; left: 0; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--background, #fff); border: 2px solid var(--border, #d8dce2); }
+  .timeline > li.active::before { background: var(--accent, #2458ac); border-color: var(--accent, #2458ac); }
+  .timeline .head { display: flex; gap: .45rem; align-items: baseline; flex-wrap: wrap; }
+  .timeline .goal { font-size: .78rem; }
+
+  /* Gap meter */
+  .gaps { display: grid; gap: .35rem; }
+  .gap { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; align-items: center; border: 1px solid var(--border, #d8dce2); border-radius: 8px; padding: .4rem .6rem; background: var(--card, #f7f8fa); font-size: .82rem; }
+
+  /* Risk grid */
+  .risk-grid { display: grid; grid-template-columns: 4.5rem repeat(3, minmax(0, 1fr)); gap: 4px; font-size: .74rem; }
+  .risk-grid .cell { min-height: 3.2rem; border-radius: 6px; padding: .3rem; display: flex; flex-wrap: wrap; gap: 3px; align-content: flex-start; background: var(--muted, #f1f3f5); }
+  .risk-grid .cell.h { background: color-mix(in srgb, var(--destructive, #b3261e) 14%, transparent); }
+  .risk-grid .cell.m { background: color-mix(in srgb, var(--warning, #b08000) 16%, transparent); }
+  .risk-grid .lab { display: flex; align-items: center; color: var(--muted-foreground, #606773); font-weight: 600; }
+  .risk-grid .top { justify-content: center; }
+  .risk-grid .chip { white-space: normal; text-align: left; font-weight: 500; }
+
+  .goals { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: .65rem; }
+  .goals ul { list-style: none; padding: 0; margin: .3rem 0 0; }
+  .goals li { padding-left: 1.3rem; position: relative; margin: .25rem 0; }
+  .goals .yes li::before { content: "✓"; position: absolute; left: 0; color: var(--success, #1e8e3e); font-weight: 700; }
+  .goals .no li::before { content: "✕"; position: absolute; left: 0; color: var(--destructive, #b3261e); font-weight: 700; }
+
+  details { border: 1px solid var(--border, #d8dce2); border-radius: var(--radius, .625rem); background: var(--card, #f7f8fa); padding: .55rem .75rem; margin: .6rem 0; }
+  details > summary { cursor: pointer; font-weight: 600; }
+  details[open] > summary { margin-bottom: .4rem; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal { animation: rise .45s cubic-bezier(.2,.7,.3,1) both; animation-delay: calc(var(--i, 0) * 60ms); }
+    .progress span { animation: grow .5s ease-out both; animation-delay: calc(250ms + var(--i, 0) * 60ms); }
+    .timeline > li.active::before { animation: pulse 1.8s ease-in-out infinite; }
+    .flow li { animation: rise .4s ease-out both; animation-delay: calc(200ms + var(--i, 0) * 70ms); }
+    @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+    @keyframes grow { from { transform: scaleX(0); } }
+    @keyframes pulse { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent, #2458ac) 25%, transparent); } }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1 class="reveal">Attest on-chain trust stack: roadmap with Gatekeeper and Nathan <span class="badge">Proposal</span></h1>
+  <p class="meta reveal" style="--i:1">2026-11-21 · attest @ main <code>0a31db6</code> · gatekeeper @ origin/main · nathan @ <code>feat/NATH-8-login-recovery-hardening</code> <code>04e1525</code> · covers the demo, pilot and agent-commerce goals together</p>
+
+  <div class="callout reveal" style="--i:2">
+    <p><strong>Recommendation:</strong> Build one shared loop: Gatekeeper asks for a proof the way it already asks for MFA, Attest answers privately, and the chain records verifiable status and receipts. Ship it in four phases.</p>
+    <ul>
+      <li><strong>Phase 0:</strong> agree the interfaces between the three projects.</li>
+      <li><strong>Phase 1:</strong> the "prove-to-access" demo, which doubles as the pilot design.</li>
+      <li><strong>Phase 2:</strong> agent commerce, with mandate limits enforced on-chain.</li>
+      <li><strong>Phase 3:</strong> pilot and mainnet hardening.</li>
+    </ul>
+    <p>The demo, the pilot and agent commerce all reuse the same verifier, status reader and receipt log, so building that core once serves all three goals.</p>
+  </div>
+
+  <div class="callout warn reveal" style="--i:3"><strong>Correction to the earlier brainstorm:</strong> Nathan's latest commit cancels RBAC (NATH-13): <em>"Nathan is authentication only; authorization belongs to Gatekeeper"</em>. So "roles earned from proofs" lives in <strong>Gatekeeper</strong>. Nathan contributes only authenticated identity, plus optional wallet sign-in.</div>
+
+  <h2 class="reveal" style="--i:4">The stack: one question per layer</h2>
+  <div class="stack">
+    <div class="layer n reveal" style="--i:5"><div><b>Nathan</b><span class="who">authentication</span></div><div><strong>Who is calling?</strong> A Better Auth IdP on Workers. Issues the subject <code>sub</code> plus Gatekeeper-ready access tokens (NATH-15: RFC 9068, <code>principal_kind</code>, ≤900 s). It will gain per-scope agent consent (NATH-14). It holds no roles or policy.</div></div>
+    <div class="layer a reveal" style="--i:6"><div><b>Attest</b><span class="who">assurance</span></div><div><strong>What can they prove, and who vouches for it?</strong> Private POD/GPC presentations, scoped issuer authority, and signed agent mandates. Raw evidence never leaves the holder.</div></div>
+    <div class="layer g reveal" style="--i:7"><div><b>Gatekeeper</b><span class="who">authorization</span></div><div><strong>May they do this, now?</strong> An OPA/Rego PDP with PIPs (policy information points), allow/deny/challenge outcomes, mandate budget reservations in D1, and an MCP gateway.</div></div>
+    <div class="layer c reveal" style="--i:8"><div><b>Chain</b><span class="who">public record</span></div><div><strong>What anyone can check later.</strong> Issuer grants, revocation status, decision-log roots, and limits enforced on-chain. Commitments only, never evidence.</div></div>
+  </div>
+  <p class="muted small">The chain is the missing link today. Attest writes to Sepolia, but none of the three projects reads that state when making a decision. Gatekeeper mandate status comes from a local <code>demo_credentials</code> table (<code>apps/operations/service.ts:77-82</code>), and attest verifiers expect callers to supply issuer keys and records (<code>packages/proofs/src/criteria.ts:99</code>).</p>
+
+  <h2 class="reveal" style="--i:9">Core idea: the proof challenge</h2>
+  <p>Gatekeeper's precedence already returns <code>challenge</code> when MFA or approval is missing (<code>policies/gatekeeper.rego:118-132</code>). Add a third challengeable requirement: <strong>an attest presentation</strong>. The client handles it the same way as step-up MFA.</p>
+  <ol class="flow" aria-label="Prove-to-access sequence">
+    <li style="--i:0"><span class="chip n">Nathan</span> User or agent signs in and gets an access token (aud = Gatekeeper resource).</li>
+    <li style="--i:1"><span class="chip g">Gatekeeper</span> <code>POST /api/authorize</code> for <code>vendor.payout.approve</code>. The policy requires <code>attest_presentation: insurance.cgl.min-2m</code>.</li>
+    <li class="key" style="--i:2"><span class="chip g">Gatekeeper</span> <span class="arrow">→</span> <strong>challenge</strong> with a signed proof request. The request binds the decision ID, Nathan <code>iss</code>/<code>sub</code>, audience, requirement ID, nonce and expiry. This also closes the "unsigned request" gap in attest's production-readiness review.</li>
+    <li style="--i:3"><span class="chip a">Attest wallet</span> Holder generates the GPC proof locally. The verifier learns only "requirement met", not the $5M figure.</li>
+    <li class="key" style="--i:4"><span class="chip a">Attest verifier</span> Checks the proof, issuer authority, request binding and <strong>chain status at a finalized block</strong>, then returns a short-lived signed result.</li>
+    <li style="--i:5"><span class="chip g">Gatekeeper</span> PIP accepts the result as a fact with a freshness bound, then re-evaluates <span class="arrow">→</span> <strong>allow</strong>.</li>
+    <li class="key" style="--i:6"><span class="chip c">Chain</span> The decision goes into a hash-chained log. The Merkle root is anchored periodically, and anyone can get an inclusion proof for their receipt.</li>
+  </ol>
+  <details class="mermaid-source"><summary>Diagram source (Mermaid)</summary><pre>sequenceDiagram
+  participant U as User/Agent
+  participant N as Nathan (IdP)
+  participant G as Gatekeeper (PDP)
+  participant W as Attest wallet
+  participant V as Attest verifier
+  participant C as Chain (Sepolia/L2)
+  U-&gt;&gt;N: sign in (passkey / SIWE optional)
+  N--&gt;&gt;U: access token (RFC 9068, aud=gatekeeper)
+  U-&gt;&gt;G: authorize(action)
+  G--&gt;&gt;U: challenge + signed proof request
+  U-&gt;&gt;W: request
+  W--&gt;&gt;V: GPC presentation
+  V-&gt;&gt;C: read grant + revocation @ finalized
+  V--&gt;&gt;G: signed verification result (TTL)
+  G--&gt;&gt;U: allow + decisionId
+  G-&gt;&gt;C: periodic decision-log Merkle root</pre></details>
+
+  <h2 class="reveal">Options for sequencing</h2>
+  <div class="grid">
+    <section class="card recommended"><h3>A. Shared core first <span class="badge">Recommended</span></h3>
+      <ul><li>Phases 0 and 1 deliver the demo <em>and</em> the pilot architecture.</li><li>Agent commerce reuses the verifier, status reader and receipt log.</li><li>Builds on the real Gatekeeper extension points listed below.</li><li>Cost: the agent-payments wow comes later (Phase 2).</li></ul></section>
+    <section class="card"><h3>B. Agent commerce first</h3>
+      <ul><li>Most novel and investable story.</li><li>Depends on smart accounts, stablecoins, the Gatekeeper co-signer and NATH-14 at once.</li><li>Without the status reader and verifier, limits stay off-chain anyway.</li></ul></section>
+    <section class="card"><h3>C. Mainnet hardening first</h3>
+      <ul><li>Required before any real issuer writes.</li><li>Produces little to show.</li><li>Risks hardening contracts before the integration shape is known.</li></ul></section>
+  </div>
+
+  <h2>Goals and non-goals</h2>
+  <div class="goals">
+    <div class="card yes"><h3>Goals</h3><ul>
+      <li>Chain state that a live decision path actually reads (status, grants, limits)</li>
+      <li>One end-to-end demo across Nathan, Gatekeeper and Attest on testnet</li>
+      <li>A pilot-ready design: signed requests, finality policy, key rotation</li>
+      <li>Agents spend within signed mandates, with limits enforced on-chain</li>
+      <li>Tamper-evident, privacy-preserving decision receipts</li>
+    </ul></div>
+    <div class="card no"><h3>Non-goals (this roadmap)</h3><ul>
+      <li>Raw evidence, exact values or identity on-chain (AGENTS.md)</li>
+      <li>Expanding the $ATTEST token beyond Sepolia research (AT-02/03/07 are open)</li>
+      <li>Roles or policy inside Nathan (NATH-13 cancelled)</li>
+      <li>Claiming production ZK: POD/GPC is beta and unaudited, and the circuit setup is unsafe</li>
+      <li>Ethereum L1 mainnet writes before the release dossier passes</li>
+    </ul></div>
+  </div>
+
+  <h2>Phases</h2>
+  <div class="progress" role="img" aria-label="4 phases, Phase 0 is next">
+    <span class="active" style="--i:0"></span><span style="--i:1"></span><span style="--i:2"></span><span style="--i:3"></span>
+  </div>
+  <ol class="timeline">
+    <li class="active"><div class="head"><h3>Phase 0: Interfaces between the three projects</h3><span class="chip active">Next</span><span class="chip n">Nathan</span><span class="chip a">Attest</span><span class="chip g">Gatekeeper</span></div>
+      <p class="goal muted">Unblocks everything. Each project ships one interface the others can build against.</p>
+      <details open><summary>Tasks</summary><div class="table-scroll"><table>
+        <thead><tr><th>Task</th><th>Files</th><th>Verification</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td><strong>NATH-15</strong> Gatekeeper-ready access tokens (<code>at+jwt</code>, resource <code>aud</code>, <code>principal_kind</code>, ≤900 s, <code>amr</code>/<code>acr</code> from evidence)</td><td>nathan <code>src/auth/instance.ts</code>, <code>docs/gatekeeper.md</code></td><td>Cross-repo test: Gatekeeper <code>jwt.ts</code> accepts the access token and rejects ID tokens and other audiences</td><td><span class="chip todo">Todo (exists)</span></td></tr>
+          <tr><td>Land the Gatekeeper PR backlog. The DPoP resource verifier (RFC 9449) and actor chain (RFC 8693, #28) matter here because <code>jwt.ts:65</code> rejects <code>cnf</code>/<code>act</code> today</td><td>gatekeeper <code>packages/identity/*</code></td><td>Green CI on head; agent tokens with <code>act</code> resolve to an actor chain</td><td><span class="chip active">In progress (own thread)</span></td></tr>
+          <tr><td><strong>@attest/verifier</strong>: a single <code>verify(presentation, request, ports)</code> where the ports are the issuer registry, the chain status reader and the clock. It wraps <code>verifyCriteria</code> / <code>verifyInsuranceRequirement</code> and returns a signed, TTL-bound result</td><td>attest <code>packages/verifier</code> (new), <code>packages/proofs/src/criteria.ts</code></td><td>Negative joins: wrong subject, stale, revoked, unauthorized issuer, replayed nonce, wrong audience</td><td><span class="chip todo">Todo</span></td></tr>
+          <tr><td><strong>Signed proof request</strong> profile (<code>attest.proof-request/v1</code>). Binds the decision ID, IdP <code>iss</code>/<code>sub</code>, audience, requirement, nonce and expiry. Signed by the Gatekeeper tenant key and aligned with OpenID4VP <code>presentation_definition</code> semantics where it fits</td><td>attest <code>specs/proof-requests.md</code>, <code>packages/mandates</code>-style codec</td><td>Shared fixture vendored into Gatekeeper, as is already done for mandates (<code>vendor/SOURCE.json</code>)</td><td><span class="chip todo">Todo</span></td></tr>
+        </tbody></table></div></details></li>
+
+    <li><div class="head"><h3>Phase 1: Prove-to-access demo, also the pilot design</h3><span class="chip todo">Planned</span><span class="chip a">Attest</span><span class="chip g">Gatekeeper</span><span class="chip c">Chain</span></div>
+      <p class="goal muted">Demo: a vendor portal on attest.gmac.io. Sign in with Nathan, try to approve a payout, Gatekeeper asks for an insurance proof, prove it privately, get allowed, and see the receipt anchored on Sepolia.</p>
+      <details><summary>Tasks</summary><div class="table-scroll"><table>
+        <thead><tr><th>Task</th><th>Files</th><th>Verification</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td><strong>ChainStatusReader</strong>: anchor, grant and revocation reads at <code>finalized</code> (or N confirmations), checked against two independent RPCs, with block hash in every result. Replaces the <code>latest</code> reads in journey, industry and issuer</td><td>attest <code>packages/chain-evm/src/status.ts</code> (new); <code>journey.ts:80</code>, <code>industry.ts:91</code>, <code>apps/issuer</code> <code>:574</code></td><td>Reorg simulation (anvil); RPC disagreement fails closed</td><td><span class="chip todo">Todo</span></td></tr>
+          <tr><td><strong>Step 1, no Rego change:</strong> the verifier writes <code>attest.req.&lt;id&gt;</code> as a declared org attribute with <code>freshnessMs</code>. Policies use the existing <code>principal_attribute</code> selector, where stale means indeterminate</td><td>gatekeeper <code>POST /api/pip/attributes/:key/values</code> (<code>apps/api/pip/attributes.ts:58-78</code>)</td><td>Expired fact gives indeterminate; a revoked anchor makes the next refresh deny</td><td><span class="chip todo">Todo</span></td></tr>
+          <tr><td><strong>Step 2:</strong> a first-class <code>attest_presentation</code> Require selector, <em>challengeable</em> like <code>mfa</code>, returning the signed proof request in the challenge</td><td>gatekeeper <code>packages/policy/model.ts:7,66,162,175</code>; <code>packages/core/model.ts</code> <code>PolicyInput</code>; <code>policies/gatekeeper.rego:118-155</code>; <code>pip/resolve.ts</code></td><td>Rego tests for the full precedence; the console picker shows it automatically (<code>PolicyEditor.tsx:84</code>)</td><td><span class="chip todo">Todo</span></td></tr>
+          <tr><td><strong>Durable, hash-chained decision log</strong>. Today rows are dropped on overflow or D1 error (<code>caches.ts:33,49</code>) and nothing is hashed. Policy-gated actions use a write-ahead path; each leaf is <code>H(prev, salted decision)</code></td><td>gatekeeper <code>apps/api/caches.ts</code>, <code>packages/db/schema.ts:192</code></td><td>Gap-detection test; no drops for receipt-bearing actions</td><td><span class="chip todo">Todo</span></td></tr>
+          <tr><td><strong>DecisionLogAnchor</strong>: a cron job batches the Merkle root to Sepolia (or reuses <code>AssuranceAnchor</code>), plus an inclusion-proof API. Leaves are salted, so the root reveals nothing</td><td>attest <code>contracts/src/DecisionLogAnchor.sol</code> (new); gatekeeper scheduled job</td><td>Third party verifies an inclusion proof against the on-chain root</td><td><span class="chip todo">Todo</span></td></tr>
+          <tr><td>Demo UI: vendor-portal journey reusing the insurance domain pack and Kumo components</td><td>attest <code>apps/web</code>, <code>packages/domains</code></td><td>/browse QA run; observe journey events (ATTE-13 loader)</td><td><span class="chip todo">Todo</span></td></tr>
+          <tr><td><em>Optional:</em> wallet sign-in (SIWE / EIP-4361) as a Nathan sign-in method via an isolated Custom plugin. It links an EVM account as an <code>account</code> row and grants no authority</td><td>nathan plugin (<code>docs/plugins.md</code> Custom tier)</td><td>Nonce replay, domain and chainId binding tests</td><td><span class="chip todo">Decide</span></td></tr>
+        </tbody></table></div></details></li>
+
+    <li><div class="head"><h3>Phase 2: Agent commerce with on-chain limits</h3><span class="chip todo">Planned</span><span class="chip n">Nathan</span><span class="chip a">Attest</span><span class="chip g">Gatekeeper</span><span class="chip c">Chain</span></div>
+      <p class="goal muted">An agent pays a supplier in testnet stablecoin. It can only spend inside its signed attest mandate, and only with a Gatekeeper co-signature. The chain enforces the totals, so two delegated children cannot reset a parent's ceiling.</p>
+      <details><summary>Tasks</summary><div class="table-scroll"><table>
+        <thead><tr><th>Task</th><th>Files</th><th>Verification</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Mandate status on-chain</strong>: <code>statusRef</code> resolves to a registry slot or status-list root, replacing the in-memory <code>LocalStatusRegistry</code> (<code>status.ts:8-33</code>) and Gatekeeper's <code>demo_credentials</code></td><td>attest <code>contracts/src/StatusRegistry.sol</code> (new), <code>packages/mandates/src/status.ts</code>; gatekeeper <code>packages/delegation</code></td><td>Revoke on-chain; the next operation is refused within the ≤60 s status lease</td><td><span class="chip todo">Todo</span></td></tr>
+          <tr><td><strong>MandateAccount</strong>: an ERC-4337 smart account with a session-key validator whose policy mirrors the mandate (payee allowlist, per-action cap, aggregate cap, expiry, mandate digest). Each user operation needs the agent key <em>and</em> a Gatekeeper decision co-signature (2-of-2). ERC-7715-style permission requests from the wallet</td><td>attest <code>contracts/src/MandateAccount.sol</code>, <code>packages/chain-evm/src/mandates.ts</code></td><td>Foundry or Hardhat fuzzing of caps; ancestor totals cannot be exceeded via sibling children</td><td><span class="chip todo">Todo</span></td></tr>
+          <tr><td>Gatekeeper <strong>reservation ↔ chain reconciliation</strong>: reserve in D1, co-sign, then settle when the user operation lands. Also add the missing release on failure or cancel (<code>d1-store.ts</code> <code>finish</code>). Replace the hard-coded <code>evaluate</code> with the real OPA PDP (<code>apps/operations/service.ts:83-91</code>)</td><td>gatekeeper <code>packages/delegation/*</code>, <code>apps/operations</code></td><td>Crash between co-sign and inclusion leaves consistent budgets; idempotent replays</td><td><span class="chip todo">Todo</span></td></tr>
+          <tr><td><strong>NATH-14</strong> per-scope consent and agent clients. Effective authority = consent scopes ∩ mandate ∩ Gatekeeper decision, using the existing <code>assertOAuthMandateIntersection</code> (<code>packages/mandates/src/oauth.ts:35</code>)</td><td>nathan <code>src/shared/scopes.mjs</code>; scopes imported from Gatekeeper's action catalog</td><td>Scope amplification, cross-client and audience-swap tests (already patterned in attest)</td><td><span class="chip todo">Todo (exists)</span></td></tr>
+          <tr><td><em>Evaluate:</em> HTTP 402-style pay-per-call (e.g. x402) for agents calling MCP tools behind Gatekeeper</td><td>spike only</td><td>Written go/no-go</td><td><span class="chip todo">Spike</span></td></tr>
+        </tbody></table></div></details></li>
+
+    <li><div class="head"><h3>Phase 3: Pilot and mainnet hardening</h3><span class="chip todo">Planned</span><span class="chip a">Attest</span><span class="chip c">Chain</span></div>
+      <p class="goal muted">Closes the gaps in <code>specs/production-readiness.md</code>, <code>threat-model.md</code> and <code>economy-security-review.md</code> so one real issuer and one real verifier can run on a production network.</p>
+      <details><summary>Tasks</summary><div class="table-scroll"><table>
+        <thead><tr><th>Task</th><th>Files</th><th>Verification</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td><strong>RegistryV2 governance</strong>: Safe multisig admin with rotation, emergency revocation by administrator, issuer signing-key rotation with compromise cutoff. Today <code>WorkspaceRegistry</code>'s admin is immutable (<code>:7,:20</code>)</td><td>attest <code>contracts/src/RegistryV2.sol</code></td><td>Lost-key and compromise drills; pinned deployment manifest</td><td><span class="chip todo">Todo</span></td></tr>
+          <tr><td><strong>Issuer status lists</strong>: generalize <code>PrivateClaimRoots</code>' epoch and root model into revocation roots; the verifier checks non-membership</td><td>attest <code>contracts</code>, <code>packages/chain-evm</code></td><td>Revocation-vs-use race test (AT-04)</td><td><span class="chip todo">Todo</span></td></tr>
+          <tr><td><strong>On-chain-verified receipts</strong>: extend the <code>ZkAttestMinterV1</code> pattern (the only on-chain Groth16 today) from minting to presentation receipts, so receipts stop being "caller says so"</td><td>attest <code>zk/circuits</code>, <code>contracts</code></td><td>Multi-party ceremony replaces the UNSAFE fallback; independent audit</td><td><span class="chip todo">Todo</span></td></tr>
+          <tr><td><strong>Network choice</strong>: multi-network <code>chain-evm</code> config plus Base or OP Sepolia deployment; production on an L2 is likelier than L1 for cost</td><td>attest <code>packages/chain-evm/src/connected.ts:14</code></td><td>Same suite passes on two testnets</td><td><span class="chip todo">Decide</span></td></tr>
+          <tr><td><em>Optional:</em> mirror anchors as EAS attestations for ecosystem readability (commitments only)</td><td>attest <code>packages/chain-evm/src/eas.ts</code></td><td>Explorer shows schema and commitment; no PII</td><td><span class="chip todo">Optional</span></td></tr>
+          <tr><td>Hosted-issuer onboarding: per-tenant key isolation and rotation, abuse policy, runbooks (GMA-748 dossier)</td><td>attest <code>apps/issuer</code>, <code>specs/production-readiness.md:56-63</code></td><td>Release dossier signed off</td><td><span class="chip todo">Todo</span></td></tr>
+        </tbody></table></div></details></li>
+  </ol>
+
+  <h2>Gaps each phase closes</h2>
+  <div class="gaps">
+    <div class="gap"><span>Request exchange is unsigned (production-readiness)</span><span class="chip active">Phase 0</span></div>
+    <div class="gap"><span>No finality policy; reads at <code>latest</code>; single trusted RPC</span><span class="chip active">Phase 1</span></div>
+    <div class="gap"><span>Gatekeeper decision log drops rows and is not tamper-evident</span><span class="chip active">Phase 1</span></div>
+    <div class="gap"><span>Mandate <code>maxTotalMinor</code> only enforced off-chain; spend is never released</span><span class="chip active">Phase 2</span></div>
+    <div class="gap"><span>Mandate status is in-memory or demo-table only</span><span class="chip active">Phase 2</span></div>
+    <div class="gap"><span>Immutable admin, no emergency revocation, no key rotation</span><span class="chip active">Phase 3</span></div>
+    <div class="gap"><span>Receipts assert the caller's decision (AT-08); unsafe trusted setup</span><span class="chip active">Phase 3</span></div>
+  </div>
+
+  <h2>Risks</h2>
+  <div class="risk-grid" role="table" aria-label="Risk grid: likelihood rows by impact columns">
+    <div></div><div class="lab top">Low impact</div><div class="lab top">Medium impact</div><div class="lab top">High impact</div>
+    <div class="lab">Likely</div><div class="cell"></div><div class="cell m"><span class="chip">R3 NATH-15 slips</span></div><div class="cell h"><span class="chip">R1 Over-claiming ZK/privacy</span></div>
+    <div class="lab">Possible</div><div class="cell"></div><div class="cell m"><span class="chip">R4 On-chain metadata correlation</span></div><div class="cell h"><span class="chip">R2 MandateAccount bug drains funds</span></div>
+    <div class="lab">Unlikely</div><div class="cell"></div><div class="cell"><span class="chip">R6 GPC upstream breaks</span></div><div class="cell m"><span class="chip">R5 Token reads as a security</span></div>
+  </div>
+  <details><summary>Mitigations</summary>
+    <ul>
+      <li><strong>R1:</strong> Keep AGENTS.md wording. Label the step-1 attribute path "verified off-chain, freshness-bounded". Never call a policy match a proof, and keep "beta, unaudited" on GPC.</li>
+      <li><strong>R2:</strong> Testnet stablecoin only. Fuzz and invariant tests on caps. Gatekeeper co-signature plus a pause guardian. External audit before any mainnet value.</li>
+      <li><strong>R3:</strong> Phase 1 can use today's Nathan JWTs through Gatekeeper's marker-claim profile (<code>fixtures/identity-providers.example.json</code>) as a stopgap. Swap to NATH-15 once it lands.</li>
+      <li><strong>R4:</strong> Batch decision roots, salted leaves, pairwise holder keys. Never anchor per-decision events.</li>
+      <li><strong>R5:</strong> Leave $ATTEST out of this roadmap. Phase 2 uses an existing test stablecoin.</li>
+      <li><strong>R6:</strong> Pin <code>@pcd/gpc 0.4.1</code> and the artifact hashes. Fail closed on mismatch.</li>
+    </ul>
+  </details>
+
+  <h2>Verification</h2>
+  <ul>
+    <li>A cross-repo end-to-end test (Nathan token → Gatekeeper challenge → Attest proof → allow → inclusion proof) runs in CI on testnet or anvil fixtures.</li>
+    <li>Every new verifier and contract ships the AGENTS.md negative joins: mismatched subject, stale, unauthorized issuer, duplicate, insufficient hidden value. Add replay, reorg and audience-swap tests as well.</li>
+    <li>The demo is checked with a /browse QA pass. Production steps follow the ForgeGraph delivery evidence rules, with Kanbanger issues per project.</li>
+  </ul>
+
+  <h2>Open decisions</h2>
+  <div class="grid">
+    <section class="card"><h3>1. Pilot domain and partner</h3><p class="q">Who is the first real issuer and verifier?</p><p class="small">Contractor insurance (the existing domain pack) is the fastest. Healthcare and education add regulatory weight.</p></section>
+    <section class="card"><h3>2. Production network</h3><p class="q">Base, OP or Ethereum L1?</p><p class="small">Recommend an L2 for receipts and limits. Revisit L1 only for registry roots.</p></section>
+    <section class="card"><h3>3. Who runs the verifier?</h3><p class="q">An attest-hosted service, or embedded in Gatekeeper?</p><p class="small">Recommend an attest Worker that Gatekeeper calls via a service binding. It keeps the protocol kernel chain- and vendor-neutral.</p></section>
+    <section class="card"><h3>4. Wallet sign-in in Nathan</h3><p class="q">Add SIWE as an auth method?</p><p class="small">Optional. The proof challenge binds holder to subject without it. It is useful for Phase 2 smart-account ownership.</p></section>
+  </div>
+
+  <h2>Proposed issues <span class="muted small">(not created yet)</span></h2>
+  <div class="table-scroll"><table>
+    <thead><tr><th>Project</th><th>Issue</th><th>Phase</th></tr></thead>
+    <tbody>
+      <tr><td>Attest</td><td>@attest/verifier with ports and signed results · proof-request/v1 profile · ChainStatusReader · DecisionLogAnchor · vendor-portal demo · StatusRegistry · MandateAccount · RegistryV2 · multi-network</td><td>0–3</td></tr>
+      <tr><td>Gatekeeper</td><td>attest attribute push path · <code>attest_presentation</code> challengeable selector · durable hash-chained decision log + root anchoring · mandate status from chain · reservation release + OPA in operations · co-signer</td><td>1–2</td></tr>
+      <tr><td>Nathan</td><td>NATH-15 (exists) · NATH-14 (exists) · SIWE Custom plugin (if decided)</td><td>0–2</td></tr>
+    </tbody>
+  </table></div>
+  <p class="muted small">Sources: read-only code surveys of attest <code>main</code>, gatekeeper <code>origin/main</code> plus open PR branches, and nathan <code>04e1525</code>, run 2026-11-21. Line references are from those refs.</p>
+</main>
+</body>
+</html>

@@ -266,6 +266,28 @@ importers:
         specifier: ^4.20.6
         version: 4.23.15
 
+  packages/verifier:
+    dependencies:
+      '@attest/mandates':
+        specifier: workspace:*
+        version: link:../mandates
+      '@attest/proofs':
+        specifier: workspace:*
+        version: link:../proofs
+      '@pcd/pod':
+        specifier: 0.5.1
+        version: 0.5.1
+      effect:
+        specifier: 4.0.2
+        version: 4.0.2
+    devDependencies:
+      '@pcd/proto-pod-gpc-artifacts':
+        specifier: 0.13.0
+        version: 0.13.0
+      tsx:
+        specifier: ^4.20.6
+        version: 4.23.15
+
   packages/wallet:
     dependencies:
       '@attest/authority':

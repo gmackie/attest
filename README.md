@@ -93,6 +93,7 @@ packages/wallet          private root/persona/presentation wallet
 packages/proofs          POD issuance and GPC proof adapter
 packages/domains         insurance, SOC 2 and ISO 9001 examples
 packages/chain-evm       EVM receipt model and ABI
+packages/verifier        signed proof requests, presentation verifier, signed results
 contracts                Solidity commitment registry
 specs                    protocol explainer, profiles and threat model
 ```

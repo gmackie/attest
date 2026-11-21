@@ -113,7 +113,8 @@ export function createChainStatusReader(options: ChainStatusReaderOptions): Chai
           return await run(e);
         } catch (cause) {
           if (cause instanceof ChainStatusError) throw cause;
-          return fail("endpoint_unavailable", e.name);
+          // Error class only: provider messages can embed RPC URLs that carry credentials.
+          return fail("endpoint_unavailable", `${e.name} (${cause instanceof Error ? cause.name : typeof cause})`);
         }
       }),
     );

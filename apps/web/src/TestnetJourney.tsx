@@ -259,14 +259,26 @@ export function TestnetJourney() {
     );
   };
   const api = async (path: string, body: unknown) => {
-    const r = await fetch(path, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: json(body),
-    });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error ?? "Institution request failed");
-    return data;
+    // Decisions are checked at a block with 3 confirmations (ATTE-27). A credential written
+    // moments ago is answered 409 awaiting_confirmations: wait and retry the same request.
+    for (let attempt = 0; ; attempt++) {
+      const r = await fetch(path, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: json(body),
+        }),
+        data = await r.json();
+      if (r.status === 409 && data.code === "awaiting_confirmations" && attempt < 12) {
+        const seconds = Math.min(60, Math.max(5, Number(data.retryAfterSeconds) || 15));
+        setMessage(
+          `Waiting for ${data.confirmations ?? 3} Sepolia block confirmations before the verifier checks your credentials. Retrying in ${seconds}s…`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+        continue;
+      }
+      if (!r.ok) throw new Error(data.error ?? "Institution request failed");
+      return data;
+    }
   };
   const authorize = async (
     id: 0 | 1 | 2,

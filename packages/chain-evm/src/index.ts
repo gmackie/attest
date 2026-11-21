@@ -43,3 +43,4 @@ export * from './industry';
 export * from "./host-setup";
 export * from "./economy";
 export * from "./status";
+export * from "./decision-log";

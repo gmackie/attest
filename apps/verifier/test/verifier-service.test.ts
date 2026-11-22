@@ -109,6 +109,8 @@ class FakeChain {
           const a = (args.args ?? []) as string[];
           if (args.functionName === "issuers") return this.grants.get(`${a[0]!.toLowerCase()}|${a[1]}`) ?? [false, `0x${"0".repeat(64)}`];
           if (args.functionName === "anchors") return this.anchors.get(a[0]!) ?? ZERO_ANCHOR;
+          // The deployed Sepolia registry is V1: workspaceAnchorStatus checks the version (ATTE-23).
+          if (args.functionName === "registryVersion") return 1n;
           throw new Error("unexpected read");
         },
       },

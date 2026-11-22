@@ -48,6 +48,23 @@
         }
       },
       "administrator": "0x98770836EA0C26c7a2259B2b8F8E44Ee01D213ee"
+    },
+    {
+      "contract": "WorkspaceRegistryV2",
+      "address": "0x85c9c8a720bc7851EFC92A970B6177Da073367dd",
+      "deployTx": "0x094eba82d6b9c1717203d4287955ac1919b9735e5e3caa280a47817e8817f4ab",
+      "blockNumber": 12191617,
+      "runtimeCodeHash": "0x6d6f22fcf21dde18712e0dc4d51efd722c315e588071f41ef6e253ca4b917bff",
+      "sourceDigest": "0xddabcd912263721767230a5be23597f07c68f282456c2cd1ed2a01bf798a65fb",
+      "compiler": {
+        "solc": "0.8.37",
+        "evmVersion": "paris",
+        "optimizer": {
+          "enabled": true,
+          "runs": 200
+        }
+      },
+      "administrator": "0x98770836EA0C26c7a2259B2b8F8E44Ee01D213ee"
     }
   ]
 }

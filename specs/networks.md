@@ -234,9 +234,11 @@ compiled runtime code.
 | DecisionLogAnchor | `0x7020EE914B517Da8F7F8D42Dc436763898FaA8Ad` | 12190829 |
 | StatusRegistry | `0xCe5d1042f9fA72303e9F58e2962b620Dc57Ec181` | 12190831 |
 | RevocationRoots | `0x1fb289f7E77a2C9cAB906183dde5Bcd47955c714` | 12190833 |
+| WorkspaceRegistryV2 | `0x85c9c8a720bc7851EFC92A970B6177Da073367dd` | 12191617 |
 
 Network readers built by `chainStatusReaderFor` now use code-reading endpoints, so
 `verifyPinnedDeployment` works on them. Contract creation on Sepolia currently costs about 1,700 gas
-per byte of runtime code (roughly 7–9× anvil 1.7's figures), so WorkspaceRegistryV2 (≈ 22.6M gas
-unoptimized) is not deployed yet. The administrator is a testnet hot key; rotate it to a Safe with
+per byte of runtime code (roughly 7–9× anvil 1.7's figures), so WorkspaceRegistryV2 (≈ 22.5M gas
+unoptimized) is compiled with the optimizer (200 runs; 7,337 runtime bytes, ≈ 11.8M gas) and
+deployed with that build; its manifest record says so. The administrator is a testnet hot key; rotate it to a Safe with
 the two-step handover before relying on it. Base Sepolia deployment waits on funding.

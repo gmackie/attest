@@ -32,6 +32,8 @@ for (const name of [
       evmVersion: "paris",
       // MandateAccount exceeds the EIP-170 size limit unoptimized and needs via-IR for stack depth; other contracts keep their existing output.
       ...(name === "MandateAccount" ? { optimizer: { enabled: true, runs: 200 }, viaIR: true } : {}),
+      // WorkspaceRegistryV2 unoptimized costs ~22.5M gas to create on Sepolia (code-deposit pricing); the optimizer halves it.
+      ...(name === "WorkspaceRegistryV2" ? { optimizer: { enabled: true, runs: 200 } } : {}),
       outputSelection: {
         "*": {
           "*": ["abi", "evm.bytecode.object", "evm.deployedBytecode.object", "evm.deployedBytecode.immutableReferences"],

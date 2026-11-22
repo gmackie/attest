@@ -13,6 +13,7 @@ The [agent mandate profile](agent-mandates.md) specifies experimental operationa
 - [`decision-log-anchoring.md`](decision-log-anchoring.md) — experimental on-chain commitments to sealed epochs of hash-chained decision logs (Gatekeeper's ledger) and RFC 6962 inclusion checks.
 - [`proof-requests.md`](proof-requests.md) — experimental signed proof requests, holder presentations and short-lived verification results for enforcement points such as Gatekeeper.
 - [`mandate-status-registry.md`](mandate-status-registry.md) — experimental on-chain, digest-bound mandate status (active, revoked, superseded) read through settled, multi-RPC chain snapshots with ≤ 60 s leases.
+- [`verifier-service.md`](verifier-service.md) — the deployable `attest-verifier` Worker: endpoints, ports, holder enrollment, trust boundaries, configuration and key rotation.
 
 The normative direction is: standardize facts, provenance, authority and proof
 interfaces—not a universal reputation score or a single global credential root.

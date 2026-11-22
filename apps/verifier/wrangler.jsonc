@@ -1,0 +1,45 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  // Attest verifier service (ATTE-28). Separate Worker from attest-demo (root wrangler.jsonc).
+  "name": "attest-verifier",
+  "account_id": "c07a7e704db1808e1fff91bed2b1cd49",
+  "compatibility_date": "2026-10-08",
+  "main": "src/index.ts",
+  // GPC verification in a Worker: the same shims as attest-demo (noble BN254 Groth16 verifier,
+  // pinned verification keys). Nothing is fetched to verify a proof.
+  "alias": {
+    "snarkjs": "../issuer/src/groth16-worker.ts",
+    "fastfile": "../issuer/src/verification-keys.ts",
+  },
+  "limits": { "cpu_ms": 30000 },
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "VERIFIER_ID": "https://verify.attest.gmac.io",
+    "SEPOLIA_RPC_URL": "https://ethereum-sepolia-rpc.publicnode.com",
+    // Independent second provider: chain reads must agree across both.
+    "SEPOLIA_RPC_URL_SECONDARY": "https://sepolia.gateway.tenderly.co",
+    // "finalized" or "confirmations:<n>". 3 confirmations follows ATTE-27; pilots should use finalized.
+    "CHAIN_FINALITY": "confirmations:3",
+    // Pinned Gatekeeper tenant request keys, from GET <gatekeeper>/api/attest/tenants/<tenant>/jwks.
+    // JSON [{"issuer": "https://...", "keys": [{"kid": "...", "publicKey": {P-256 public JWK}}]}]
+    "TRUSTED_PEPS": "[]",
+    // IdPs whose access tokens authenticate holder enrollment.
+    // JSON [{"issuer": "https://...", "jwksUri": "https://...", "audience": "..."}]
+    "IDENTITY_PROVIDERS": "[]",
+  },
+  // Secret (wrangler secret put RESULT_SIGNING_KEYS): {"active": kid, "keys": [{"kid", "privateKey"}]}.
+  // Generate with: node apps/verifier/scripts/new-result-key.mjs
+  "durable_objects": {
+    "bindings": [
+      { "name": "REPLAY", "class_name": "ReplayStore" },
+      { "name": "ENROLLMENTS", "class_name": "EnrollmentStore" },
+    ],
+  },
+  "migrations": [
+    { "tag": "verifier-v1", "new_sqlite_classes": ["ReplayStore", "EnrollmentStore"] },
+  ],
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "verify.attest.gmac.io", "custom_domain": true }],
+}

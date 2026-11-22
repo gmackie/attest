@@ -64,6 +64,49 @@ importers:
         specifier: ^5.20261009.1
         version: 5.20261009.1
 
+  apps/verifier:
+    dependencies:
+      '@attest/authority':
+        specifier: workspace:*
+        version: link:../../packages/authority
+      '@attest/chain-evm':
+        specifier: workspace:*
+        version: link:../../packages/chain-evm
+      '@attest/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@attest/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@attest/domains':
+        specifier: workspace:*
+        version: link:../../packages/domains
+      '@attest/mandates':
+        specifier: workspace:*
+        version: link:../../packages/mandates
+      '@attest/proofs':
+        specifier: workspace:*
+        version: link:../../packages/proofs
+      '@attest/verifier':
+        specifier: workspace:*
+        version: link:../../packages/verifier
+      '@noble/curves':
+        specifier: 1.9.7
+        version: 1.9.7
+      '@pcd/pod':
+        specifier: 0.5.1
+        version: 0.5.1
+      effect:
+        specifier: 4.0.2
+        version: 4.0.2
+      viem:
+        specifier: ^2.57.4
+        version: 2.57.4(typescript@5.9.3)(zod@4.6.5)
+    devDependencies:
+      '@pcd/proto-pod-gpc-artifacts':
+        specifier: 0.13.0
+        version: 0.13.0
+
   apps/web:
     dependencies:
       '@attest/chain-evm':

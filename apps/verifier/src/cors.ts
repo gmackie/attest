@@ -44,10 +44,10 @@ export function withCors<E>(allowed: (env: E) => Set<string>, methods: string,
       } });
     }
     const response = await handler(request, env);
-    if (!ok) return response;
+    // Vary on every CORS-aware response, allowed or not, so a cache never serves one origin's answer to another.
     const headers = new Headers(response.headers);
-    headers.set("access-control-allow-origin", origin);
-    headers.append("vary", "Origin");
+    if (!(headers.get("vary") ?? "").toLowerCase().split(/\s*,\s*/).includes("origin")) headers.append("vary", "Origin");
+    if (ok) headers.set("access-control-allow-origin", origin);
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
   };
 }

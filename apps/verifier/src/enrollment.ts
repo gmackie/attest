@@ -93,10 +93,17 @@ export interface DurableStorage {
   delete(key: string): Promise<boolean>;
   deleteAll(): Promise<void>;
   setAlarm(scheduledTime: number): Promise<void>;
+  getAlarm?(): Promise<number | null>;
 }
 export interface DurableState { storage: DurableStorage }
 
-interface Binding { issuer: string; subject: string; enrolledAt: number }
+/** `expiresAt` is null for IdPs without a binding TTL (the binding is permanent). */
+interface Binding { issuer: string; subject: string; enrolledAt: number; expiresAt: number | null }
+/** Holder keys bound to one subject, each with its binding expiry (null: permanent). */
+type SubjectKeys = Record<string, number | null>;
+/** Active holder keys one subject may hold at once. */
+export const MAX_KEYS_PER_SUBJECT = 5;
+const live = (expiresAt: number | null | undefined, now: number) => expiresAt === null || expiresAt === undefined || expiresAt > now;
 const reply = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
@@ -111,33 +118,99 @@ export class SerialQueue {
 }
 
 /**
- * One instance per holder public key (idFromName of the canonical key), SQLite-backed.
- * The body is parsed before any storage access, and every read-check-write runs in a serial
- * queue, so two concurrent enrollments of one key cannot both see "unbound".
+ * Two kinds of instance, both SQLite-backed and serialized:
+ *  - one per holder public key (`holder:<key>`): the key's binding to one subject (`/binding`);
+ *  - one per subject (`subject:<digest>`): the subject's active holder keys (`/subject/reserve`,
+ *    `/subject/release`), capped at MAX_KEYS_PER_SUBJECT, so one account cannot enroll keys
+ *    without bound.
+ * Bindings from IdPs with a `bindingTtlMs` expire; expired entries count as absent at once and
+ * are deleted by an alarm. Bodies are parsed before any storage access, and every
+ * read-check-write runs in a serial queue, so two concurrent enrollments cannot both win.
  */
 export class EnrollmentStore {
   private readonly queue = new SerialQueue();
   constructor(private readonly state: DurableState, _env?: unknown) {}
 
+  private async schedule(at: number | null) {
+    if (at === null) return;
+    const current = this.state.storage.getAlarm ? await this.state.storage.getAlarm() : null;
+    if (current === null || current === undefined || at < current) await this.state.storage.setAlarm(at);
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname !== "/binding" || (request.method !== "GET" && request.method !== "PUT"))
-      return reply({ code: "not_found" }, 404);
-    let next: Binding | undefined;
-    if (request.method === "PUT") {
-      const body = (await request.json()) as Partial<Binding>;
-      if (typeof body.issuer !== "string" || typeof body.subject !== "string" || !Number.isSafeInteger(body.enrolledAt))
-        return reply({ code: "invalid_binding" }, 400);
-      next = { issuer: body.issuer, subject: body.subject, enrolledAt: body.enrolledAt! };
+    const time = (v: unknown) => (Number.isSafeInteger(v) && (v as number) >= 0 ? (v as number) : undefined);
+    if (url.pathname === "/binding" && request.method === "GET") {
+      const now = time(Number(url.searchParams.get("now") ?? Date.now())) ?? Date.now();
+      return this.queue.run(async () => {
+        const current = await this.state.storage.get<Binding>("binding");
+        return reply({ binding: current && live(current.expiresAt, now) ? current : null });
+      });
     }
-    return this.queue.run(async () => {
-      const current = await this.state.storage.get<Binding>("binding");
-      if (!next) return reply({ binding: current ?? null });
-      if (current && (current.issuer !== next.issuer || current.subject !== next.subject))
-        return reply({ code: "holder_already_enrolled" }, 409);
-      await this.state.storage.put("binding", { issuer: next.issuer, subject: next.subject,
-        enrolledAt: current?.enrolledAt ?? next.enrolledAt });
-      return reply({ enrolled: true, existing: Boolean(current) });
+    if (url.pathname === "/binding" && request.method === "PUT") {
+      const body = (await request.json()) as Partial<Binding>;
+      const expiresAt = body.expiresAt === undefined || body.expiresAt === null ? null : time(body.expiresAt);
+      if (typeof body.issuer !== "string" || typeof body.subject !== "string" || time(body.enrolledAt) === undefined ||
+        expiresAt === undefined)
+        return reply({ code: "invalid_binding" }, 400);
+      const next: Binding = { issuer: body.issuer, subject: body.subject, enrolledAt: body.enrolledAt!, expiresAt };
+      return this.queue.run(async () => {
+        const stored = await this.state.storage.get<Binding>("binding");
+        const current = stored && live(stored.expiresAt, next.enrolledAt) ? stored : undefined;
+        if (current && (current.issuer !== next.issuer || current.subject !== next.subject))
+          return reply({ code: "holder_already_enrolled" }, 409);
+        await this.state.storage.put("binding", { ...next, enrolledAt: current?.enrolledAt ?? next.enrolledAt });
+        await this.schedule(next.expiresAt);
+        return reply({ enrolled: true, existing: Boolean(current) });
+      });
+    }
+    if ((url.pathname === "/subject/reserve" || url.pathname === "/subject/release") && request.method === "POST") {
+      const body = (await request.json()) as { holderPublicKey?: unknown; now?: unknown; expiresAt?: unknown };
+      const now = time(body.now), expiresAt = body.expiresAt === null ? null : time(body.expiresAt);
+      if (typeof body.holderPublicKey !== "string" || now === undefined || expiresAt === undefined)
+        return reply({ code: "invalid_reservation" }, 400);
+      const holder = body.holderPublicKey;
+      return this.queue.run(async () => {
+        const keys: SubjectKeys = {};
+        for (const [k, e] of Object.entries((await this.state.storage.get<SubjectKeys>("keys")) ?? {}))
+          if (live(e, now)) keys[k] = e;
+        if (url.pathname === "/subject/release") {
+          delete keys[holder];
+        } else {
+          const added = !Object.hasOwn(keys, holder);
+          if (added && Object.keys(keys).length >= MAX_KEYS_PER_SUBJECT)
+            return reply({ code: "too_many_holder_keys" }, 409);
+          keys[holder] = expiresAt === null || keys[holder] === null ? null : Math.max(expiresAt, keys[holder] ?? 0);
+          await this.state.storage.put("keys", keys);
+          await this.schedule(expiresAt);
+          return reply({ reserved: true, added });
+        }
+        if (Object.keys(keys).length) await this.state.storage.put("keys", keys);
+        else await this.state.storage.deleteAll();
+        return reply({ released: true });
+      });
+    }
+    return reply({ code: "not_found" }, 404);
+  }
+
+  /** Deletes expired bindings and subject keys; reschedules for the next expiry. */
+  async alarm(): Promise<void> {
+    await this.queue.run(async () => {
+      const now = Date.now();
+      const binding = await this.state.storage.get<Binding>("binding");
+      if (binding && !live(binding.expiresAt, now)) await this.state.storage.delete("binding");
+      else if (binding?.expiresAt) await this.state.storage.setAlarm(binding.expiresAt);
+      const stored = await this.state.storage.get<SubjectKeys>("keys");
+      if (stored) {
+        const keys = Object.fromEntries(Object.entries(stored).filter(([, e]) => live(e, now)));
+        if (Object.keys(keys).length) {
+          await this.state.storage.put("keys", keys);
+          const next = Math.min(...Object.values(keys).filter((e): e is number => e !== null));
+          if (Number.isFinite(next)) await this.state.storage.setAlarm(next);
+        } else await this.state.storage.delete("keys");
+      }
+      if (!(await this.state.storage.get("binding")) && !(await this.state.storage.get("keys")))
+        await this.state.storage.deleteAll();
     });
   }
 }

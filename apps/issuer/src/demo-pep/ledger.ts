@@ -2,13 +2,15 @@
  * The demo PEP's decision ledger: a salted, hash-chained log of its decisions sealed into
  * RFC 6962 epochs, using Gatekeeper's construction (GATE-12) under the demo PEP's own labels.
  *
- * Callers must serialize access (the DemoPepService Durable Object runs every request in one
- * queue). Epochs are sealed on demand, when a decision's receipt is first asked for. Sealing
- * re-verifies the chain from the last sealed leaf and refuses to seal a damaged span. The demo
- * PEP does not publish epochs on-chain; anchoring is a separate publisher (DecisionLogAnchor).
+ * Callers must serialize access (the DemoPepService Durable Object runs every command in one
+ * queue). Epochs are sealed by the hourly alarm, or on demand when a decision's receipt is first
+ * asked for. Sealing re-verifies the chain from the last sealed leaf, refuses to seal a damaged
+ * span, and stores every leaf's inclusion path, so reading a receipt is O(log n). Leaves and
+ * their decision index are kept for RETENTION_MS after their epoch is sealed; epoch rows (root
+ * and boundary hashes) are kept. The demo PEP does not publish epochs on-chain.
  */
 import {
-  decisionCommitment, DEMO_PEP_LEDGER_PROFILE, inclusionProof, LEDGER_GENESIS, ledgerLeafHash, merkleRoot, verifyInclusion,
+  decisionCommitment, DEMO_PEP_LEDGER_PROFILE, LEDGER_GENESIS, ledgerLeafHash, merkleAuditPaths, verifyInclusion,
   type DecisionReceipt,
 } from "@attest/chain-evm";
 import { canonicalJson } from "@attest/mandates/protocol";
@@ -16,11 +18,19 @@ import { canonicalJson } from "@attest/mandates/protocol";
 export { DEMO_PEP_LEDGER_PROFILE };
 /** Bounds one seal's work; anything beyond rolls into the next epoch. */
 export const MAX_EPOCH_LEAVES = 1024;
+/** Leaves (and so receipts) are kept this long after their epoch is sealed. */
+export const RETENTION_MS = 30 * 86_400_000;
+/** Epochs one retention pass may drop. */
+const MAX_PURGED_EPOCHS = 4;
 
 export interface Store {
   get<T = unknown>(key: string): Promise<T | undefined>;
   put(key: string, value: unknown): Promise<void>;
   delete(key: string): Promise<boolean>;
+  /** Keys with this prefix in ascending order, at most `limit`. */
+  list<T = unknown>(options: { prefix: string; limit: number }): Promise<Map<string, T>>;
+  getAlarm?(): Promise<number | null>;
+  setAlarm?(at: number): Promise<void>;
 }
 
 /** What a leaf commits to: the decision as enforced. The principal is a pseudonymous digest. */
@@ -45,7 +55,10 @@ export interface LedgerDecision {
     expiresAt: number;
   }[];
 }
-interface LeafRow { seq: number; prevHash: string; leafHash: string; salt: string; canonical: string; principalId: string; epoch: number | null }
+interface LeafRow {
+  seq: number; prevHash: string; leafHash: string; salt: string; canonical: string; principalId: string;
+  decisionId: string; epoch: number | null; path?: string[];
+}
 interface Head { seq: number; lastLeafHash: string }
 export interface EpochRow {
   epoch: number; root: string; firstSeq: number; lastSeq: number; size: number;
@@ -60,6 +73,7 @@ export class LedgerError extends Error {
 }
 
 const hex = (bytes: Uint8Array) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+const leafKey = (seq: number) => `ledger:leaf:${seq}`;
 
 export async function appendDecision(store: Store, decision: LedgerDecision): Promise<{ seq: number; leafHash: string }> {
   const head = (await store.get<Head>("ledger:head")) ?? { seq: 0, lastLeafHash: LEDGER_GENESIS };
@@ -68,8 +82,11 @@ export async function appendDecision(store: Store, decision: LedgerDecision): Pr
   const leafHash = await ledgerLeafHash(DEMO_PEP_LEDGER_PROFILE, head.lastLeafHash,
     await decisionCommitment(DEMO_PEP_LEDGER_PROFILE, canonical, salt));
   const seq = head.seq + 1;
-  const row: LeafRow = { seq, prevHash: head.lastLeafHash, leafHash, salt, canonical, principalId: decision.principalId, epoch: null };
-  await store.put(`ledger:leaf:${seq}`, row);
+  const row: LeafRow = {
+    seq, prevHash: head.lastLeafHash, leafHash, salt, canonical, principalId: decision.principalId,
+    decisionId: decision.id, epoch: null,
+  };
+  await store.put(leafKey(seq), row);
   await store.put(`ledger:decision:${decision.id}`, seq);
   await store.put("ledger:head", { seq, lastLeafHash: leafHash } satisfies Head);
   return { seq, leafHash };
@@ -78,7 +95,7 @@ export async function appendDecision(store: Store, decision: LedgerDecision): Pr
 async function range(store: Store, first: number, last: number): Promise<LeafRow[]> {
   const rows: LeafRow[] = [];
   for (let s = first; s <= last; s++) {
-    const row = await store.get<LeafRow>(`ledger:leaf:${s}`);
+    const row = await store.get<LeafRow>(leafKey(s));
     if (!row) break;
     rows.push(row);
   }
@@ -102,13 +119,13 @@ export async function sealEpoch(store: Store, now: number): Promise<EpochRow | n
     expect++;
   }
   if (!rows.length) throw new LedgerError("chain_broken");
+  const { root, paths } = await merkleAuditPaths(rows.map((r) => r.leafHash));
   const epoch: EpochRow = {
-    epoch: (last?.epoch ?? 0) + 1, root: await merkleRoot(rows.map((r) => r.leafHash)), firstSeq,
-    lastSeq: rows[rows.length - 1]!.seq, size: rows.length, firstPrevHash: last ? last.lastLeafHash : LEDGER_GENESIS,
-    lastLeafHash: rows[rows.length - 1]!.leafHash, sealedAt: now,
+    epoch: (last?.epoch ?? 0) + 1, root, firstSeq, lastSeq: rows[rows.length - 1]!.seq, size: rows.length,
+    firstPrevHash: last ? last.lastLeafHash : LEDGER_GENESIS, lastLeafHash: rows[rows.length - 1]!.leafHash, sealedAt: now,
   };
   await store.put(`ledger:epoch:${epoch.epoch}`, epoch);
-  for (const row of rows) await store.put(`ledger:leaf:${row.seq}`, { ...row, epoch: epoch.epoch });
+  for (const [i, row] of rows.entries()) await store.put(leafKey(row.seq), { ...row, epoch: epoch.epoch, path: paths[i] });
   await store.put("ledger:epoch-head", { epoch: epoch.epoch, lastSeq: epoch.lastSeq, lastLeafHash: epoch.lastLeafHash } satisfies EpochHead);
   return epoch;
 }
@@ -117,28 +134,44 @@ export const readEpoch = (store: Store, epoch: number) => store.get<EpochRow>(`l
 
 /**
  * The receipt for one decision, to the principal it is about only (others learn nothing about
- * whether it exists). Seals pending leaves first if the decision is not yet in an epoch.
+ * whether it exists). Seals pending leaves first if the decision is not yet in an epoch; after
+ * that, a read is one leaf, one epoch and an O(log n) check of the stored path.
  */
 export async function decisionReceipt(store: Store, decisionId: string, principalId: string, now: number):
   Promise<DecisionReceipt & { epoch: EpochRow & { anchor: null } }> {
   const seq = await store.get<number>(`ledger:decision:${decisionId}`);
-  let leaf = seq === undefined ? undefined : await store.get<LeafRow>(`ledger:leaf:${seq}`);
+  let leaf = seq === undefined ? undefined : await store.get<LeafRow>(leafKey(seq));
   if (!leaf || leaf.principalId !== principalId) throw new LedgerError("unknown_decision");
   while (leaf.epoch === null) {
     if (!(await sealEpoch(store, now))) throw new LedgerError("ledger_damaged");
-    leaf = (await store.get<LeafRow>(`ledger:leaf:${leaf.seq}`))!;
+    leaf = (await store.get<LeafRow>(leafKey(leaf.seq)))!;
   }
   const epoch = await readEpoch(store, leaf.epoch);
-  if (!epoch) throw new LedgerError("ledger_damaged");
-  const leaves = await range(store, epoch.firstSeq, epoch.lastSeq);
+  if (!epoch || !leaf.path) throw new LedgerError("ledger_damaged");
   const index = leaf.seq - epoch.firstSeq;
-  if (leaves.length !== epoch.size || leaves[index]?.leafHash !== leaf.leafHash) throw new LedgerError("ledger_damaged");
-  const path = await inclusionProof(leaves.map((l) => l.leafHash), index);
   // Never hand out a proof that would not verify.
-  if (!(await verifyInclusion(leaf.leafHash, index, epoch.size, path, epoch.root))) throw new LedgerError("ledger_damaged");
+  if (!(await verifyInclusion(leaf.leafHash, index, epoch.size, leaf.path, epoch.root))) throw new LedgerError("ledger_damaged");
   return {
     schema: DEMO_PEP_LEDGER_PROFILE.proof, decision: JSON.parse(leaf.canonical) as LedgerDecision & Record<string, unknown>,
     salt: leaf.salt, seq: leaf.seq, prevHash: leaf.prevHash, leafHash: leaf.leafHash,
-    epoch: { ...epoch, anchor: null }, leafIndex: index, path,
+    epoch: { ...epoch, anchor: null }, leafIndex: index, path: leaf.path,
   };
+}
+
+/** Drops leaves and decision indexes of epochs sealed more than RETENTION_MS ago. Epoch rows stay. */
+export async function purgeLedger(store: Store, now: number): Promise<number> {
+  let next = (await store.get<number>("ledger:retained-from")) ?? 1, purged = 0;
+  while (purged < MAX_PURGED_EPOCHS) {
+    const epoch = await readEpoch(store, next);
+    if (!epoch || now - epoch.sealedAt < RETENTION_MS) break;
+    for (let s = epoch.firstSeq; s <= epoch.lastSeq; s++) {
+      const row = await store.get<LeafRow>(leafKey(s));
+      if (row) await store.delete(`ledger:decision:${row.decisionId}`);
+      await store.delete(leafKey(s));
+    }
+    next++;
+    purged++;
+    await store.put("ledger:retained-from", next);
+  }
+  return purged;
 }

@@ -21,6 +21,10 @@ describe("verifier CORS", () => {
     expect((await call("OPTIONS", "https://evil.example")).status).toBe(403);
     expect((await call("POST", "https://evil.example")).headers.get("access-control-allow-origin")).toBeNull();
     expect((await call("POST")).headers.get("access-control-allow-origin")).toBeNull();
+    // Vary: Origin on every response, allowed, refused or same-origin.
+    for (const r of [await call("POST"), await call("POST", "https://evil.example"), await call("POST", "https://attest.gmac.io"),
+      await call("OPTIONS", "https://evil.example"), await call("OPTIONS", "https://attest.gmac.io")])
+      expect(r.headers.get("vary")).toBe("Origin");
     expect(parseOrigins("not json").size).toBe(0);
     expect(parseOrigins(undefined).size).toBe(0);
   });

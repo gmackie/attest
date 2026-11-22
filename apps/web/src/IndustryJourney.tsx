@@ -115,11 +115,13 @@ export function DemoChooser() {
           </LinkButton>
         </LayerCard>
         <LayerCard className="infra-card">
-          <Badge variant="outline">PEP challenge · private proof · receipt</Badge>
+          <Badge variant="outline">Demo · synthetic credentials · demo PEP</Badge>
           <h2>Vendor portal: prove to access</h2>
           <p>
-            Approve a payout for supplier:acme by privately proving CGL
-            insurance ≥ $2M, then verify the decision's inclusion receipt.
+            A demonstration: approve a payout for the fictional supplier:acme
+            by privately proving CGL insurance ≥ $2M with a synthetic demo
+            credential, then verify the decision's inclusion receipt. Nothing
+            here is real authorization or real coverage.
           </p>
           <LinkButton href="#/testnet/vendor-portal" variant="primary">
             Prove to access →

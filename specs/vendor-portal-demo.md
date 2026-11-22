@@ -67,12 +67,50 @@ Every decision the PEP takes (challenge, allow and deny) is logged, not only all
 An accepted result becomes a fact `(principal, requirement, entity)` that holds until its `expiresAt`. After
 that, the PEP challenges again.
 
+A retry is all or nothing. Every result, and the caller's decision quota, is checked before any request is
+consumed, so a failing second item or an exhausted quota never burns the first. Two items naming the same
+request are refused with `duplicate_request`.
+
 Gatekeeper's limits apply:
 - requests last 5 minutes and are reused while a minute remains;
 - a principal may have at most 16 pending requests;
 - a retry may carry at most 4 results.
 
-Daily ceilings bound what anonymous visitors can store: 5,000 tokens and 20,000 decisions.
+## Abuse limits and where work happens
+
+The demo PEP has two layers.
+
+- **The front, in the Worker.** It does everything that involves the network or the client:
+  - serves discovery and both JWKS from configuration, without touching the Durable Object;
+  - applies the per-IP rate limits;
+  - verifies the bearer token, including JWKS fetches for any extra IdP;
+  - reads the body, which must be at most 64 KiB, declare a `Content-Length` and arrive within 10 s
+    (`408 request_timeout` otherwise).
+- **The core, in the singleton `DemoPepService` Durable Object.** It receives only a small, parsed,
+  authenticated command and runs it in a serial queue. It does storage and signing only. A slow or
+  stalled client can therefore never hold the queue.
+
+| Limit | Scope | Value |
+| --- | --- | --- |
+| `DEMO_PEP_TOKEN_LIMITER` (Workers Rate Limiting) | per IP (`CF-Connecting-IP`), `POST /identity/token` | 10 per 60 s |
+| `DEMO_PEP_API_LIMITER` (Workers Rate Limiting) | per IP, `/authorize`, receipts, epochs | 60 per 60 s |
+| Daily tokens | per IP | 50 |
+| Daily decisions | per principal | 300 |
+| Daily tokens and decisions | global backstop | 5,000 and 20,000 |
+
+IPs are stored only as a day-scoped SHA-256 digest, inside quota counters that are deleted after their day. If
+a rate-limit binding is absent, only the daily quotas apply.
+
+**Retention.** An hourly alarm does the following:
+- deletes expired pending requests, accepted-result facts and empty pending lists, using per-entry
+  `exp:<time>:<key>` index keys listed in time order;
+- seals pending leaves into an epoch;
+- deletes leaves and decision indexes 30 days after their epoch was sealed (epoch rows stay, so the chain of
+  roots stays checkable);
+- deletes quota counters from earlier days.
+
+Sealing stores every leaf's inclusion path, computed in one O(n) pass, so a receipt read is one leaf, one
+epoch and an O(log n) path check.
 
 ## Decision ledger
 
@@ -85,8 +123,9 @@ to be from Gatekeeper.
 The genesis `prev` is 64 zeros. Each leaf has a random 32-byte salt, so a leaf or root does not confirm a guessed
 decision. The decision names its principal only as `SHA-256(canonical({issuer, subject}))`.
 
-**Sealing.** An epoch is sealed on demand, when a receipt is first asked for. Before sealing, the PEP
-re-verifies the chain from the last sealed leaf and refuses a damaged span (`chain_broken`).
+**Sealing.** An epoch is sealed by the hourly alarm, or on demand when a receipt is first asked for. Before
+sealing, the PEP re-verifies the chain from the last sealed leaf and refuses a damaged span (`chain_broken`).
+Receipts are available for 30 days after their epoch is sealed.
 
 **Verification.** `verifyDecisionReceipt` (in `@attest/chain-evm`, `decision-receipt.ts`) recomputes the
 commitment and leaf from the revealed decision and salt, then checks RFC 6962 inclusion. Given an anchored
@@ -112,7 +151,7 @@ consistency: the PEP could still rewrite its own history. Anchoring needs these 
 | Demo PEP | The verifier, for `demo.insurance.cgl.min-2m` only | `DEMO_PEP_VERIFIER`: issuer, result public keys, requirement id and digest |
 | Demo PEP | Its demo identity (built in); optional IdPs | `DEMO_PEP_IDENTITY_PROVIDERS` |
 | Verifier | The demo PEP, for request authenticity | `TRUSTED_PEPS` entry with the demo PEP's request key |
-| Verifier | The demo identity, for enrollment | `IDENTITY_PROVIDERS` entry (issuer, JWKS URI, audience) |
+| Verifier | The demo identity, for enrollment | `IDENTITY_PROVIDERS` entry (issuer, JWKS URI, audience, `clientId`, `bindingTtlMs`) |
 | Verifier | The demo carrier, through the catalog's pinned authority graph | The issuer key in the requirement definition |
 
 Who sees what:
@@ -145,12 +184,14 @@ Who sees what:
 | `DEMO_PEP_ISSUER` | var | `https://attest.gmac.io/api/demo-pep`. The demo identity issuer is `<issuer>/identity`. |
 | `DEMO_PEP_VERIFIER` | var (JSON) | Gatekeeper `verifiers[]` shape: `{issuer, endpoint, keys: [{kid, publicKey}], requirements: [{id, digest}]}`. `keys` come from `https://verify.attest.gmac.io/.well-known/jwks.json`. With `keys: []` the PEP challenges with `attest_not_configured`. |
 | `DEMO_PEP_IDENTITY_PROVIDERS` | var (JSON) | Default `[]`. Further IdPs in the verifier's `IDENTITY_PROVIDERS` shape. |
-| `DEMO_PEP_CORS_ORIGINS` | var (JSON, optional) | Extra browser origins. The portal itself is same-origin. |
+| `DEMO_PEP_CORS_ORIGINS` | var (JSON, optional) | Extra browser origins. The portal itself is same-origin. Every response carries `Vary: Origin`. |
+| `DEMO_PEP_TOKEN_LIMITER`, `DEMO_PEP_API_LIMITER` | `ratelimits` bindings | Namespaces `2001` and `2002`; see the limits table above. |
 | `DEMO_PEP_SIGNING_KEY` | **secret** | `{"active": kid, "keys": [{kid, privateKey}]}`: the proof-request key |
 | `DEMO_IDENTITY_SIGNING_KEY` | **secret** | The same shape, a different key: the access-token key |
 
-Durable Object `DEMO_PEP` (`DemoPepService`, migration `demo-pep-v1`) holds the pending requests, the facts
-and the ledger. A single serial queue makes consume-once and append/seal atomic.
+Durable Object `DEMO_PEP` (`DemoPepService`, migration `demo-pep-v1`) holds the pending requests, the facts,
+the quota counters and the ledger. A single serial queue makes consume-once and append/seal atomic. Its alarm
+runs the hourly maintenance.
 
 Generate each key with `apps/issuer/scripts/new-demo-pep-key.mjs`. The script prints the secret to stdout and the
 public JWK to stderr, together with the verifier entry to add. It writes nothing to disk.
@@ -160,11 +201,28 @@ node apps/issuer/scripts/new-demo-pep-key.mjs request  | pnpm exec wrangler secr
 node apps/issuer/scripts/new-demo-pep-key.mjs identity | pnpm exec wrangler secret put DEMO_IDENTITY_SIGNING_KEY
 ```
 
+To rotate a key, pipe the current secret JSON from your password manager on stdin with `--merge-stdin`. The new
+key becomes active and the old keys stay published. The script refuses a file path (`--merge <file>`), so the
+current secret is never written to disk:
+
+```sh
+pbpaste | node apps/issuer/scripts/new-demo-pep-key.mjs request --merge-stdin \
+  | pnpm exec wrangler secret put DEMO_PEP_SIGNING_KEY
+```
+
+Clear the clipboard afterwards. Add the new `kid` to the verifier's `TRUSTED_PEPS` before the PEP signs with
+it.
+
 On `attest-verifier` (`apps/verifier/wrangler.jsonc`):
 - `TRUSTED_PEPS` gets `{"issuer": "https://attest.gmac.io/api/demo-pep", "keys": [{"kid", "publicKey"}]}` from
   the request key's stderr.
 - `IDENTITY_PROVIDERS` gets `{"issuer": "https://attest.gmac.io/api/demo-pep/identity", "jwksUri":
-  "https://attest.gmac.io/api/demo-pep/identity/jwks", "audience": "https://verify.attest.gmac.io"}`.
+  "https://attest.gmac.io/api/demo-pep/identity/jwks", "audience": "https://verify.attest.gmac.io", "clientId":
+  "attest-vendor-portal-demo", "bindingTtlMs": 86400000}`. The script prints this entry for the identity key.
+  - `clientId` refuses tokens minted for any other client.
+  - `bindingTtlMs` makes demo holder bindings expire after 24 hours; an alarm deletes them.
+  - Each subject may hold at most 5 active holder keys (`too_many_holder_keys`).
+- The `ENROLLMENT_RATE_LIMITER` binding (namespace `2101`, 10 per 60 s per IP) limits `POST /v1/enrollments`.
 - `CORS_ORIGINS` is `["https://attest.gmac.io"]`, so the browser can enroll and present. It allows exact origins
   only and never credentials.
 
@@ -206,3 +264,14 @@ journey's "Service endpoints" panel, which is stored in localStorage.
   real verifier handler, in process, with a real GPC proof: challenge, enroll, present, signed result, allow,
   then the receipt verifies. It also checks replays at both services and that another user's holder key is
   refused.
+- The security-review tests in `demo-pep.test.ts`, `verifier-service.test.ts` (ATTE-20 M3) and
+  `packages/demo/test/vendor-portal.test.ts` cover:
+  - per-IP and per-principal quotas, and the rate-limit bindings;
+  - discovery and JWKS served without the Durable Object;
+  - stored inclusion paths;
+  - a stalled body timing out without blocking other callers;
+  - all-or-nothing retries;
+  - the maintenance alarm and retention;
+  - the cap on holder keys per subject, expiring bindings and the enrollment rate limit;
+  - `Vary: Origin`;
+  - the receipt verdict when an anchor disagrees.

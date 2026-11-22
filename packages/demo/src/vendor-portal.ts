@@ -252,3 +252,17 @@ export async function verifyAgainstChain(receipt: DecisionReceipt, logId: string
   const { local } = await verifyReceipt(receipt, decisionId, epoch);
   return { status: "anchored", address, epoch, check: local };
 }
+
+/**
+ * The journey's verdict on a receipt. Throws unless the receipt opens, is included and is the
+ * decision we were given, and, when an anchored epoch exists, matches it. A mismatch with the
+ * chain is a failure, never a success with a caveat.
+ */
+export function receiptVerdict(v: ReceiptVerification, anchor: AnchorCheck): "anchored" | "sealed-locally" {
+  if (!v.local.ok || !v.inclusion || !v.matchesDecision) throw new PortalError("receipt_invalid");
+  if (anchor.status === "anchored") {
+    if (!anchor.check.ok) throw new PortalError(`receipt_anchor_mismatch:${anchor.check.reason}`);
+    return "anchored";
+  }
+  return "sealed-locally";
+}

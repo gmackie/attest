@@ -24,7 +24,13 @@
     "DEMO_PEP_IDENTITY_PROVIDERS": "[]",
   },
   // Secrets (wrangler secret put): DEMO_PEP_SIGNING_KEY and DEMO_IDENTITY_SIGNING_KEY,
-  // each {"active": kid, "keys": [{kid, privateKey}]}. Generate with apps/issuer/scripts/new-demo-pep-key.mjs.
+  // each {"active": kid, "keys": [{kid, privateKey}]}. Generate with apps/issuer/scripts/new-demo-pep-key.mjs
+  // (rotate with --merge-stdin; the current secret is never written to disk).
+  // Per-IP limits for the demo PEP (ATTE-20), applied in the Worker before the Durable Object.
+  "ratelimits": [
+    { "name": "DEMO_PEP_TOKEN_LIMITER", "namespace_id": "2001", "simple": { "limit": 10, "period": 60 } },
+    { "name": "DEMO_PEP_API_LIMITER", "namespace_id": "2002", "simple": { "limit": 60, "period": 60 } },
+  ],
   "durable_objects": {
     "bindings": [
       { "name": "INSTITUTIONS", "class_name": "InstitutionService" },

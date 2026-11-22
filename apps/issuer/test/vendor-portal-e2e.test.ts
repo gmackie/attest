@@ -63,7 +63,8 @@ beforeAll(async () => {
   const verifierEnv: VerifierEnv = {
     VERIFIER_ID: endpoints.verifier,
     TRUSTED_PEPS: JSON.stringify([{ issuer: endpoints.pep, keys: [{ kid: "pep-1", publicKey: pepKey.publicKey }] }]),
-    IDENTITY_PROVIDERS: JSON.stringify([{ issuer: `${endpoints.pep}/identity`, jwksUri: `${endpoints.pep}/identity/jwks`, audience: endpoints.verifier }]),
+    IDENTITY_PROVIDERS: JSON.stringify([{ issuer: `${endpoints.pep}/identity`, jwksUri: `${endpoints.pep}/identity/jwks`,
+      audience: endpoints.verifier, clientId: "attest-vendor-portal-demo", bindingTtlMs: 86_400_000 }]),
     RESULT_SIGNING_KEYS: JSON.stringify({ active: "verifier-1", keys: [{ kid: "verifier-1", privateKey: resultKey.privateKey }] }),
     SEPOLIA_RPC_URL: "https://rpc-a.example", SEPOLIA_RPC_URL_SECONDARY: "https://rpc-b.example",
     REPLAY: new FakeNamespace((s) => new ReplayStore(s)), ENROLLMENTS: new FakeNamespace((s) => new EnrollmentStore(s)),
@@ -101,7 +102,10 @@ describe("vendor portal: prove to access (demo PEP + verifier + GPC)", () => {
     expect(request.decisionId).toBe(first.decisionId);
 
     const holder = newHolder();
-    expect(await enroll(endpoints, fetcher, session, holder)).toMatchObject({ enrolled: true });
+    const enrolled = await enroll(endpoints, fetcher, session, holder);
+    expect(enrolled).toMatchObject({ enrolled: true });
+    // The demo identity's bindings expire (bindingTtlMs), so anonymous enrollments do not accumulate.
+    expect((enrolled as { expiresAt?: number }).expiresAt).toBeGreaterThan(Date.now());
     const { definition, synthetic } = await fetchRequirement(endpoints, fetcher, request);
     expect(synthetic).toBe(true);
     const presentation = await prove(request, definition, issueDemoCredential(definition, holder), holder, artifacts);

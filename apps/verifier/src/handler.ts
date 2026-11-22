@@ -13,7 +13,7 @@ import { MAX_FAILED_ATTEMPTS } from "./replay";
 import { maxBlockAgeMs, noCredentialStatusRegistry, snapshotOnce, statusReader, type CredentialStatusRegistry } from "./chain";
 import { checkEnrollment, EnrollmentError } from "./enrollment";
 import { defaultJwksFetcher, TokenError, verifyAccessToken, type JwksFetcher } from "./idp";
-import { buildPorts, holderEnrollmentName, replayName } from "./ports";
+import { buildPorts, holderEnrollmentName, replayName, subjectEnrollmentName } from "./ports";
 
 export interface HandlerDeps {
   catalog?: Catalog;
@@ -33,6 +33,8 @@ const STATUS: Record<string, number> = {
   request_replayed: 409,
   attempts_exhausted: 429,
   holder_already_enrolled: 409,
+  too_many_holder_keys: 409,
+  rate_limited: 429,
   status_unavailable: 503,
   chain_unavailable: 503,
   verification_unavailable: 503,
@@ -165,21 +167,42 @@ export function createHandler(deps: HandlerDeps) {
       const auth = request.headers.get("authorization") ?? "";
       const match = /^Bearer ([A-Za-z0-9_\-.]+)$/.exec(auth);
       if (!match) return yield* failWith("unauthenticated", 401);
+      // Per-IP limit before any token, JWKS or storage work.
+      if (env.ENROLLMENT_RATE_LIMITER) {
+        const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+        const { success } = yield* attempt(() => env.ENROLLMENT_RATE_LIMITER!.limit({ key: `enroll:${ip}` }));
+        if (!success) return yield* failWith("rate_limited");
+      }
       const at = now();
       const token = yield* attempt(() => verifyAccessToken(match[1]!, cfg.identityProviders, fetchJwks, at));
       const body = yield* readJson(request);
       const statement = yield* attempt(() => checkEnrollment(body, token.subject, cfg.verifierId, at));
+      const ttl = cfg.identityProviders.find((p) => p.issuer === token.subject.issuer)?.bindingTtlMs;
+      const expiresAt = ttl === undefined ? null : at + ttl;
+      // The subject's key budget first (at most MAX_KEYS_PER_SUBJECT active keys), then the key's binding.
+      const subjectStub = env.ENROLLMENTS.get(env.ENROLLMENTS.idFromName(yield* attempt(() => subjectEnrollmentName(token.subject))));
+      const reservation = (path: "reserve" | "release") => attempt(async () => {
+        const res = await subjectStub.fetch(`https://enrollments/subject/${path}`, {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ holderPublicKey: statement.holderPublicKey, now: at, expiresAt }),
+        });
+        return { status: res.status, body: (await res.json()) as { code?: string; added?: boolean } };
+      });
+      const reserved = yield* reservation("reserve");
+      if (reserved.status === 409) return yield* failWith(reserved.body.code ?? "too_many_holder_keys");
+      if (reserved.status !== 200) return yield* failWith("enrollment_unavailable");
       const stub = env.ENROLLMENTS.get(env.ENROLLMENTS.idFromName(holderEnrollmentName(statement.holderPublicKey)));
       const res = yield* attempt(() => stub.fetch("https://enrollments/binding", {
         method: "PUT", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ issuer: token.subject.issuer, subject: token.subject.subject, enrolledAt: at }),
+        body: JSON.stringify({ issuer: token.subject.issuer, subject: token.subject.subject, enrolledAt: at, expiresAt }),
       }));
       const out = (yield* attempt(() => res.json())) as { code?: string; existing?: boolean };
+      if (!res.ok && reserved.body.added) yield* reservation("release").pipe(Effect.ignore);
       if (res.status === 409) return yield* failWith(out.code ?? "holder_already_enrolled");
       if (!res.ok) return yield* failWith("enrollment_unavailable");
       return json({
         enrolled: true, subject: token.subject, holderPublicKey: statement.holderPublicKey, verifier: cfg.verifierId,
-        existing: out.existing === true,
+        existing: out.existing === true, ...(expiresAt === null ? {} : { expiresAt }),
       }, out.existing ? 200 : 201);
     });
 

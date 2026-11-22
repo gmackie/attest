@@ -24,7 +24,8 @@
     // JSON [{"issuer": "https://...", "keys": [{"kid": "...", "publicKey": {P-256 public JWK}}]}]
     "TRUSTED_PEPS": "[]",
     // IdPs whose access tokens authenticate holder enrollment.
-    // JSON [{"issuer": "https://...", "jwksUri": "https://...", "audience": "..."}]
+    // JSON [{"issuer": "https://...", "jwksUri": "https://...", "audience": "...", "clientId"?, "bindingTtlMs"?}]
+    // The demo identity (ATTE-20) must carry clientId "attest-vendor-portal-demo" and bindingTtlMs 86400000.
     "IDENTITY_PROVIDERS": "[]",
     // Browser origins allowed to call the verifier cross-origin (bearer tokens only, never cookies).
     // The attest.gmac.io vendor portal (ATTE-20) enrolls and presents from the browser.
@@ -32,6 +33,10 @@
   },
   // Secret (wrangler secret put RESULT_SIGNING_KEYS): {"active": kid, "keys": [{"kid", "privateKey"}]}.
   // Generate with: node apps/verifier/scripts/new-result-key.mjs
+  // Per-IP limit on POST /v1/enrollments (ATTE-20): anonymous demo identities must not drive enrollment load.
+  "ratelimits": [
+    { "name": "ENROLLMENT_RATE_LIMITER", "namespace_id": "2101", "simple": { "limit": 10, "period": 60 } },
+  ],
   "durable_objects": {
     "bindings": [
       { "name": "REPLAY", "class_name": "ReplayStore" },

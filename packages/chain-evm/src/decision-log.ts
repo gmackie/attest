@@ -187,6 +187,23 @@ export async function inclusionProof(leaves: readonly string[], index: number): 
   };
   return walk(index, await Promise.all(leaves.map(leafNode)));
 }
+/**
+ * Root and every leaf's inclusion path in one pass: n - 1 inner hashes instead of an
+ * inclusionProof call per leaf. paths[i] equals inclusionProof(leaves, i).
+ */
+export async function merkleAuditPaths(leaves: readonly string[]): Promise<{ root: string; paths: string[][] }> {
+  if (!leaves.length) return { root: await digest(), paths: [] };
+  const build = async (nodes: readonly string[]): Promise<{ root: string; paths: string[][] }> => {
+    if (nodes.length === 1) return { root: nodes[0]!, paths: [[]] };
+    const k = split(nodes.length);
+    const [left, right] = [await build(nodes.slice(0, k)), await build(nodes.slice(k))];
+    return {
+      root: await innerNode(left.root, right.root),
+      paths: [...left.paths.map((p) => [...p, right.root]), ...right.paths.map((p) => [...p, left.root])],
+    };
+  };
+  return build(await Promise.all(leaves.map(leafNode)));
+}
 /** RFC 9162 §2.1.3.2. Use `size` and `root` from the anchored epoch, never from the proof bundle. */
 export async function verifyInclusion(leaf: string, index: number, size: number, path: readonly string[], root: string): Promise<boolean> {
   if (!Number.isSafeInteger(index) || !Number.isSafeInteger(size) || index < 0 || index >= size || path.length > 64) return false;

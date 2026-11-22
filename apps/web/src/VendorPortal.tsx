@@ -32,6 +32,7 @@ import {
   issueDemoCredential,
   newHolder,
   prove,
+  receiptVerdict,
   submitPresentation,
   verifyAgainstChain,
   verifyReceipt,
@@ -213,11 +214,18 @@ export function VendorPortal() {
       }
       check();
       setAnchor(a);
-      track("receipt_verified", { surface: "vendor-portal", anchored: a.status === "anchored" });
+      // An anchored epoch that disagrees with the receipt is a failure, never a success with a caveat.
+      let verdict: ReturnType<typeof receiptVerdict>;
+      try {
+        verdict = receiptVerdict(v, a);
+      } catch (e) {
+        throw new Error(`The receipt does not match the epoch anchored on Sepolia (${e instanceof Error ? e.message : String(e)}). Do not rely on this decision record.`);
+      }
+      track("receipt_verified", { surface: "vendor-portal", anchored: verdict === "anchored" });
       track("demo_completed", { surface: "vendor-portal" });
-      setMessage(a.status === "anchored" && a.check.ok
+      setMessage(verdict === "anchored"
         ? "Receipt verified against the root anchored on Sepolia."
-        : "Receipt verified in this browser against the sealed epoch root.");
+        : "Receipt verified in this browser against the sealed epoch root (not anchored on-chain).");
     });
 
   const saveEndpoints = () => {

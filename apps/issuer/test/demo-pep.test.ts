@@ -9,9 +9,12 @@ import { verifyAccessToken } from "../../verifier/src/idp";
 import { parseIdentityProviders } from "../../verifier/src/config";
 import { cglMin2m } from "../../verifier/src/catalog";
 import { requirementDigest } from "@attest/verifier";
-import { createDemoPep, DAILY_TOKENS, MAX_PENDING_PER_PRINCIPAL } from "../src/demo-pep/pep";
+import {
+  createDemoPep, createDemoPepFront, DAILY_DECISIONS_PER_PRINCIPAL, DAILY_TOKENS, DAILY_TOKENS_PER_IP,
+  MAINTENANCE_INTERVAL_MS, MAX_PENDING_PER_PRINCIPAL,
+} from "../src/demo-pep/pep";
 import type { DemoPepEnv } from "../src/demo-pep/config";
-import { appendDecision, decisionReceipt, sealEpoch, type LedgerDecision } from "../src/demo-pep/ledger";
+import { appendDecision, decisionReceipt, purgeLedger, RETENTION_MS, sealEpoch, type LedgerDecision } from "../src/demo-pep/ledger";
 import { MemoryStore } from "./memory-store";
 
 const NOW = 1_795_300_000_000;
@@ -245,8 +248,10 @@ describe("demo PEP negative joins", () => {
     const result = await resultFor(request, { expiresAt: clock + 10_000 });
     clock += 10_000;
     expect(await ask(access_token, { requestId: request.id, result })).toEqual(refused("result_expired"));
-    // An expired request is purged before results are read, so it is simply unknown.
     clock = NOW + 300_000;
+    expect(await ask(access_token, { requestId: request.id, result: await resultFor(request) })).toEqual(refused("request_expired"));
+    // After the maintenance alarm it is gone altogether.
+    await handle.maintain(store);
     expect(await ask(access_token, { requestId: request.id, result: await resultFor(request) })).toEqual(refused("unknown_request"));
   });
   it("refuses results signed by an untrusted verifier key or for another audience", async () => {
@@ -319,5 +324,119 @@ describe("decision ledger", () => {
     expect((await send(`/api/demo-pep/decisions/${allowed.body.decisionId}/receipt`, { token: other.access_token })).status).toBe(404);
     const epoch = await send(`/api/demo-pep/epochs/${body.receipt.epoch.epoch}`);
     expect(epoch.body.root).toBe(body.receipt.epoch.root);
+  });
+});
+
+describe("ATTE-20 review: abuse resistance and retention", () => {
+  const refused = (code: string) => ({ status: 400, body: { code: "InvalidAttestResult", message: code } });
+  const today = new Date(NOW).toISOString().slice(0, 10);
+
+  it("M1: limits tokens per IP per day, with the global cap as a backstop", async () => {
+    store = new MemoryStore();
+    const mint = (ip: string) => handle(new Request("https://attest.example/api/demo-pep/identity/token",
+      { method: "POST", headers: { "cf-connecting-ip": ip } }), env, store);
+    for (let i = 0; i < DAILY_TOKENS_PER_IP; i++) expect((await mint("198.51.100.1")).status).toBe(201);
+    expect((await mint("198.51.100.1")).status).toBe(429);
+    expect((await mint("198.51.100.2")).status).toBe(201);
+    // IPs are stored only as day-scoped digests.
+    expect([...store.data.keys()].some((k) => k.includes("198.51.100"))).toBe(false);
+  });
+  it("M1: applies the Workers rate limiters per client IP before any work", async () => {
+    const keys: string[] = [];
+    const limiter = (ok: boolean) => ({ limit: async ({ key }: { key: string }) => { keys.push(key); return { success: ok }; } });
+    const limited = { ...env, DEMO_PEP_TOKEN_LIMITER: limiter(false), DEMO_PEP_API_LIMITER: limiter(false) };
+    const r1 = await handle(new Request("https://attest.example/api/demo-pep/identity/token", { method: "POST",
+      headers: { "cf-connecting-ip": "192.0.2.9" } }), limited, store);
+    expect([r1.status, await r1.json()]).toEqual([429, { code: "rate_limited" }]);
+    const r2 = await handle(new Request("https://attest.example/api/demo-pep/authorize", { method: "POST",
+      headers: { "cf-connecting-ip": "192.0.2.9" } }), limited, store);
+    expect(r2.status).toBe(429);
+    expect(keys).toEqual(["token:192.0.2.9", "api:192.0.2.9"]);
+    expect(store.data.size).toBe(0);
+  });
+  it("M1: limits decisions per principal per day", async () => {
+    const { access_token } = await signIn();
+    // Fill this caller's counter to the limit.
+    const first = await ask(access_token);
+    expect(first.status).toBe(200);
+    const key = [...store.data.keys()].find((k) => k.startsWith(`quota:${today}:decisions:`))!;
+    await store.put(key, DAILY_DECISIONS_PER_PRINCIPAL);
+    expect(await ask(access_token)).toEqual({ status: 429, body: { code: "demo_quota_exhausted" } });
+    // Another caller is unaffected.
+    expect((await ask((await signIn()).access_token)).status).toBe(200);
+  });
+  it("M1: serves discovery and both JWKS without touching the Durable Object", async () => {
+    const front = createDemoPepFront({ now: () => clock });
+    const forward = async () => { throw new Error("must not forward"); };
+    for (const p of ["/api/demo-pep", "/api/demo-pep/jwks", "/api/demo-pep/identity/jwks"])
+      expect((await front(new Request(`https://attest.example${p}`), env, forward)).status).toBe(200);
+  });
+  it("M1: stores inclusion paths at sealing, so a receipt read only checks the stored path", async () => {
+    const d = (id: string): LedgerDecision => ({ schema: DEMO_PEP_LEDGER_PROFILE.decision, id, at: NOW, action: "a",
+      resourceId: "r", outcome: "allow", reason: "x", principalId: "p1", policyRevision: "rev", evidence: [] });
+    for (let i = 1; i <= 9; i++) await appendDecision(store, d(`d${i}`));
+    await sealEpoch(store, NOW);
+    for (let i = 1; i <= 9; i++) expect(Array.isArray((await store.get<any>(`ledger:leaf:${i}`)).path)).toBe(true);
+    // Reading touches the decision index, one leaf and one epoch: nothing else.
+    const reads: string[] = [];
+    const spy = Object.assign(Object.create(store), { get: (k: string) => { reads.push(k); return store.get(k); } });
+    const r = await decisionReceipt(spy, "d5", "p1", NOW);
+    expect(reads).toEqual(["ledger:decision:d5", "ledger:leaf:5", "ledger:epoch:1"]);
+    expect(await verifyDecisionReceipt(DEMO_PEP_LEDGER_PROFILE, r)).toEqual({ ok: true });
+  });
+
+  it("M2: a slowly sent body times out outside the queue and does not stall other callers", async () => {
+    const slow = createDemoPep({ now: () => clock, bodyDeadlineMs: 100 });
+    const { access_token } = await signIn();
+    const other = (await signIn()).access_token;
+    const never = new ReadableStream<Uint8Array>({ start(c) { c.enqueue(new TextEncoder().encode("{")); } });
+    const stalled = slow(new Request("https://attest.example/api/demo-pep/authorize", {
+      method: "POST", body: never, duplex: "half",
+      headers: { "content-type": "application/json", "content-length": "60", authorization: `Bearer ${access_token}` },
+    } as RequestInit), env, store);
+    const started = Date.now();
+    const quick = await slow(req("/api/demo-pep/authorize", { token: other, body: { action: "vendor.payout.approve", resourceId: "supplier:acme" } }), env, store);
+    expect(quick.status).toBe(200);
+    expect(Date.now() - started).toBeLessThan(100);
+    const res = await stalled;
+    expect([res.status, await res.json()]).toEqual([408, { code: "request_timeout" }]);
+  });
+
+  it("L3: nothing is consumed when the quota is exhausted, or when any item in a retry fails", async () => {
+    const { access_token } = await signIn();
+    const { request } = await challenge(access_token);
+    const result = await resultFor(request);
+    const key = [...store.data.keys()].find((k) => k.startsWith(`quota:${today}:decisions:`))!;
+    await store.put(key, DAILY_DECISIONS_PER_PRINCIPAL);
+    expect((await ask(access_token, { requestId: request.id, result })).status).toBe(429);
+    await store.put(key, 0);
+    // A good item followed by a bad one: refused, and the good one is still unconsumed.
+    expect(await ask(access_token, [{ requestId: request.id, result }, { requestId: "req_nope", result }])).toEqual(refused("unknown_request"));
+    expect(await ask(access_token, [{ requestId: request.id, result }, { requestId: request.id, result }])).toEqual(refused("duplicate_request"));
+    expect((await ask(access_token, { requestId: request.id, result })).body.outcome).toBe("allow");
+  });
+
+  it("L1/L2: per-entry expiry keys, and an alarm that purges requests, facts, pending lists, quotas and old leaves", async () => {
+    const { access_token } = await signIn();
+    const { request } = await challenge(access_token);
+    await challenge(access_token); // reused: no new expiry entries
+    const expKeys = () => [...store.data.keys()].filter((k) => k.startsWith("exp:"));
+    expect(expKeys()).toHaveLength(2); // the request and the pending list
+    expect(store.alarm).toBe(NOW + MAINTENANCE_INTERVAL_MS);
+    const allowed = await ask(access_token, { requestId: request.id, result: await resultFor(request) });
+    expect(expKeys()).toHaveLength(3); // + the fact
+    await store.put("quota:2000-01-01:tokens", 3);
+    clock = NOW + 400_000;
+    const report = await handle.maintain(store);
+    expect(report).toMatchObject({ expired: 3, sealed: true, quotas: 1 });
+    expect([...store.data.keys()].filter((k) => /^(req|fact|pending|exp):/.test(k))).toEqual([]);
+    expect(store.data.has("quota:2000-01-01:tokens")).toBe(false);
+    expect(store.alarm).toBe(clock + MAINTENANCE_INTERVAL_MS);
+    // Receipts stay available within retention, then leaves go; epoch rows stay.
+    expect((await send(`/api/demo-pep/decisions/${allowed.body.decisionId}/receipt`, { token: access_token })).status).toBe(200);
+    expect(await purgeLedger(store, NOW + RETENTION_MS)).toBe(0);
+    expect(await purgeLedger(store, clock + RETENTION_MS)).toBe(1);
+    expect([...store.data.keys()].filter((k) => k.startsWith("ledger:leaf:"))).toEqual([]);
+    expect(store.data.has("ledger:epoch:1")).toBe(true);
   });
 });

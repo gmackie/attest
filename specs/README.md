@@ -20,3 +20,5 @@ interfaces—not a universal reputation score or a single global credential root
 - [`revocation-roots.md`](revocation-roots.md) — experimental per-issuer revocation epoch roots, non-membership checks through ChainStatusReader, the AT-04 race bound and correlation analysis.
 - [`registry-v2-governance.md`](registry-v2-governance.md) — experimental WorkspaceRegistryV2: Safe-compatible two-step administrator rotation, irreversible emergency revocation with reason codes, issuer key windows and compromise cutoff, and pinned deployment manifests.
 - [`mandate-account.md`](mandate-account.md) — experimental, testnet-only ERC-4337 smart account enforcing signed mandate limits with a Gatekeeper decision co-signature (security review required before any value beyond testnet).
+
+- [`presentation-receipts.md`](presentation-receipts.md) — experimental receipts that `PresentationReceipts` records only after on-chain Groth16 verification against a live issuer root (ATTE-25, AT-08). The ceremony runbook is [`zk/ceremony/README.md`](../zk/ceremony/README.md).

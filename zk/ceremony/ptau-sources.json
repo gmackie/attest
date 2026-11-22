@@ -1,0 +1,22 @@
+{
+  "schema": "attest.zk-ptau-sources/v1",
+  "note": "Phase-1 (powers of tau) files accepted by `ceremony.mjs init` outside --synthetic-test-only. A file is accepted only when its Blake2b-512 digest equals an entry here. Adding an entry is a security review decision: record where the digest was independently published and who checked it. `candidates` are NOT accepted; they are recorded so reviewers can promote them.",
+  "sources": [
+    {
+      "id": "hermez-powersOfTau28_hez_final_14",
+      "power": 14,
+      "url": "https://storage.googleapis.com/zkevm/ptau/powersOfTau28_hez_final_14.ptau",
+      "blake2b512": "eeefbcf7c3803b523c94112023c7ff89558f9b8e0cf5d6cdcba3ade60f168af4a181c9c21774b94fbae6c90411995f7d854d02ebd93fb66043dbb06f17a831c1",
+      "provenance": "Hermez/Polygon phase-1 ceremony (54 contributions plus beacon). Digest as published in the snarkjs README; already pinned by zk/scripts/build-test-fixture.mjs."
+    }
+  ],
+  "candidates": [
+    {
+      "id": "pse-ppot-0080-14",
+      "power": 14,
+      "url": "https://pse-trusted-setup-ppot.s3.eu-central-1.amazonaws.com/pot28_0080/ppot_0080_14.ptau",
+      "blake2b512": "a91842802f01b33fd42f5f69c3e49879ae03f0ae1f448b0c151244c9957024bd30bf5e3cc999ff2aeb02ebb959124a3a6a3cc20691cb4843a1234a02232072f3",
+      "provenance": "PSE Perpetual Powers of Tau, contribution 80, truncated to 2^14 and prepared for phase 2. Digest OBSERVED by Attest on 2026-11-22 after downloading the file; it was not copied from an independently published checksum, and `snarkjs powersoftau verify` did not finish within a 10-minute local budget. NOT ACCEPTED for CEREMONY mode until both checks are done and this entry is moved to `sources` in a reviewed change."
+    }
+  ]
+}

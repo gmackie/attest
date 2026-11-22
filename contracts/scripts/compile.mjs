@@ -19,6 +19,7 @@ for (const name of [
   "WorkspaceRegistryV2",
   "MandateAccount",
   "TestStablecoin",
+  "PresentationReceipts",
 ]) {
   const sourceFile = ["AttestToken", "AttestClaims", "AttestPassport"].includes(name) ? "AttestEconomy" :
     ["PrivateClaimRoots", "ZkAttestMinterV1"].includes(name) ? "AttestZkMinter" : name;

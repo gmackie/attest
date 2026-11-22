@@ -87,21 +87,33 @@ pnpm install --frozen-lockfile
 mkdir -p /tmp/attest-zk-toolchain
 npm install --prefix /tmp/attest-zk-toolchain --no-save --no-package-lock \
   circom2@0.2.23 circomlib@2.0.5 circomlibjs@0.1.7 snarkjs@0.7.5
-node zk/scripts/build-test-fixture.mjs
+node zk/scripts/build-test-fixture.mjs --synthetic-test-only   # see below
 pnpm --filter @attest/contracts build
 node contracts/scripts/compile-zk.mjs
 pnpm exec vitest run packages/chain-evm/test/economy-native-zk.test.ts
+pnpm exec vitest run packages/chain-evm/test/presentation-receipts.test.ts
+pnpm exec vitest run packages/chain-evm/test/zk-ceremony.test.ts
 ```
 
 The generated verification key, Solidity verifier, circuit wasm, and zkey are
-intentionally excluded from Git history under `zk/.generated/`. CI attempts to fetch the
-Hermez 2^14 phase-1 `powersOfTau28_hez_final_14.ptau` file and checks its
-Blake2b-512 digest against the official snarkjs-published checksum. If CI
-cannot fetch it (HTTP 403 from some environments), the build creates a
-**deliberately insecure test-only phase-1 ceremony locally**. The
-circuit-specific **phase-2 contribution also uses disclosed deterministic
-test entropy**, so the generated key is **insecure** and can never be used to
-secure real assets. No permanent audited verification key is committed.
+intentionally excluded from Git history under `zk/.generated/`. The build looks
+for a phase-1 Powers of Tau file whose Blake2b-512 digest is pinned in
+`zk/ceremony/ptau-sources.json`: `ATTEST_ZK_PTAU=<file>`, or a download of each
+pinned URL (the Hermez 2^14 file; some networks, including CI and our own
+workstation on 2026-11-22, get HTTP 403). If no pinned file is available, the
+build **fails closed** unless `--synthetic-test-only` is passed. With that flag
+it uses `ATTEST_ZK_SYNTHETIC_PTAU=<unpinned file>` or generates a
+**deliberately insecure local phase 1**, and labels the outputs accordingly.
+
+The phase-2 step of these fixtures is single-party with a disclosed entropy
+string. snarkjs 0.7.5 also mixes 64 OS random bytes into every contribution,
+so the toxic waste is not reproducible from the string, but one local process
+ran the whole setup: the keys are **insecure** and can never secure real
+assets. `ceremony.mjs verify-artifacts --require-production` and
+`compile-zk.mjs --production` refuse them. No audited verification key is
+committed. The multi-party ceremony tooling and runbook live in
+[`zk/ceremony/`](ceremony/README.md); presentation receipts are specified in
+[`specs/presentation-receipts.md`](../specs/presentation-receipts.md).
 
 ## Test cases
 

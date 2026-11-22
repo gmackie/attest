@@ -5,6 +5,10 @@ on:
     paths:
       - "zk/**"
       - "contracts/src/AttestZkMinter.sol"
+      - "contracts/src/PresentationReceipts.sol"
+      - "packages/chain-evm/src/receipts.ts"
+      - "packages/chain-evm/test/presentation-receipts.test.ts"
+      - "packages/chain-evm/test/zk-ceremony.test.ts"
       - "contracts/src/AttestEconomy.sol"
       - "contracts/scripts/compile.mjs"
       - "contracts/scripts/compile-zk.mjs"
@@ -39,7 +43,9 @@ jobs:
           npm install --prefix /tmp/attest-zk-toolchain --no-save --no-package-lock --no-audit --no-fund \
             circom2@0.2.23 circomlib@2.0.5 circomlibjs@0.1.7 snarkjs@0.7.5
       - name: Compile Circom and generate ephemeral, INSECURE test proving keys
-        run: node zk/scripts/build-test-fixture.mjs
+        # Uses a pinned, digest-checked phase 1 when downloadable; otherwise the
+        # explicit flag allows an UNSAFE local phase 1 for these test keys only.
+        run: node zk/scripts/build-test-fixture.mjs --synthetic-test-only
       - name: Compile generated Groth16 verifier and token contracts
         run: |
           pnpm --filter @attest/contracts build
@@ -48,9 +54,16 @@ jobs:
         run: pnpm typecheck
       - name: Native proof and Anvil end-to-end verification
         run: pnpm exec vitest run packages/chain-evm/test/economy-native-zk.test.ts
+      - name: Presentation receipts verified on-chain (Anvil, synthetic keys)
+        run: pnpm exec vitest run packages/chain-evm/test/presentation-receipts.test.ts
+      - name: Phase-2 ceremony tooling dry run (3 simulated contributors)
+        run: pnpm exec vitest run packages/chain-evm/test/zk-ceremony.test.ts
       - name: Print experimental verifier fingerprints
         if: always()
         run: |
           if [ -f zk/.generated/manifest.json ]; then
             cat zk/.generated/manifest.json
+          fi
+          if [ -f zk/.generated/presentation-receipt-v1/transcript.json ]; then
+            node zk/ceremony/ceremony.mjs transcript --dir zk/.generated/presentation-receipt-v1
           fi

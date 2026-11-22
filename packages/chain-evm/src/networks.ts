@@ -12,10 +12,10 @@
  */
 import { createPublicClient, http, type Address, type Chain } from "viem";
 import { baseSepolia, mainnet, sepolia } from "viem/chains";
+import { codeReadingEndpoint } from "./manifest";
 import {
   ChainStatusError,
   createChainStatusReader,
-  publicClientEndpoint,
   type ChainEndpoint,
   type ChainStatusReader,
   type ChainStatusReaderOptions,
@@ -37,7 +37,9 @@ export type ContractName =
   | "PrivateClaimRoots"
   | "ZkAttestMinterV1"
   | "DecisionLogAnchor"
-  | "AssuranceAnchor";
+  | "AssuranceAnchor"
+  | "StatusRegistry"
+  | "RevocationRoots";
 /** Deployed instances per contract, keyed by profile (for example an industry id) or "default". */
 export type ContractManifest = Readonly<Partial<Record<ContractName, Readonly<Record<string, Address>>>>>;
 
@@ -112,6 +114,10 @@ const sepoliaConfig = {
       education: "0xB4da675c1b1E6caa14ab7Cd2A69A19b677b8b75a",
       logistics: "0x267c3A587c1Bde2b12E847F6Abb6C94641aD619C",
     },
+    // Trust-stack contracts, pinned in contracts/deployments/11155111.json (ATTE-15).
+    DecisionLogAnchor: { default: "0x7020EE914B517Da8F7F8D42Dc436763898FaA8Ad" },
+    StatusRegistry: { default: "0xCe5d1042f9fA72303e9F58e2962b620Dc57Ec181" },
+    RevocationRoots: { default: "0x1fb289f7E77a2C9cAB906183dde5Bcd47955c714" },
   },
 } as const satisfies NetworkConfig;
 
@@ -225,7 +231,8 @@ export function explorerAddressUrl(ref: NetworkRef, address: string): string {
 export function networkEndpoints(ref: NetworkRef, rpcUrls?: readonly RpcEndpointConfig[]): ChainEndpoint[] {
   const config = networkConfig(ref);
   return (rpcUrls ?? config.rpcUrls).map(({ name, url }) =>
-    publicClientEndpoint(name, createPublicClient({ chain: config.chain, transport: http(url) }) as never),
+    // Code-reading endpoints, so pinned-manifest checks (manifest.ts) work on network readers.
+    codeReadingEndpoint(name, createPublicClient({ chain: config.chain, transport: http(url) }) as never),
   );
 }
 

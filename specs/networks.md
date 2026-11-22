@@ -220,3 +220,23 @@ Notes for the ATTE-26 pull request:
 - **Network ids accepted.** `connected.ts` helpers accept the new network ids
   (`sepolia`, `base-sepolia`, `mainnet`) as well as `testnet` / `production`. The
   `networks` export is unchanged.
+
+## Sepolia trust-stack deployment (2026-11-22)
+
+Deployed by `packages/chain-evm/scripts/deploy-trust-stack.mjs` from the testnet deployer
+`0x98770836EA0C26c7a2259B2b8F8E44Ee01D213ee` (administrator of DecisionLogAnchor and RevocationRoots;
+StatusRegistry has no administrator). The pinned manifest is `contracts/deployments/11155111.json`;
+`test/sepolia-manifest.test.ts` keeps it in sync with `networkConfigs.sepolia.contracts` and the
+compiled runtime code.
+
+| Contract | Address | Block |
+| --- | --- | --- |
+| DecisionLogAnchor | `0x7020EE914B517Da8F7F8D42Dc436763898FaA8Ad` | 12190829 |
+| StatusRegistry | `0xCe5d1042f9fA72303e9F58e2962b620Dc57Ec181` | 12190831 |
+| RevocationRoots | `0x1fb289f7E77a2C9cAB906183dde5Bcd47955c714` | 12190833 |
+
+Network readers built by `chainStatusReaderFor` now use code-reading endpoints, so
+`verifyPinnedDeployment` works on them. Contract creation on Sepolia currently costs about 1,700 gas
+per byte of runtime code (roughly 7–9× anvil 1.7's figures), so WorkspaceRegistryV2 (≈ 22.6M gas
+unoptimized) is not deployed yet. The administrator is a testnet hot key; rotate it to a Safe with
+the two-step handover before relying on it. Base Sepolia deployment waits on funding.

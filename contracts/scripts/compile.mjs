@@ -17,6 +17,8 @@ for (const name of [
   "StatusRegistry",
   "RevocationRoots",
   "WorkspaceRegistryV2",
+  "MandateAccount",
+  "TestStablecoin",
 ]) {
   const sourceFile = ["AttestToken", "AttestClaims", "AttestPassport"].includes(name) ? "AttestEconomy" :
     ["PrivateClaimRoots", "ZkAttestMinterV1"].includes(name) ? "AttestZkMinter" : name;
@@ -27,6 +29,8 @@ for (const name of [
     sources: { [`${sourceFile}.sol`]: { content: source } },
     settings: {
       evmVersion: "paris",
+      // MandateAccount exceeds the EIP-170 size limit unoptimized and needs via-IR for stack depth; other contracts keep their existing output.
+      ...(name === "MandateAccount" ? { optimizer: { enabled: true, runs: 200 }, viaIR: true } : {}),
       outputSelection: {
         "*": {
           "*": ["abi", "evm.bytecode.object", "evm.deployedBytecode.object", "evm.deployedBytecode.immutableReferences"],
@@ -54,7 +58,9 @@ for (const name of [
   console.log(`compiled ${destination}`);
 
   // Server-side contracts are not shipped to the web bundle.
-  if (!["AssuranceAnchor", "DecisionLogAnchor", "StatusRegistry", "RevocationRoots"].includes(name)) {
+  if (!["AssuranceAnchor", "DecisionLogAnchor", "StatusRegistry", "RevocationRoots",
+    "TestStablecoin", // test-only ERC-20, never shipped
+  ].includes(name)) {
     const publicDir = new URL(
       "../../apps/web/public/contracts/",
       import.meta.url,

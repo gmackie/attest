@@ -7,7 +7,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import {
-  copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
+  copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, promises as fsp, readFileSync, rmSync, writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -52,6 +52,28 @@ export function snarkjs() {
   if (!toolchainAvailable()) fail(`ZK toolchain not found under ${TOOLS}; install it per zk/README.md`);
   snarkjsModule ??= createRequire(path.join(TOOLS, "package.json"))("snarkjs");
   return snarkjsModule;
+}
+
+/**
+ * Runs one snarkjs library call while holding every FileHandle it opens, then closes the leftovers.
+ * snarkjs 0.7.5 (and 0.7.6) never closes the phase-1 handle in zkey verify (sameRatioH) or newZKey.
+ * Node 26 makes a FileHandle closed by garbage collection a fatal ERR_INVALID_STATE, so an
+ * unreferenced leaked handle can crash the run; holding it until the call settles prevents that.
+ */
+export async function withFileHandles(call) {
+  const open = fsp.open;
+  const handles = [];
+  fsp.open = async (...args) => {
+    const handle = await open(...args);
+    handles.push(handle);
+    return handle;
+  };
+  try {
+    return await call();
+  } finally {
+    fsp.open = open;
+    await Promise.allSettled(handles.map((handle) => handle.close()));
+  }
 }
 
 export function execute(name, args, { quiet = false, cwd = REPO } = {}) {
@@ -99,7 +121,7 @@ export async function compileCircuit(name, outDir) {
   // from inside outDir using relative paths so outDir may live anywhere.
   execute("circom2", [`${name}.circom`, "--r1cs", "--wasm", "--sym", "-o", "."], { quiet: true, cwd: outDir });
   const r1csPath = path.join(outDir, `${name}.r1cs`);
-  const info = await snarkjs().r1cs.info(r1csPath);
+  const info = await withFileHandles(() => snarkjs().r1cs.info(r1csPath));
   return {
     source, r1cs: r1csPath, wasm: path.join(outDir, `${name}_js`, `${name}.wasm`),
     constraints: info.nConstraints, publicInputs: info.nPubInputs, outputs: info.nOutputs,
@@ -192,7 +214,7 @@ export async function initCeremony({ circuit, dir, ptau, syntheticTestOnly = fal
       power, ...hashFile(phase1Path) };
   }
   const initialZkey = path.join(dir, "zkey/0000.zkey");
-  await snarkjs().zKey.newZKey(compiled.r1cs, phase1Path, initialZkey);
+  await withFileHandles(() => snarkjs().zKey.newZKey(compiled.r1cs, phase1Path, initialZkey));
   const mode = phase1.source === "pinned" && !syntheticTestOnly ? MODE_CEREMONY : MODE_SYNTHETIC;
   const transcript = {
     schema: TRANSCRIPT_SCHEMA,
@@ -243,7 +265,7 @@ export async function contribute({ dir, name, entropyString, attestation, attest
   const index = t.contributions.length + 1;
   const previous = lastZkey(t);
   const out = path.join(dir, "zkey", `${String(index).padStart(4, "0")}.zkey`);
-  const hash = await snarkjs().zKey.contribute(path.join(dir, previous), out, name, entropy);
+  const hash = await withFileHandles(() => snarkjs().zKey.contribute(path.join(dir, previous), out, name, entropy));
   entropy = undefined; // JS strings cannot be wiped; drop the reference and let the process exit.
   let attestationRef = null;
   if (attestationFile) {
@@ -282,9 +304,9 @@ export async function applyBeacon({ dir, beaconHash, iterationsExp = 10, source 
   if (!source || source.length < 8) fail("describe the public beacon source (chain, height, announcement)");
   mkdirSync(path.join(dir, "final"), { recursive: true });
   const finalZkey = path.join(dir, "final/final.zkey");
-  const hash = await snarkjs().zKey.beacon(path.join(dir, lastZkey(t)), finalZkey, "attest-beacon", beaconHash, iterationsExp);
+  const hash = await withFileHandles(() => snarkjs().zKey.beacon(path.join(dir, lastZkey(t)), finalZkey, "attest-beacon", beaconHash, iterationsExp));
   const vkeyPath = path.join(dir, "final/verification_key.json");
-  const vkey = await snarkjs().zKey.exportVerificationKey(finalZkey);
+  const vkey = await withFileHandles(() => snarkjs().zKey.exportVerificationKey(finalZkey));
   writeFileSync(vkeyPath, JSON.stringify(vkey, null, 2) + "\n");
   const verifierPath = path.join(dir, "final/Groth16Verifier.sol");
   execute("snarkjs", ["zkey", "export", "solidityverifier", finalZkey, verifierPath], { quiet: true });
@@ -369,7 +391,7 @@ export async function verifyCeremony({ dir, recompile = false, requireProduction
   const t = verifyArtifacts(dir, { requireProduction });
   const target = t.final?.zkey ?? lastZkey(t);
   const logger = captureLogger();
-  const ok = await snarkjs().zKey.verifyFromR1cs(path.join(dir, t.circuit.r1cs), path.join(dir, t.phase1.file), path.join(dir, target), logger);
+  const ok = await withFileHandles(() => snarkjs().zKey.verifyFromR1cs(path.join(dir, t.circuit.r1cs), path.join(dir, t.phase1.file), path.join(dir, target), logger));
   if (!ok) fail(`snarkjs zkey verify rejected ${target}: ${logger.lines.filter((l) => /INVALID|not/.test(l)).join("; ")}`);
   const verified = parseVerifiedContributions(logger.lines);
   const expected = [
@@ -385,9 +407,9 @@ export async function verifyCeremony({ dir, recompile = false, requireProduction
   try {
     if (t.final) {
       const again = path.join(scratch, "final.zkey");
-      await snarkjs().zKey.beacon(path.join(dir, t.beacon.previousZkey), again, t.beacon.name, t.beacon.beaconHash, t.beacon.iterationsExp);
+      await withFileHandles(() => snarkjs().zKey.beacon(path.join(dir, t.beacon.previousZkey), again, t.beacon.name, t.beacon.beaconHash, t.beacon.iterationsExp));
       if (hashFile(again).sha256 !== t.artifacts[t.final.zkey].sha256) fail("re-applying the beacon does not reproduce the final zkey");
-      const vkey = JSON.stringify(await snarkjs().zKey.exportVerificationKey(path.join(dir, t.final.zkey)), null, 2) + "\n";
+      const vkey = JSON.stringify(await withFileHandles(() => snarkjs().zKey.exportVerificationKey(path.join(dir, t.final.zkey))), null, 2) + "\n";
       if (createHash("sha256").update(vkey).digest("hex") !== t.artifacts[t.final.verificationKey].sha256)
         fail("the verification key does not match the final zkey");
     }

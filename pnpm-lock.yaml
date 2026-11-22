@@ -350,8 +350,8 @@ importers:
   contracts:
     devDependencies:
       solc:
-        specifier: 0.8.38
-        version: 0.8.38(debug@4.4.3(supports-color@10.2.2))
+        specifier: 0.8.37
+        version: 0.8.37(debug@4.4.3(supports-color@10.2.2))
 
   packages/authority:
     dependencies:
@@ -3137,9 +3137,9 @@ packages:
     resolution: {integrity: sha512-4uH1xA5JzVU5jaaWS2fXej3+RC6L5Erhr6INTJtUA27du4Elbh4VXCeeRjB4QiwL6N6y7SNKePw5prTxyEf4Zg==}
     hasBin: true
 
-  solc@0.8.38:
-    resolution: {integrity: sha512-DsDLa7uACQVVkE0DYNnUGC49b/yuCJ9ymWlcCEwmaJGcETPC6pTC+BXaRK9ADW8YVeMyxEKUtJsUwRAIG28jtQ==}
-    engines: {node: '>=16.0.0'}
+  solc@0.8.37:
+    resolution: {integrity: sha512-ieUYdPDRGNKMsZpCfi9tY64Q+ASoL8tyhLuvf9cFiqDs+6ijlx8Wn2CRi0N71AlCvRx0V092rlUYu3b3PuxWlA==}
+    engines: {node: '>=12.0.0'}
     hasBin: true
 
   source-map-js@1.2.2:
@@ -6071,7 +6071,7 @@ snapshots:
       logplease: 1.2.15
       r1csfile: 0.0.48
 
-  solc@0.8.38(debug@4.4.3(supports-color@10.2.2)):
+  solc@0.8.37(debug@4.4.3(supports-color@10.2.2)):
     dependencies:
       command-exists: 1.2.9
       commander: 8.3.0

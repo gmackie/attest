@@ -8,6 +8,7 @@
  */
 import { parseAbi, type Address, type Hex } from "viem";
 import { ChainStatusError, chainEvidence, type ChainSnapshot, type ChainStatusReader } from "./status";
+import { assertWritable } from "./networks";
 
 export const decisionLogAnchorAbi = parseAbi([
   "constructor(address administrator_)",
@@ -95,7 +96,10 @@ export async function readAnchoredEpoch(
 
 /** Minimal clients the publisher needs (viem PublicClient / WalletClient satisfy these). */
 export interface AnchorPublisherClients {
-  chainId: number;
+  /** The chain the write will actually go to, asked of the RPC/wallet. The write gate trusts only this. */
+  getChainId(): Promise<number>;
+  /** Optional declared chain: refused early by the write gate, and must match getChainId() at anchor time. */
+  chainId?: number;
   readLatest(args: { address: Address; functionName: "latestEpoch" | "getEpoch"; args: readonly unknown[] }): Promise<unknown>;
   simulateAndWrite(args: { address: Address; functionName: "anchorEpoch"; args: readonly unknown[] }): Promise<Hex>;
   waitForReceipt(hash: Hex, confirmations: number): Promise<{ status: "success" | "reverted"; blockNumber: bigint }>;
@@ -105,8 +109,8 @@ export interface AnchorReceipt { adapter: string; ref: string; anchoredAt: numbe
 /**
  * A RootAnchor adapter for Gatekeeper's ledger (`packages/ledger/anchor.ts`). Idempotent: an epoch
  * already anchored with the same commitment returns a receipt; a different commitment for the same
- * epoch fails with anchor_conflict instead of being overwritten. Mainnet is refused until the
- * production release gate is lifted (specs/production-readiness.md).
+ * epoch fails with anchor_conflict instead of being overwritten. Mainnet and unknown chains are
+ * refused by assertWritable until the production release gate is lifted (specs/production-readiness.md).
  */
 export function decisionLogAnchorAdapter(options: {
   clients: AnchorPublisherClients;
@@ -118,12 +122,19 @@ export function decisionLogAnchorAdapter(options: {
   const { clients, address, log } = options;
   const confirmations = options.confirmations ?? 2;
   const now = options.now ?? (() => Date.now());
-  if (clients.chainId === 1) fail("production_writes_disabled");
-  const ref = (suffix: string) => `eip155:${clients.chainId}:${address.toLowerCase()}:${log}:${suffix}`;
+  // Fail fast on a declared chain; the authoritative check is against the RPC in anchor().
+  if (clients.chainId !== undefined) assertWritable(clients.chainId);
   return {
     adapter: "attest-evm",
     async anchor(epoch: SealedEpoch): Promise<AnchorReceipt> {
       const args = anchorEpochArgs(log, epoch);
+      // Mainnet and unknown chains are refused by the shared write gate (specs/networks.md), using the
+      // chain the client is really connected to, before any read or write.
+      const chainId = await clients.getChainId();
+      if (clients.chainId !== undefined && clients.chainId !== chainId)
+        fail("chain_mismatch", `declared ${clients.chainId}, RPC reports ${chainId}`);
+      assertWritable(chainId);
+      const ref = (suffix: string) => `eip155:${chainId}:${address.toLowerCase()}:${log}:${suffix}`;
       const latest = Number(await clients.readLatest({ address, functionName: "latestEpoch", args: [log] }));
       if (latest >= epoch.epoch) {
         const existing = (await clients.readLatest({ address, functionName: "getEpoch", args: [log, BigInt(epoch.epoch)] })) as {
@@ -197,15 +208,24 @@ export function verifyAnchoredInclusion(anchored: AnchoredEpoch, leaf: { seq: nu
   return verifyInclusion(leaf.leafHash, leaf.seq - anchored.firstSeq, anchored.size, leaf.path, anchored.root);
 }
 
-/** Adapt viem clients for the publisher (keeps viem generics out of callers). */
+/**
+ * Adapt viem clients for the publisher (keeps viem generics out of callers). The chain is read
+ * from `publicClient.getChainId()` at anchor time; `chainId`, if given, is only a cross-check.
+ */
 export function viemAnchorClients(publicClient: {
   getChainId(): Promise<number>;
   readContract(args: never): Promise<unknown>;
   simulateContract(args: never): Promise<{ request: unknown }>;
   waitForTransactionReceipt(args: never): Promise<{ status: "success" | "reverted"; blockNumber: bigint }>;
-}, walletClient: { writeContract(args: never): Promise<Hex> }, account: Address, chainId: number): AnchorPublisherClients {
+}, walletClient: { writeContract(args: never): Promise<Hex>; getChainId?(): Promise<number> }, account: Address, chainId?: number): AnchorPublisherClients {
   return {
-    chainId,
+    // Both transports must report the same chain: the gate checks the chain the transaction is sent on.
+    getChainId: async () => {
+      const [read, write] = await Promise.all([publicClient.getChainId(), walletClient.getChainId?.()]);
+      if (write !== undefined && write !== read) fail("chain_mismatch", `reader ${read}, wallet ${write}`);
+      return read;
+    },
+    ...(chainId === undefined ? {} : { chainId }),
     readLatest: (a) => publicClient.readContract({ ...a, abi: decisionLogAnchorAbi } as never),
     simulateAndWrite: async (a) => {
       const sim = await publicClient.simulateContract({ ...a, abi: decisionLogAnchorAbi, account } as never);

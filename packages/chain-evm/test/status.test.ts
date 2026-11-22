@@ -1,24 +1,25 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { createPublicClient, createWalletClient, http, type Address, type Hex } from "viem";
-import { sepolia } from "viem/chains";
 import type { CredentialStatus } from "@attest/verifier";
 import { registryAbi } from "../src/connected";
 import {
   createChainStatusReader, publicClientEndpoint, workspaceAnchorStatus,
   type ChainEndpoint, type ChainStatusReaderOptions, type WorkspaceAnchorQuery,
 } from "../src/status";
+import { chainStatusReaderFor, networkConfigs } from "../src/networks";
+import { anvilAvailable as available, anvilBinary as binary, anvilNetworks } from "./anvil-networks";
 
-const binary = process.env.ANVIL_BIN ?? path.join(homedir(), ".foundry/bin/anvil");
-const available = existsSync(binary);
 const root = path.resolve(import.meta.dirname, "../../..");
-const portA = 18885, portB = 18886;
+
+describe.each(anvilNetworks)("on $network.name", ({ network, offset }) => {
+const chainId = network.chainId;
+const portA = 18885 + offset, portB = 18886 + offset;
 const urlA = `http://127.0.0.1:${portA}`, urlB = `http://127.0.0.1:${portB}`;
-const client = (url: string) => createPublicClient({ chain: sepolia, transport: http(url) });
-const readerA = client(urlA), wallet = createWalletClient({ chain: sepolia, transport: http(urlA) });
+const client = (url: string) => createPublicClient({ chain: network.chain, transport: http(url) });
+const readerA = client(urlA), wallet = createWalletClient({ chain: network.chain, transport: http(urlA) });
 const hex = (digit: string) => `0x${digit.repeat(64)}` as Hex;
 let anvils: ChildProcess[] = [], accounts: Address[] = [], registry: Address;
 
@@ -39,7 +40,7 @@ const chainTime = async () => Number((await readerA.getBlock({ blockTag: "latest
 async function options(over: Partial<ChainStatusReaderOptions> = {}): Promise<ChainStatusReaderOptions> {
   const now = await chainTime();
   return {
-    chainId: 11155111,
+    chainId,
     // Two independent clients of the same chain.
     endpoints: [publicClientEndpoint("primary", client(urlA)), publicClientEndpoint("secondary", client(urlA))],
     finality: { kind: "finalized" }, maxBlockAgeMs: 600_000, now: () => now, ...over,
@@ -55,7 +56,7 @@ beforeAll(async () => {
   if (compiled.status !== 0) throw new Error(compiled.stderr);
   // One-slot epochs: "finalized" trails "latest" by two blocks.
   for (const port of [portA, portB])
-    anvils.push(spawn(binary, ["--port", String(port), "--chain-id", "11155111", "--slots-in-an-epoch", "1", "--silent"], { stdio: "ignore" }));
+    anvils.push(spawn(binary, ["--port", String(port), "--chain-id", String(chainId), "--slots-in-an-epoch", "1", "--silent"], { stdio: "ignore" }));
   for (let i = 0; i < 100 && accounts.length === 0; i++) {
     try { accounts = await wallet.getAddresses(); await client(urlB).getChainId(); }
     catch { accounts = []; await new Promise((r) => setTimeout(r, 100)); }
@@ -84,6 +85,24 @@ describe.skipIf(!available)("ChainStatusReader", () => {
     expect(() => createChainStatusReader({ ...base, endpoints: base.endpoints.slice(0, 1) })).toThrow("insufficient_endpoints");
     expect(() => createChainStatusReader({ ...base, finality: { kind: "confirmations", confirmations: 0 } })).toThrow("invalid_reader_configuration");
     expect(() => createChainStatusReader({ ...base, endpoints: [base.endpoints[0]!, base.endpoints[0]!] })).toThrow("invalid_reader_configuration");
+  });
+
+  it("builds the same reader from the network config via chainStatusReaderFor", async () => {
+    const base = await options();
+    const rpcUrls = [{ name: "primary", url: urlA }, { name: "secondary", url: urlA }];
+    const reader = chainStatusReaderFor(network.id, { rpcUrls, now: base.now });
+    expect(reader.options).toMatchObject({ chainId, finality: network.finality, maxBlockAgeMs: network.maxBlockAgeMs });
+    expect(reader.options.endpoints.map((e) => e.name)).toEqual(["primary", "secondary"]);
+    const snap = await reader.snapshot();
+    expect(snap).toMatchObject({ chainId, blockNumber: (await createChainStatusReader(base).snapshot()).blockNumber });
+    // Defaults come from the config: two public providers, and the chain ID cannot be overridden.
+    expect(chainStatusReaderFor(network.id).options.endpoints.map((e) => e.name)).toEqual(network.rpcUrls.map((r) => r.name));
+    expect(chainStatusReaderFor(network.id, { chainId: 1 } as never).options.chainId).toBe(chainId);
+    expect(() => chainStatusReaderFor(network.id, { rpcUrls: rpcUrls.slice(0, 1) })).toThrow("insufficient_endpoints");
+    // Pointing another network's reader at this chain fails closed.
+    const other = network.id === "sepolia" ? networkConfigs["base-sepolia"] : networkConfigs.sepolia;
+    expect(await code(chainStatusReaderFor(other.id, { rpcUrls, now: base.now }).snapshot())).toBe("chain_mismatch");
+    expect(await code(chainStatusReaderFor("mainnet", { rpcUrls, now: base.now }).snapshot())).toBe("chain_mismatch");
   });
 
   it("fails closed when endpoints follow different chains", async () => {
@@ -156,7 +175,7 @@ describe.skipIf(!available)("ChainStatusReader", () => {
       await mine();
       const active = await status(query(hex("d")));
       expect(active).toMatchObject({ status: "active", validUntil: Number(deadline) * 1000,
-        evidence: { source: "chain", chainId: 11155111 } });
+        evidence: { source: "chain", chainId } });
       // Structurally the @attest/verifier status port contract.
       const port: CredentialStatus = active!;
       expect(port.evidence.blockHash).toMatch(/^0x[a-f0-9]{64}$/);
@@ -196,4 +215,5 @@ describe.skipIf(!available)("ChainStatusReader", () => {
       expect(await code(status({ ...query(hex("e")), scope: hex("5") }))).toBe("anchor_mismatch");
     });
   });
+});
 });

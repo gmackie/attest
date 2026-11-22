@@ -1,7 +1,6 @@
-import { beforeAll, afterAll, it, expect } from "vitest";
+import { beforeAll, afterAll, describe, it, expect } from "vitest";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { readFileSync, existsSync } from "node:fs";
-import { homedir } from "node:os";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
   createPublicClient,
@@ -10,18 +9,18 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import { sepolia } from "viem/chains";
 import { registryAbi } from "../src/connected";
-const binary =
-  process.env.ANVIL_BIN ?? path.join(homedir(), ".foundry/bin/anvil");
-const port = 18545,
+import { anvilAvailable, anvilBinary as binary, anvilNetworks } from "./anvil-networks";
+
+describe.each(anvilNetworks)("WorkspaceRegistry on $network.name", ({ network, offset }) => {
+const port = 18545 + offset,
   url = `http://127.0.0.1:${port}`;
 let processHandle: ChildProcess, registry: Address, accounts: Address[];
-const reader = createPublicClient({ chain: sepolia, transport: http(url) });
-const wallet = createWalletClient({ chain: sepolia, transport: http(url) });
+const reader = createPublicClient({ chain: network.chain, transport: http(url) });
+const wallet = createWalletClient({ chain: network.chain, transport: http(url) });
 const hash = (digit: string) => `0x${digit.repeat(64)}` as Hex;
 beforeAll(async () => {
-  if (!existsSync(binary)) return;
+  if (!anvilAvailable) return;
   const root = path.resolve(import.meta.dirname, "../../..");
   const compiled = spawnSync(process.execPath, ["scripts/compile.mjs"], {
     cwd: path.join(root, "contracts"),
@@ -30,7 +29,7 @@ beforeAll(async () => {
   if (compiled.status !== 0) throw new Error(compiled.stderr);
   processHandle = spawn(
     binary,
-    ["--port", String(port), "--chain-id", "11155111", "--silent"],
+    ["--port", String(port), "--chain-id", String(network.chainId), "--silent"],
     { stdio: "ignore" },
   );
   for (let i = 0; i < 50; i++) {
@@ -42,6 +41,7 @@ beforeAll(async () => {
     }
   }
   if (!accounts) throw new Error("Anvil failed to start");
+  expect(await reader.getChainId()).toBe(network.chainId);
   const artifact = JSON.parse(
     readFileSync(
       path.join(root, "contracts/artifacts/WorkspaceRegistry.json"),
@@ -59,7 +59,7 @@ beforeAll(async () => {
 afterAll(() => {
   processHandle?.kill();
 });
-it.skipIf(!existsSync(binary))(
+it.skipIf(!anvilAvailable)(
   "registry enforces scoped grants, original-issuer permanent revocation and verifier replay protection",
   async () => {
     const admin = accounts[0]!,
@@ -136,3 +136,4 @@ it.skipIf(!existsSync(binary))(
   },
   30000,
 );
+});

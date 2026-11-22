@@ -1,15 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import path from "node:path";
 import { createPublicClient, createWalletClient, http, type Address, type Hex } from "viem";
-import { sepolia } from "viem/chains";
 import {
   anchorEpochArgs, decisionLogAnchorAbi, decisionLogAnchorAdapter, decisionLogId, inclusionProof, merkleRoot,
   readAnchoredEpoch, verifyAnchoredInclusion, verifyInclusion, viemAnchorClients, type SealedEpoch,
 } from "../src/decision-log";
 import { createChainStatusReader, publicClientEndpoint } from "../src/status";
+import { deployNetwork } from "../scripts/deploy-network.mjs";
+import { anvilAvailable as available, anvilBinary as binary, anvilNetworks } from "./anvil-networks";
 
 describe("RFC 6962 Merkle hashing", () => {
   // RFC 6962 test vectors (also used by Gatekeeper's tests/ledger.test.ts).
@@ -31,12 +30,15 @@ describe("RFC 6962 Merkle hashing", () => {
   });
 });
 
-const binary = process.env.ANVIL_BIN ?? path.join(homedir(), ".foundry/bin/anvil");
-const available = existsSync(binary);
 const root = path.resolve(import.meta.dirname, "../../..");
-const port = 18895, url = `http://127.0.0.1:${port}`;
-const reader = createPublicClient({ chain: sepolia, transport: http(url) });
-const wallet = createWalletClient({ chain: sepolia, transport: http(url) });
+/** Anvil's first default account (public test key). */
+const anvilKey0 = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+
+describe.each(anvilNetworks)("on $network.name", ({ network, offset }) => {
+const chainId = network.chainId;
+const port = 18895 + offset, url = `http://127.0.0.1:${port}`;
+const reader = createPublicClient({ chain: network.chain, transport: http(url) });
+const wallet = createWalletClient({ chain: network.chain, transport: http(url) });
 let anvil: ChildProcess | undefined, accounts: Address[] = [], address: Address, log: Hex;
 
 const randomHash = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, "0")).join("");
@@ -48,11 +50,11 @@ async function span(epoch: number, firstSeq: number, count: number, prev: string
   return { leaves, sealed };
 }
 const statusReader = () => createChainStatusReader({
-  chainId: 11155111, endpoints: [publicClientEndpoint("a", reader), publicClientEndpoint("b", createPublicClient({ chain: sepolia, transport: http(url) }))],
+  chainId, endpoints: [publicClientEndpoint("a", reader), publicClientEndpoint("b", createPublicClient({ chain: network.chain, transport: http(url) }))],
   finality: { kind: "confirmations", confirmations: 1 }, maxBlockAgeMs: 3_600_000, now: () => Date.now(),
 });
-const adapter = (account: Address, chainId = 11155111) =>
-  decisionLogAnchorAdapter({ clients: viemAnchorClients(reader, wallet, account, chainId), address, log, confirmations: 1 });
+const adapter = (account: Address, adapterChainId: number = chainId) =>
+  decisionLogAnchorAdapter({ clients: viemAnchorClients(reader, wallet, account, adapterChainId), address, log, confirmations: 1 });
 async function revertReason(account: Address, functionName: string, args: readonly unknown[]) {
   try {
     await reader.simulateContract({ address, abi: decisionLogAnchorAbi, account, functionName: functionName as never, args: args as never });
@@ -72,13 +74,14 @@ beforeAll(async () => {
   if (!available) return;
   const compiled = spawnSync(process.execPath, ["scripts/compile.mjs"], { cwd: path.join(root, "contracts"), encoding: "utf8" });
   if (compiled.status !== 0) throw new Error(compiled.stderr);
-  anvil = spawn(binary, ["--port", String(port), "--chain-id", "11155111", "--silent"], { stdio: "ignore" });
+  anvil = spawn(binary, ["--port", String(port), "--chain-id", String(chainId), "--silent"], { stdio: "ignore" });
   for (let i = 0; i < 100 && accounts.length === 0; i++) {
     try { accounts = await wallet.getAddresses(); } catch { await new Promise((r) => setTimeout(r, 100)); }
   }
-  const artifact = JSON.parse(readFileSync(path.join(root, "contracts/artifacts/DecisionLogAnchor.json"), "utf8"));
-  const tx = await wallet.deployContract({ account: accounts[0]!, abi: artifact.abi, bytecode: artifact.bytecode, args: [accounts[0]!] });
-  address = (await reader.waitForTransactionReceipt({ hash: tx })).contractAddress!;
+  // Deployed by the same script operators use for a new network (scripts/deploy-network.mjs).
+  const manifest = await deployNetwork({ network: network.id, privateKey: anvilKey0, rpcUrl: url, confirmations: 1 });
+  expect(manifest).toMatchObject({ network: network.id, chainId, deployer: accounts[0] });
+  address = manifest.contracts.DecisionLogAnchor.default;
   log = await decisionLogId("gatekeeper.example/decision-ledger");
   await send(accounts[0]!, "setPublisher", [log, accounts[1]!]);
 }, 60_000);
@@ -90,10 +93,10 @@ describe.skipIf(!available)("DecisionLogAnchor", () => {
   it("anchors a sealed epoch, and a third party verifies every receipt against the root read back from chain", async () => {
     first = await span(1, 1, 5, "0".repeat(64));
     const receipt = await adapter(accounts[1]!).anchor(first.sealed);
-    expect(receipt.ref).toMatch(/^eip155:11155111:0x[0-9a-f]{40}:0x[0-9a-f]{64}:tx:0x[0-9a-f]{64}@\d+$/);
+    expect(receipt.ref).toMatch(new RegExp(`^eip155:${chainId}:0x[0-9a-f]{40}:0x[0-9a-f]{64}:tx:0x[0-9a-f]{64}@\\d+$`));
     const anchored = await readAnchoredEpoch(statusReader(), { address, log, epoch: 1 });
     expect(anchored).toMatchObject({ epoch: 1, root: first.sealed.root, firstSeq: 1, lastSeq: 5, size: 5,
-      firstPrevHash: "0".repeat(64), lastLeafHash: first.sealed.lastLeafHash, evidence: { source: "chain", chainId: 11155111 } });
+      firstPrevHash: "0".repeat(64), lastLeafHash: first.sealed.lastLeafHash, evidence: { source: "chain", chainId } });
     for (let i = 0; i < 5; i++) {
       const p = await inclusionProof(first.leaves, i);
       expect(await verifyAnchoredInclusion(anchored!, { seq: 1 + i, leafHash: first.leaves[i]!, path: p })).toBe(true);
@@ -146,5 +149,24 @@ describe.skipIf(!available)("DecisionLogAnchor", () => {
 
   it("refuses to publish to Ethereum mainnet while production writes are gated", () => {
     expect(() => adapter(accounts[1]!, 1)).toThrow("production_writes_disabled");
+    // Unknown (for example Base mainnet) chains fail closed too.
+    expect(() => adapter(accounts[1]!, 8453)).toThrow("network_not_writable");
   });
+
+  it("refuses to anchor when the declared chain disagrees with the RPC", async () => {
+    const other = network.id === "sepolia" ? 84532 : 11155111;
+    const before = await reader.readContract({ address, abi: decisionLogAnchorAbi, functionName: "latestEpoch", args: [log] });
+    const next = await span(Number(before) + 1, 100, 1, randomHash());
+    expect(await code(adapter(accounts[2]!, other).anchor(next.sealed))).toBe("chain_mismatch");
+    expect(await reader.readContract({ address, abi: decisionLogAnchorAbi, functionName: "latestEpoch", args: [log] })).toBe(before);
+    // Without a declared chain the RPC-reported one is used for the gate and the reference.
+    const undeclared = decisionLogAnchorAdapter({ clients: viemAnchorClients(reader, wallet, accounts[2]!), address, log, confirmations: 1 });
+    expect(await code(undeclared.anchor({ ...next.sealed, epoch: Number(before) + 2 }))).toBe("anchor_out_of_order");
+  });
+
+  it("deploy-network refuses a signer whose RPC reports another chain", async () => {
+    const other = network.id === "sepolia" ? "base-sepolia" : "sepolia";
+    await expect(deployNetwork({ network: other, privateKey: anvilKey0, rpcUrl: url, confirmations: 1 })).rejects.toThrow("chain_mismatch");
+  });
+});
 });

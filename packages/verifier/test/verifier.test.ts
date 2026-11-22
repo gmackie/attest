@@ -1,7 +1,11 @@
 import path from "node:path";
 import {deriveSignerPublicKey} from "@pcd/pod";
 import {Effect} from "effect";
-import {beforeAll, describe, expect, it} from "vitest";
+import {beforeAll, describe, expect, it, vi} from "vitest";
+
+// Hooks generate real GPC proofs; under CI or host load they can exceed the 10 s default and
+// silently skip the suites they set up.
+vi.setConfig({hookTimeout: 120_000});
 import {decodePublicKey, deriveSignerPublicKey as derive, encodePublicKey, POD} from "@pcd/pod";
 import {issueCriteriaPod, proveCriteria} from "@attest/proofs";
 import {

@@ -2,7 +2,11 @@ import path from "node:path";
 import { readFileSync } from "node:fs";
 import { decodePublicKey, deriveSignerPublicKey, encodePublicKey, POD } from "@pcd/pod";
 import { Effect } from "effect";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+
+// Hooks generate real GPC proofs; under CI or host load they can exceed the 10 s default and
+// silently skip the suites they set up.
+vi.setConfig({ hookTimeout: 120_000 });
 import type { ChainEndpoint } from "@attest/chain-evm";
 import { commitValue } from "@attest/core";
 import { DEMO_INSURANCE_ISSUER_PRIVATE_KEY } from "@attest/domains";

@@ -33,8 +33,12 @@ export interface Env {
   SEPOLIA_RPC_URL_SECONDARY: string;
   /** "finalized" or "confirmations:<n>" (default confirmations:3, as ATTE-27). */
   CHAIN_FINALITY?: string;
+  /** JSON array of exact browser origins allowed cross-origin (no credentials), e.g. ["https://attest.gmac.io"]. */
+  CORS_ORIGINS?: string;
   REPLAY: DurableObjectNamespaceLike;
   ENROLLMENTS: DurableObjectNamespaceLike;
+  /** Optional Workers Rate Limiting binding for POST /v1/enrollments, keyed by client IP. */
+  ENROLLMENT_RATE_LIMITER?: RateLimiter;
   CF_VERSION_METADATA?: { id?: string; tag?: string; timestamp?: string };
 }
 
@@ -55,7 +59,14 @@ export interface IdentityProvider {
   allowedTyp: string[];
   /** Optional: the access token's `client_id` (or `azp`) must equal this. */
   clientId?: string;
+  /**
+   * Optional: holder bindings made with this IdP's tokens expire after this long (60 s to 30 days).
+   * For anonymous or demo IdPs, so their enrollments do not accumulate (ATTE-20).
+   */
+  bindingTtlMs?: number;
 }
+/** Workers Rate Limiting binding (or any limiter with the same shape). */
+export interface RateLimiter { limit(options: { key: string }): Promise<{ success: boolean }> }
 export interface ResultKey { kid: string; privateKey: JsonWebKey; publicKey: JsonWebKey }
 export type Finality = { kind: "finalized" } | { kind: "confirmations"; confirmations: number };
 
@@ -118,17 +129,21 @@ export function parseIdentityProviders(raw: unknown): IdentityProvider[] {
       p.audience.length === 0 || seen.has(p.issuer))
       throw new ConfigError("IDENTITY_PROVIDERS");
     for (const k of Object.keys(p))
-      if (!["issuer", "jwksUri", "audience", "allowedTyp", "clientId"].includes(k)) throw new ConfigError("IDENTITY_PROVIDERS");
+      if (!["issuer", "jwksUri", "audience", "allowedTyp", "clientId", "bindingTtlMs"].includes(k)) throw new ConfigError("IDENTITY_PROVIDERS");
     const allowedTyp = p.allowedTyp === undefined ? ["at+jwt"] : p.allowedTyp;
     if (!Array.isArray(allowedTyp) || allowedTyp.length === 0 ||
       !allowedTyp.every((t) => typeof t === "string" && t.length > 0 && t.length <= 64))
       throw new ConfigError("IDENTITY_PROVIDERS (allowedTyp)");
     if (p.clientId !== undefined && (typeof p.clientId !== "string" || p.clientId.length === 0))
       throw new ConfigError("IDENTITY_PROVIDERS (clientId)");
+    if (p.bindingTtlMs !== undefined && (!Number.isSafeInteger(p.bindingTtlMs) || (p.bindingTtlMs as number) < 60_000 ||
+      (p.bindingTtlMs as number) > 30 * 86_400_000))
+      throw new ConfigError("IDENTITY_PROVIDERS (bindingTtlMs)");
     seen.add(p.issuer);
     return {
       issuer: p.issuer, jwksUri: p.jwksUri, audience: p.audience, allowedTyp: allowedTyp as string[],
       ...(p.clientId === undefined ? {} : { clientId: p.clientId as string }),
+      ...(p.bindingTtlMs === undefined ? {} : { bindingTtlMs: p.bindingTtlMs as number }),
     };
   });
 }

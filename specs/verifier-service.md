@@ -167,8 +167,15 @@ The domain pack is an example profile. It does not speak for ACORD, insurers or 
   so one key-holder cannot lend presentations to several accounts.
 - Re-enrolling a key to the same subject is idempotent. Concurrent enrollments of one key are serialized, so
   only one subject can win.
+- A subject may hold at most 5 active holder keys; a sixth is refused with `409 too_many_holder_keys`. A failed
+  binding frees the slot it reserved.
+- An IdP entry may set `bindingTtlMs` (60 s to 30 days). Bindings made with that IdP's tokens then expire: they
+  read as unbound from that instant, the key can be enrolled again, and an alarm deletes them. Use it for
+  anonymous or demo IdPs (the vendor portal's demo identity uses 24 hours).
+- With the `ENROLLMENT_RATE_LIMITER` binding, `POST /v1/enrollments` is rate-limited per client IP
+  (`429 rate_limited`) before any token or storage work.
 
-Wallets can use `signEnrollment` from `apps/verifier/src/enrollment.ts`. Un-enrollment and key-loss
+Wallets can use `signEnrollment` from `@attest/verifier` (re-exported by `apps/verifier/src/enrollment.ts`). Un-enrollment and key-loss
 recovery are not implemented.
 
 ## Proof verification in a Worker
@@ -190,9 +197,11 @@ carrier's private key is not in the bundle.
 | --- | --- | --- |
 | `VERIFIER_ID` | var | `https://verify.attest.gmac.io` |
 | `TRUSTED_PEPS` | var (JSON) | `[{"issuer": "<Gatekeeper tenant issuer>", "keys": [{"kid", "publicKey": <P-256 public JWK>}]}]` |
-| `IDENTITY_PROVIDERS` | var (JSON) | `[{"issuer", "jwksUri", "audience", "allowedTyp"?, "clientId"?}]`; `allowedTyp` defaults to `["at+jwt"]` |
+| `IDENTITY_PROVIDERS` | var (JSON) | `[{"issuer", "jwksUri", "audience", "allowedTyp"?, "clientId"?, "bindingTtlMs"?}]`; `allowedTyp` defaults to `["at+jwt"]` |
+| `ENROLLMENT_RATE_LIMITER` | `ratelimits` binding | Namespace `2101`, 10 enrollments per 60 s per IP |
 | `SEPOLIA_RPC_URL`, `SEPOLIA_RPC_URL_SECONDARY` | vars | Two independent https providers. The same host twice is refused; plain http is accepted only for `localhost`, `127.0.0.1` and `[::1]`. |
 | `CHAIN_FINALITY` | var | `confirmations:3` (default) or `finalized` |
+| `CORS_ORIGINS` | var (JSON) | Exact browser origins allowed cross-origin, without credentials: `["https://attest.gmac.io"]` for the vendor portal ([`vendor-portal-demo.md`](vendor-portal-demo.md)). Missing or invalid means none. Every response carries `Vary: Origin`. |
 | `RESULT_SIGNING_KEYS` | **secret** | `{"active": kid, "keys": [{"kid", "privateKey": <P-256 private JWK>}]}` |
 
 Durable Object bindings `REPLAY` (`ReplayStore`) and `ENROLLMENTS` (`EnrollmentStore`) are created by

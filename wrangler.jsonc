@@ -14,14 +14,35 @@
     "SEPOLIA_RPC_URL": "https://ethereum-sepolia-rpc.publicnode.com",
     // Independent second provider: decision reads must agree across both (ATTE-27).
     "SEPOLIA_RPC_URL_SECONDARY": "https://sepolia.gateway.tenderly.co",
+    // Demo PEP (ATTE-20): a stand-in for Gatekeeper's attest PEP under /api/demo-pep. See specs/vendor-portal-demo.md.
+    "DEMO_PEP_ISSUER": "https://attest.gmac.io/api/demo-pep",
+    // Gatekeeper-style verifiers[] entry. Copy `keys` from https://verify.attest.gmac.io/.well-known/jwks.json
+    // ([{"kid", "publicKey": {kty, crv, x, y}}]); until then the PEP answers challenges with attest_not_configured.
+    // The digest is apps/verifier's catalog digest for demo.insurance.cgl.min-2m (a test keeps it in sync).
+    "DEMO_PEP_VERIFIER": "{\"issuer\":\"https://verify.attest.gmac.io\",\"endpoint\":\"https://verify.attest.gmac.io/v1/presentations\",\"keys\":[{\"kid\":\"verifier-2026-11-22-42cfda23\",\"publicKey\":{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"0ZxfLD-kG38b8hniAgnQr4QQWQXkToXQkaidV3ZlYM0\",\"y\":\"EptB6i8fEPRAExJdUkygLeXJmZlb_SNILngLU40r-PI\"}}],\"requirements\":[{\"id\":\"demo.insurance.cgl.min-2m\",\"digest\":\"2251414534a86a6cbe9b53d6a030b6fbe4437f8d1e7341ec0bc91246846b3d20\"}]}",
+    // Further IdPs for the caller's access token (seam for Nathan, NATH-15). The demo identity is built in.
+    "DEMO_PEP_IDENTITY_PROVIDERS": "[]",
+    // Where the demo PEP's sealed epochs are anchored: DecisionLogAnchor on Sepolia (deployed at block 12190829).
+    // logId = decisionLogId("attest-demo-pep"). Publisher key: secret DEMO_PEP_ANCHOR_KEY (0x + 64 hex).
+    "DEMO_PEP_ANCHOR": "{\"chainId\":11155111,\"address\":\"0x7020EE914B517Da8F7F8D42Dc436763898FaA8Ad\",\"logId\":\"0x6b0b609dfc1698b1d74ce391632963f26f2e8e658f85b133594967a3145a054c\"}",
   },
+  // Secrets (wrangler secret put): DEMO_PEP_ANCHOR_KEY (publisher EVM key), DEMO_PEP_SIGNING_KEY and DEMO_IDENTITY_SIGNING_KEY,
+  // each {"active": kid, "keys": [{kid, privateKey}]}. Generate with apps/issuer/scripts/new-demo-pep-key.mjs
+  // (rotate with --merge-stdin; the current secret is never written to disk).
+  // Per-IP limits for the demo PEP (ATTE-20), applied in the Worker before the Durable Object.
+  "ratelimits": [
+    { "name": "DEMO_PEP_TOKEN_LIMITER", "namespace_id": "2001", "simple": { "limit": 10, "period": 60 } },
+    { "name": "DEMO_PEP_API_LIMITER", "namespace_id": "2002", "simple": { "limit": 60, "period": 60 } },
+  ],
   "durable_objects": {
     "bindings": [
       { "name": "INSTITUTIONS", "class_name": "InstitutionService" },
+      { "name": "DEMO_PEP", "class_name": "DemoPepService" },
     ],
   },
   "migrations": [
     { "tag": "institution-v2", "new_sqlite_classes": ["InstitutionService"] },
+    { "tag": "demo-pep-v1", "new_sqlite_classes": ["DemoPepService"] },
   ],
   "workers_dev": false,
   "preview_urls": false,

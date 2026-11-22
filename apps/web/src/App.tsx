@@ -1,10 +1,11 @@
+// Imported first: Vite dev rewrites CommonJS imports to consts, so `lazy` must be initialized before use.
+import { lazy, Suspense, useEffect, useState } from "react";
 const EconomyLab = lazy(() => import("./EconomyLab"));
 const HostSetup = lazy(() =>
   import("./HostSetup").then((m) => ({ default: m.HostSetup })),
 );
 import { Landing, BrowserDemos } from "./Landing";
 import { TokenStory } from "./TokenStory";
-import { lazy, Suspense, useEffect, useState } from "react";
 import { Badge, LinkButton } from "@cloudflare/kumo";
 import { FingerprintIcon } from "@phosphor-icons/react";
 import { industries, supplierIndustry } from "@attest/demo";
@@ -23,6 +24,9 @@ const IndustryJourney = lazy(() =>
 );
 const DemoChooser = lazy(() =>
   import("./IndustryJourney").then((m) => ({ default: m.DemoChooser })),
+);
+const VendorPortal = lazy(() =>
+  import("./VendorPortal").then((m) => ({ default: m.VendorPortal })),
 );
 const WalletGuide = lazy(() =>
   import("./WalletGuide").then((m) => ({ default: m.WalletGuide })),
@@ -152,6 +156,8 @@ export function App() {
           >
             {path === "/demo/setup" ? (
               <HostSetup />
+            ) : path === "/demo/vendor-portal" ? (
+              <VendorPortal />
             ) : path.split("?")[0] === "/demo" &&
               !path.includes("registry=") ? (
               <DemoChooser />

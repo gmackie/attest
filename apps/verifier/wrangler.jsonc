@@ -22,13 +22,21 @@
     "CHAIN_FINALITY": "confirmations:3",
     // Pinned Gatekeeper tenant request keys, from GET <gatekeeper>/api/attest/tenants/<tenant>/jwks.
     // JSON [{"issuer": "https://...", "keys": [{"kid": "...", "publicKey": {P-256 public JWK}}]}]
-    "TRUSTED_PEPS": "[]",
+    "TRUSTED_PEPS": "[{\"issuer\":\"https://attest.gmac.io/api/demo-pep\",\"keys\":[{\"kid\":\"demo-pep-request-2026-11-22-221d3da8\",\"publicKey\":{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"UXXfYoggNT11exzmSRTBZuJj0n4ejL-BFsx55vew1cw\",\"y\":\"sb9ioOiFtrryTQrncSzZ9kS0oltgh--oNZONkweuicM\"}}]}]",
     // IdPs whose access tokens authenticate holder enrollment.
-    // JSON [{"issuer": "https://...", "jwksUri": "https://...", "audience": "..."}]
-    "IDENTITY_PROVIDERS": "[]",
+    // JSON [{"issuer": "https://...", "jwksUri": "https://...", "audience": "...", "clientId"?, "bindingTtlMs"?}]
+    // The demo identity (ATTE-20) must carry clientId "attest-vendor-portal-demo" and bindingTtlMs 86400000.
+    "IDENTITY_PROVIDERS": "[{\"issuer\":\"https://attest.gmac.io/api/demo-pep/identity\",\"jwksUri\":\"https://attest.gmac.io/api/demo-pep/identity/jwks\",\"audience\":\"https://verify.attest.gmac.io\",\"clientId\":\"attest-vendor-portal-demo\",\"bindingTtlMs\":86400000}]",
+    // Browser origins allowed to call the verifier cross-origin (bearer tokens only, never cookies).
+    // The attest.gmac.io vendor portal (ATTE-20) enrolls and presents from the browser.
+    "CORS_ORIGINS": "[\"https://attest.gmac.io\"]",
   },
   // Secret (wrangler secret put RESULT_SIGNING_KEYS): {"active": kid, "keys": [{"kid", "privateKey"}]}.
   // Generate with: node apps/verifier/scripts/new-result-key.mjs
+  // Per-IP limit on POST /v1/enrollments (ATTE-20): anonymous demo identities must not drive enrollment load.
+  "ratelimits": [
+    { "name": "ENROLLMENT_RATE_LIMITER", "namespace_id": "2101", "simple": { "limit": 10, "period": 60 } },
+  ],
   "durable_objects": {
     "bindings": [
       { "name": "REPLAY", "class_name": "ReplayStore" },

@@ -6,7 +6,9 @@
     "@attest/chain-evm": "workspace:*",
     "@attest/core": "workspace:*",
     "@attest/demo": "workspace:*",
+    "@attest/mandates": "workspace:*",
     "@attest/proofs": "workspace:*",
+    "@attest/verifier": "workspace:*",
     "@noble/curves": "1.9.7",
     "@pcd/pod": "0.5.1",
     "effect": "4.0.2",
@@ -15,5 +17,8 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261009.1"
+  },
+  "scripts": {
+    "new-demo-pep-key": "node scripts/new-demo-pep-key.mjs"
   }
 }

@@ -170,3 +170,18 @@ describe.skipIf(!available)("DecisionLogAnchor", () => {
   });
 });
 });
+
+describe("merkleAuditPaths (ATTE-20)", () => {
+  it("matches merkleRoot and inclusionProof for every leaf of trees of size 1 to 17", async () => {
+    const { merkleAuditPaths, merkleRoot: root, inclusionProof: proof, verifyInclusion: verify } = await import("../src/decision-log");
+    for (let n = 1; n <= 17; n++) {
+      const leaves = Array.from({ length: n }, (_, i) => i.toString(16).padStart(64, "0"));
+      const audit = await merkleAuditPaths(leaves);
+      expect(audit.root).toBe(await root(leaves));
+      for (let i = 0; i < n; i++) {
+        expect(audit.paths[i]).toEqual(await proof(leaves, i));
+        expect(await verify(leaves[i]!, i, n, audit.paths[i]!, audit.root)).toBe(true);
+      }
+    }
+  });
+});

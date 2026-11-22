@@ -19,8 +19,8 @@ import {
 import {
   cglMin2m, DEMO_CARRIER_ID, DEMO_CARRIER_PUBLIC_KEY, defaultCatalog, type Catalog, type CatalogEntry,
 } from "../src/catalog";
-import { ConfigError, parseTrustedPeps, rpcUrl, type DurableObjectNamespaceLike, type Env } from "../src/config";
-import { ENROLLMENT_SCHEMA, EnrollmentStore, signEnrollment, type DurableState, type EnrollmentStatement } from "../src/enrollment";
+import { ConfigError, parseIdentityProviders, parseTrustedPeps, rpcUrl, type DurableObjectNamespaceLike, type Env } from "../src/config";
+import { ENROLLMENT_SCHEMA, EnrollmentStore, MAX_KEYS_PER_SUBJECT, signEnrollment, type DurableState, type EnrollmentStatement } from "../src/enrollment";
 import { createHandler, HEALTH_CACHE_MS, MAX_BODY_BYTES, type HandlerDeps } from "../src/handler";
 import { defaultJwksFetcher, JWKS_FAILURE_TTL_MS } from "../src/idp";
 import { replayName } from "../src/ports";
@@ -291,7 +291,7 @@ describe("holder enrollment", () => {
     const handler = makeHandler(new FakeChain()), { env, enrollments } = makeEnv();
     expect(await enroll(handler, env)).toMatchObject({ status: 201, body: { enrolled: true, subject: user, holderPublicKey } });
     expect(await enroll(handler, env)).toMatchObject({ status: 200, body: { existing: true } });
-    expect([...enrollments.instances.keys()]).toEqual([`holder:${holderPublicKey}`]);
+    expect([...enrollments.instances.keys()].filter((k) => k.startsWith("holder:"))).toEqual([`holder:${holderPublicKey}`]);
     // The same key cannot then be bound to a second account.
     const mallory: SubjectRef = { issuer: IDP, subject: "user_mallory" };
     const token = await jwt({ iss: IDP, sub: mallory.subject, aud: IDP_AUDIENCE, exp: NOW / 1000 + 600 }, idp.privateKey);
@@ -523,7 +523,7 @@ describe("H1: one holder key, one spelling", () => {
     for (const alias of Object.values(keyAliases()))
       expect((await enroll(handler, env, { subject: { issuer: IDP, subject: "user_mallory" }, holderPublicKey: alias }, { token })).body)
         .toEqual({ code: "noncanonical_holder_key" });
-    expect([...enrollments.instances.keys()]).toEqual([`holder:${holderPublicKey}`]);
+    expect([...enrollments.instances.keys()].filter((k) => k.startsWith("holder:"))).toEqual([`holder:${holderPublicKey}`]);
   });
   it("refuses a presentation whose holder key is not canonical", async () => {
     const { env } = makeEnv(), r = baseRequest();
@@ -579,6 +579,67 @@ describe("M2: body limits", () => {
     });
     expect(await read(await raw(stream, { "content-length": "10" }))).toEqual({ status: 413, body: { code: "payload_too_large" } });
     expect(pulled).toBeLessThan(20);
+  });
+});
+
+describe("ATTE-20 M3: bounded, expiring enrollment", () => {
+  const keyFor = (n: number) => (n + 0x60).toString(16).padStart(2, "0").repeat(32);
+  it("caps active holder keys per subject, and frees a slot when a binding fails", async () => {
+    const handler = makeHandler(new FakeChain()), { env } = makeEnv();
+    for (let i = 0; i < MAX_KEYS_PER_SUBJECT; i++)
+      expect((await enroll(handler, env, {}, { privateKey: keyFor(i) })).status).toBe(201);
+    // Re-enrolling an existing key is still fine; a sixth key is refused.
+    expect((await enroll(handler, env, {}, { privateKey: keyFor(0) })).status).toBe(200);
+    expect(await enroll(handler, env, {}, { privateKey: keyFor(9) })).toEqual({ status: 409, body: { code: "too_many_holder_keys" } });
+    // Another subject trying to take one of those keys is refused without consuming a slot.
+    const mallory = "user_mallory";
+    const token = await jwt({ iss: IDP, sub: mallory, aud: IDP_AUDIENCE, exp: NOW / 1000 + 600 }, idp.privateKey);
+    for (let i = 0; i < 3; i++)
+      expect((await enroll(handler, env, { subject: { issuer: IDP, subject: mallory } }, { privateKey: keyFor(i), token })).status).toBe(409);
+    expect((await enroll(handler, env, { subject: { issuer: IDP, subject: mallory } }, { privateKey: keyFor(8), token })).status).toBe(201);
+  });
+  it("expires bindings from an IdP with bindingTtlMs, then lets the key rebind; an alarm deletes them", async () => {
+    const providers = JSON.stringify([{ issuer: IDP, jwksUri: "https://login.acme.example/jwks", audience: IDP_AUDIENCE, bindingTtlMs: 3_600_000 }]);
+    const handler = makeHandler(new FakeChain()), { env, enrollments } = makeEnv({ IDENTITY_PROVIDERS: providers });
+    const first = await enroll(handler, env);
+    expect(first).toMatchObject({ status: 201, body: { expiresAt: NOW + 3_600_000 } });
+    const holder = enrollments.instances.get(`holder:${holderPublicKey}`)!;
+    expect(holder.storage.alarm).toBe(NOW + 3_600_000);
+    // Bound before expiry; unbound (and rebindable by someone else) after it.
+    const stub = (now: number) => env.ENROLLMENTS.get(env.ENROLLMENTS.idFromName(`holder:${holderPublicKey}`))
+      .fetch(`https://enrollments/binding?now=${now}`, { method: "GET" }).then((r) => r.json());
+    expect(await stub(NOW + 3_599_999)).toMatchObject({ binding: { subject: user.subject } });
+    expect(await stub(NOW + 3_600_000)).toEqual({ binding: null });
+    clock = NOW + 3_600_001;
+    try {
+      const mallory = "user_mallory";
+      const token = await jwt({ iss: IDP, sub: mallory, aud: IDP_AUDIENCE, exp: Math.floor(clock / 1000) + 600, iat: Math.floor(clock / 1000) }, idp.privateKey);
+      expect((await enroll(handler, env, { subject: { issuer: IDP, subject: mallory }, issuedAt: clock - 1000 }, { token })).status).toBe(201);
+    } finally {
+      clock = NOW;
+    }
+    // The alarm deletes an expired binding outright.
+    const storage = new MemoryStorage();
+    const store = new EnrollmentStore({ storage });
+    await store.fetch(new Request("https://enrollments/binding", { method: "PUT",
+      body: JSON.stringify({ issuer: IDP, subject: "s", enrolledAt: 1, expiresAt: 2 }) }));
+    await store.alarm();
+    expect(storage.data.size).toBe(0);
+    expect(() => parseIdentityProviders(JSON.stringify([{ issuer: IDP, jwksUri: "https://x.example/j", audience: "a", bindingTtlMs: 10 }])))
+      .toThrow(ConfigError);
+  });
+  it("rate-limits enrollment per client IP before verifying the token", async () => {
+    const seen: string[] = [];
+    const limiter = { limit: async ({ key }: { key: string }) => { seen.push(key); return { success: seen.length <= 1 }; } };
+    const handler = makeHandler(new FakeChain()), { env } = makeEnv({ ENROLLMENT_RATE_LIMITER: limiter });
+    const ip = { "cf-connecting-ip": "203.0.113.7" };
+    const statement = { schema: ENROLLMENT_SCHEMA, verifier: VERIFIER, subject: user, holderPublicKey, issuedAt: NOW - 10_000 };
+    const token = await jwt({ iss: IDP, sub: user.subject, aud: IDP_AUDIENCE, exp: NOW / 1000 + 600 }, idp.privateKey);
+    const body = { statement, signature: signEnrollment(statement as EnrollmentStatement, holderKey) };
+    expect((await post(handler, env, "/v1/enrollments", body, { authorization: `Bearer ${token}`, ...ip })).status).toBe(201);
+    expect(await read(await post(handler, env, "/v1/enrollments", body, { authorization: `Bearer ${token}`, ...ip })))
+      .toEqual({ status: 429, body: { code: "rate_limited" } });
+    expect(seen).toEqual(["enroll:203.0.113.7", "enroll:203.0.113.7"]);
   });
 });
 

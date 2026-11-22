@@ -30,6 +30,7 @@
     "contracts/scripts/**/*.ts",
     "vitest.config.ts",
     "apps/verifier/src/**/*.ts",
-    "apps/verifier/test/**/*.ts"
+    "apps/verifier/test/**/*.ts",
+    "apps/issuer/test/**/*.ts"
   ]
 }

@@ -41,9 +41,15 @@ importers:
       '@attest/demo':
         specifier: workspace:*
         version: link:../../packages/demo
+      '@attest/mandates':
+        specifier: workspace:*
+        version: link:../../packages/mandates
       '@attest/proofs':
         specifier: workspace:*
         version: link:../../packages/proofs
+      '@attest/verifier':
+        specifier: workspace:*
+        version: link:../../packages/verifier
       '@noble/curves':
         specifier: 1.9.7
         version: 1.9.7
@@ -246,6 +252,9 @@ importers:
       '@attest/proofs':
         specifier: workspace:*
         version: link:../proofs
+      '@attest/verifier':
+        specifier: workspace:*
+        version: link:../verifier
       '@attest/wallet':
         specifier: workspace:*
         version: link:../wallet

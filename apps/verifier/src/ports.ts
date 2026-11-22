@@ -59,6 +59,10 @@ function pinnedAuthority(policy: Extract<IssuerPolicy, { authority: "pinned" }>,
 }
 
 export const holderEnrollmentName = (holderPublicKey: string) => `holder:${holderPublicKey}`;
+export async function subjectEnrollmentName(subject: SubjectRef): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${subject.issuer}\n${subject.subject}`)));
+  return "subject:" + Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 export async function replayName(issuer: string, requestId: string): Promise<string> {
   const bytes = new TextEncoder().encode(`${issuer}\n${requestId}`);
@@ -101,7 +105,8 @@ export function buildPorts(deps: PortDeps): PresentationVerifierPorts {
     },
     async holderBound(subject: SubjectRef, holderPublicKey: string) {
       const stub = deps.enrollments.get(deps.enrollments.idFromName(holderEnrollmentName(holderPublicKey)));
-      const res = await stub.fetch("https://enrollments/binding", { method: "GET" });
+      // Expired bindings (IdPs with a bindingTtlMs) read as unbound at this verification's instant.
+      const res = await stub.fetch(`https://enrollments/binding?now=${deps.now}`, { method: "GET" });
       if (!res.ok) throw new VerifierError("enrollment_unavailable");
       const { binding } = (await res.json()) as { binding: { issuer: string; subject: string } | null };
       return binding !== null && binding.issuer === subject.issuer && binding.subject === subject.subject;

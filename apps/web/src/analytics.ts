@@ -6,7 +6,10 @@ export type JourneyEvent =
   | "demo_completed"
   | "wallet_connected"
   | "proofs_generated"
-  | "decision_recorded";
+  | "decision_recorded"
+  | "access_challenged"
+  | "access_allowed"
+  | "receipt_verified";
 
 export type JourneyProps = Record<string, string | number | boolean>;
 

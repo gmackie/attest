@@ -114,6 +114,19 @@ export function DemoChooser() {
             Build a contractor passport →
           </LinkButton>
         </LayerCard>
+        <LayerCard className="infra-card">
+          <Badge variant="outline">Demo · synthetic credentials · demo PEP</Badge>
+          <h2>Vendor portal: prove to access</h2>
+          <p>
+            A demonstration: approve a payout for the fictional supplier:acme
+            by privately proving CGL insurance ≥ $2M with a synthetic demo
+            credential, then verify the decision's inclusion receipt. Nothing
+            here is real authorization or real coverage.
+          </p>
+          <LinkButton href="#/testnet/vendor-portal" variant="primary">
+            Prove to access →
+          </LinkButton>
+        </LayerCard>
         {industryIds.map((id) => {
           const d = industryDefinition(id);
           return (

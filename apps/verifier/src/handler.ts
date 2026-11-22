@@ -5,13 +5,15 @@
 import { Effect } from "effect";
 import type { ChainEndpoint } from "@attest/chain-evm";
 import type { CriteriaRequest, GpcProofEnvelope } from "@attest/proofs";
-import { requirementDigest, verifyPresentation, VerifierError } from "@attest/verifier";
+import { checkProofRequest, requirementDigest, verifyPresentation, VerifierError } from "@attest/verifier";
 import { assertCatalog, catalogDigests, defaultCatalog, type Catalog } from "./catalog";
-import { ConfigError, parseConfig, type Env, type VerifierConfig } from "./config";
+import { ConfigError, parseConfig, probeResultKeys, type DurableObjectStub, type Env, type VerifierConfig } from "./config";
+import { BodyLimitError, readRequestText } from "./limits";
+import { MAX_FAILED_ATTEMPTS } from "./replay";
 import { maxBlockAgeMs, noCredentialStatusRegistry, snapshotOnce, statusReader, type CredentialStatusRegistry } from "./chain";
 import { checkEnrollment, EnrollmentError } from "./enrollment";
 import { defaultJwksFetcher, TokenError, verifyAccessToken, type JwksFetcher } from "./idp";
-import { buildPorts, holderEnrollmentName } from "./ports";
+import { buildPorts, holderEnrollmentName, replayName } from "./ports";
 
 export interface HandlerDeps {
   catalog?: Catalog;
@@ -29,6 +31,7 @@ export interface HandlerDeps {
 /** HTTP status for each stable code. Everything else from verification is a 400. */
 const STATUS: Record<string, number> = {
   request_replayed: 409,
+  attempts_exhausted: 429,
   holder_already_enrolled: 409,
   status_unavailable: 503,
   chain_unavailable: 503,
@@ -50,6 +53,7 @@ class HttpFailure {
 const toFailure = (cause: unknown): HttpFailure => {
   if (cause instanceof HttpFailure) return cause;
   if (cause instanceof ConfigError) return new HttpFailure(cause.code, 503);
+  if (cause instanceof BodyLimitError) return new HttpFailure(cause.code, cause.status);
   if (cause instanceof EnrollmentError) return new HttpFailure(cause.code, STATUS[cause.code] ?? cause.status);
   if (cause instanceof TokenError) return new HttpFailure(cause.code, STATUS[cause.code] ?? 401);
   if (cause instanceof VerifierError) return new HttpFailure(cause.code, STATUS[cause.code] ?? 400);
@@ -65,13 +69,14 @@ const json = (body: unknown, status = 200, extra: Record<string, string> = {}) =
     headers: { "content-type": "application/json", "cache-control": "no-store", ...extra },
   });
 
-const MAX_BODY_BYTES = 512 * 1024;
+export const MAX_BODY_BYTES = 512 * 1024;
+/** Health chain snapshots are reused for this long, so /health cannot drive RPC load. */
+export const HEALTH_CACHE_MS = 20_000;
 const readJson = (request: Request) =>
   Effect.gen(function* () {
     if (!(request.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json"))
       return yield* failWith("unsupported_media_type");
-    const text = yield* attempt(() => request.text());
-    if (text.length > MAX_BODY_BYTES) return yield* failWith("payload_too_large");
+    const text = yield* attempt(() => readRequestText(request, MAX_BODY_BYTES));
     return yield* attempt(() => {
       try {
         return JSON.parse(text) as unknown;
@@ -81,30 +86,43 @@ const readJson = (request: Request) =>
     });
   });
 
-/** Unverified peek at the request's PEP issuer, only to namespace the replay record. */
-function peekIssuer(token: unknown): string {
-  try {
-    const part = String(token).split(".")[1] ?? "";
-    const payload = JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/"))) as { issuer?: unknown };
-    return typeof payload.issuer === "string" ? payload.issuer : "";
-  } catch {
-    return "";
-  }
-}
+const replayCall = (record: DurableObjectStub, path: "/check" | "/fail", expiresAt: number, now: number) =>
+  attempt(async () => {
+    const res = await record.fetch(`https://replay${path}`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expiresAt, now }),
+    });
+    if (!res.ok) throw new VerifierError("replay_store_unavailable");
+    return (await res.json()) as { consumed: boolean; failures: number; exhausted: boolean };
+  });
 
 export function createHandler(deps: HandlerDeps) {
   const catalog = deps.catalog ?? defaultCatalog;
-  assertCatalog(catalog);
+  // Checked once, at first use; a broken catalog makes every route answer verifier_misconfigured.
+  let catalogReady: Promise<void> | undefined;
+  const checkCatalog = () => (catalogReady ??= assertCatalog(catalog).catch(() => {
+    throw new ConfigError("catalog");
+  }));
   const now = deps.now ?? (() => Date.now());
   const newId = deps.newId ?? (() => crypto.randomUUID());
   const fetchJwks = deps.fetchJwks ?? defaultJwksFetcher();
   const credentialStatus = deps.credentialStatus ?? noCredentialStatusRegistry;
-  let cached: { env: Env; config: VerifierConfig } | undefined;
+  // Parsed, catalog-checked and key-probed once per env (isolate); a failure is retried on the next request.
+  let cached: { env: Env; config: Promise<VerifierConfig> } | undefined;
   const config = (env: Env) =>
     attempt(() => {
-      if (cached?.env !== env) cached = { env, config: parseConfig(env) };
+      if (cached?.env !== env) {
+        const pending = (async () => {
+          await checkCatalog();
+          const parsed = parseConfig(env);
+          await probeResultKeys(parsed.resultKeys);
+          return parsed;
+        })();
+        cached = { env, config: pending };
+        pending.catch(() => { if (cached?.config === pending) cached = undefined; });
+      }
       return cached.config;
     });
+  let healthChain: { config: VerifierConfig; at: number; value: Record<string, unknown> & { ok: boolean } } | undefined;
 
   const presentations = (request: Request, env: Env) =>
     Effect.gen(function* () {
@@ -115,14 +133,30 @@ export function createHandler(deps: HandlerDeps) {
         return yield* failWith("invalid_shape");
       const { request: token, presentation } = body as { request: unknown; presentation: unknown };
       if (typeof token !== "string") return yield* failWith("invalid_jws");
+      const at = now();
+      // Verify the request first (cheap): the replay record is named from the *verified* issuer and id,
+      // and unsigned junk never touches the attempt budget.
+      const { request: verified } = yield* checkProofRequest(token, {
+        resolveKey: async (issuer, kid) => cfg.peps.get(issuer)?.get(kid) ?? null, audience: cfg.verifierId, now: at,
+      }).pipe(Effect.mapError(toFailure));
+      const record = env.REPLAY.get(env.REPLAY.idFromName(yield* attempt(() => replayName(verified.issuer, verified.id))));
+      const before = yield* replayCall(record, "/check", verified.expiresAt, at);
+      if (before.consumed) return yield* failWith("request_replayed");
+      if (before.exhausted) return yield* failWith("attempts_exhausted");
       const ports = buildPorts({
-        config: cfg, catalog, endpoints: () => deps.endpoints(cfg), replay: env.REPLAY, enrollments: env.ENROLLMENTS,
-        credentialStatus, now: now(), newId, requestIssuer: peekIssuer(token),
+        config: cfg, catalog, endpoints: () => deps.endpoints(cfg), replayRecord: record, enrollments: env.ENROLLMENTS,
+        credentialStatus, now: at, newId,
         ...(deps.proofArtifacts === undefined ? {} : { proofArtifacts: deps.proofArtifacts }),
         ...(deps.verifyProof === undefined ? {} : { verifyProof: deps.verifyProof }),
       });
-      const verified = yield* verifyPresentation(token, presentation, ports).pipe(Effect.mapError(toFailure));
-      return json({ result: verified.token, expiresAt: verified.result.expiresAt });
+      const outcome = yield* verifyPresentation(token, presentation, ports).pipe(Effect.mapError(toFailure), Effect.result);
+      if (outcome._tag === "Failure") {
+        // Count every failed attempt of a validly signed request (MAX_FAILED_ATTEMPTS, then 429).
+        if (outcome.failure.code !== "request_replayed")
+          yield* replayCall(record, "/fail", verified.expiresAt, at).pipe(Effect.ignore);
+        return yield* Effect.fail(outcome.failure);
+      }
+      return json({ result: outcome.success.token, expiresAt: outcome.success.result.expiresAt });
     });
 
   const enrollments = (request: Request, env: Env) =>
@@ -180,23 +214,26 @@ export function createHandler(deps: HandlerDeps) {
         return json({ ok: false, service: "attest-verifier", revision, requirements, config: { ok: false, code: cfgResult.failure.code } }, 503);
       const cfg = cfgResult.success;
       const at = now();
-      const chain = yield* attempt(async () => {
-        try {
-          const snap = await snapshotOnce(statusReader(deps.endpoints(cfg), cfg.finality, () => at))();
-          const blockAgeMs = at - Number(snap.timestamp) * 1000;
-          return {
-            ok: true, chainId: snap.chainId, blockNumber: Number(snap.blockNumber), blockHash: snap.blockHash,
-            blockAgeMs, maxBlockAgeMs: maxBlockAgeMs(cfg.finality), finality: cfg.finality,
-          };
-        } catch (e) {
-          return { ok: false, code: (e as { code?: string }).code ?? "chain_unavailable", finality: cfg.finality };
-        }
-      });
+      if (!healthChain || healthChain.config !== cfg || at - healthChain.at >= HEALTH_CACHE_MS || at < healthChain.at) {
+        const value = yield* attempt(async () => {
+          try {
+            const snap = await snapshotOnce(statusReader(deps.endpoints(cfg), cfg.finality, () => at))();
+            return {
+              ok: true, chainId: snap.chainId, blockNumber: Number(snap.blockNumber), blockHash: snap.blockHash,
+              blockAgeMs: at - Number(snap.timestamp) * 1000, maxBlockAgeMs: maxBlockAgeMs(cfg.finality), finality: cfg.finality,
+            };
+          } catch (e) {
+            return { ok: false, code: (e as { code?: string }).code ?? "chain_unavailable", finality: cfg.finality };
+          }
+        });
+        healthChain = { config: cfg, at, value };
+      }
+      const chain = { ...healthChain.value, observedAt: healthChain.at };
       return json({
         ok: chain.ok, service: "attest-verifier", revision, verifierId: cfg.verifierId, requirements,
         resultKeys: cfg.resultKeys.map((k) => k.kid), activeResultKey: cfg.activeResultKey.kid,
         trustedPeps: [...cfg.peps.keys()], identityProviders: cfg.identityProviders.map((p) => p.issuer),
-        chain, proofBackend: "POD/GPC (beta, unaudited)",
+        chain, proofBackend: "POD/GPC (beta, unaudited)", maxFailedAttempts: MAX_FAILED_ATTEMPTS,
       }, chain.ok ? 200 : 503);
     });
 

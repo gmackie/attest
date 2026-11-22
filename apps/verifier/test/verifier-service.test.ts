@@ -1,6 +1,6 @@
 import path from "node:path";
 import { readFileSync } from "node:fs";
-import { deriveSignerPublicKey, POD } from "@pcd/pod";
+import { decodePublicKey, deriveSignerPublicKey, encodePublicKey, POD } from "@pcd/pod";
 import { Effect } from "effect";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { ChainEndpoint } from "@attest/chain-evm";
@@ -8,21 +8,24 @@ import { commitValue } from "@attest/core";
 import { DEMO_INSURANCE_ISSUER_PRIVATE_KEY } from "@attest/domains";
 import { issueCriteriaPod } from "@attest/proofs";
 import {
-  canonicalPresentationBody, checkVerificationResult, present, PRESENTATION_SCHEMA, PROOF_REQUEST_SCHEMA,
+  canonicalPresentationBody, canonicalPublicKey, checkVerificationResult, present, PRESENTATION_SCHEMA, PROOF_REQUEST_SCHEMA,
   requestDigest, requirementDigest, signProofRequest,
   type Presentation, type ProofRequest, type RequirementDefinition, type SubjectRef,
 } from "@attest/verifier";
 import {
   cglMin2m, DEMO_CARRIER_ID, DEMO_CARRIER_PUBLIC_KEY, defaultCatalog, type Catalog, type CatalogEntry,
 } from "../src/catalog";
-import { ConfigError, parseTrustedPeps, type DurableObjectNamespaceLike, type Env } from "../src/config";
+import { ConfigError, parseTrustedPeps, rpcUrl, type DurableObjectNamespaceLike, type Env } from "../src/config";
 import { ENROLLMENT_SCHEMA, EnrollmentStore, signEnrollment, type DurableState, type EnrollmentStatement } from "../src/enrollment";
-import { createHandler, type HandlerDeps } from "../src/handler";
-import { ReplayStore, REPLAY_PURGE_SKEW_MS } from "../src/replay";
+import { createHandler, HEALTH_CACHE_MS, MAX_BODY_BYTES, type HandlerDeps } from "../src/handler";
+import { defaultJwksFetcher, JWKS_FAILURE_TTL_MS } from "../src/idp";
+import { replayName } from "../src/ports";
+import { MAX_FAILED_ATTEMPTS, ReplayStore, REPLAY_PURGE_SKEW_MS } from "../src/replay";
 import { ANCHOR_PROFILE } from "../src/chain";
 
 const artifacts = path.resolve(import.meta.dirname, "../node_modules/@pcd/proto-pod-gpc-artifacts");
 const NOW = 1_795_300_000_000;
+const DEMO_DIGEST = "2251414534a86a6cbe9b53d6a030b6fbe4437f8d1e7341ec0bc91246846b3d20";
 const VERIFIER = "https://verify.attest.example";
 const PEP = "https://gatekeeper.example/api/attest/tenants/acme";
 const IDP = "https://login.acme.example/api/auth";
@@ -42,8 +45,8 @@ async function p256(): Promise<Pair> {
   return { privateKey, publicKey: { kty: "EC", crv: "P-256", x: publicKey.x!, y: publicKey.y! } };
 }
 const b64 = (v: string | Uint8Array) => Buffer.from(v).toString("base64url");
-async function jwt(claims: Record<string, unknown>, key: JsonWebKey, kid = "idp-1") {
-  const input = `${b64(JSON.stringify({ alg: "ES256", kid, typ: "JWT" }))}.${b64(JSON.stringify(claims))}`;
+async function jwt(claims: Record<string, unknown>, key: JsonWebKey, kid = "idp-1", typ: string | null = "at+jwt") {
+  const input = `${b64(JSON.stringify({ alg: "ES256", kid, ...(typ === null ? {} : { typ }) }))}.${b64(JSON.stringify(claims))}`;
   const k = await crypto.subtle.importKey("jwk", key, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
   const sig = new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, k, new TextEncoder().encode(input)));
   return `${input}.${b64(sig)}`;
@@ -51,11 +54,14 @@ async function jwt(claims: Record<string, unknown>, key: JsonWebKey, kid = "idp-
 
 /* ---------------------------------------------------------------- fake Durable Objects */
 
+const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
 class MemoryStorage {
   data = new Map<string, unknown>();
   alarm: number | null = null;
-  async get<T>(key: string) { return structuredClone(this.data.get(key)) as T | undefined; }
-  async put(key: string, value: unknown) { this.data.set(key, structuredClone(value)); }
+  /** Artificial storage latency, to expose interleaving between concurrent requests. */
+  latencyMs = 0;
+  async get<T>(key: string) { if (this.latencyMs) await tick(this.latencyMs); return structuredClone(this.data.get(key)) as T | undefined; }
+  async put(key: string, value: unknown) { if (this.latencyMs) await tick(this.latencyMs); this.data.set(key, structuredClone(value)); }
   async delete(key: string) { return this.data.delete(key); }
   async deleteAll() { this.data.clear(); }
   async setAlarm(at: number) { this.alarm = at; }
@@ -83,6 +89,7 @@ type Grant = [boolean, `0x${string}`];
 type Anchor = [`0x${string}`, `0x${string}`, `0x${string}`, bigint, boolean];
 const ZERO_ANCHOR: Anchor = ["0x" + "0".repeat(40) as `0x${string}`, `0x${"0".repeat(64)}`, `0x${"0".repeat(64)}`, 0n, false];
 class FakeChain {
+  snapshots = 0;
   head = 1000n;
   headTime = BigInt(NOW / 1000 - 12);
   grants = new Map<string, Grant>();
@@ -93,7 +100,7 @@ class FakeChain {
     return {
       name,
       client: {
-        getChainId: async () => this.chainId,
+        getChainId: async () => { this.snapshots += name === "primary" ? 1 : 0; return this.chainId; },
         getBlock: async (args) => {
           const n = "blockNumber" in args ? args.blockNumber : this.head;
           return { number: n, hash: hash(n), timestamp: this.headTime - (this.head - n) * 12n };
@@ -144,6 +151,7 @@ function makeEnv(over: Partial<Env> = {}) {
   };
   return { env, replay, enrollments };
 }
+let clock = NOW;
 function makeHandler(chain: FakeChain, over: Partial<HandlerDeps> = {}) {
   let n = 0;
   return createHandler({
@@ -152,13 +160,19 @@ function makeHandler(chain: FakeChain, over: Partial<HandlerDeps> = {}) {
       if (uri !== "https://login.acme.example/jwks") throw new Error("unexpected jwks uri");
       return { keys: [{ ...idp.publicKey, kid: "idp-1", alg: "ES256", use: "sig" } as JsonWebKey] };
     },
-    now: () => NOW, newId: () => `res-${++n}`, proofArtifacts: artifacts, ...over,
+    now: () => clock, newId: () => `res-${++n}`, proofArtifacts: artifacts, ...over,
   });
 }
-const post = (handler: ReturnType<typeof createHandler>, env: Env, pathName: string, body: unknown, headers: Record<string, string> = {}) =>
-  handler(new Request(`https://verify.attest.example${pathName}`, {
-    method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body),
+const post = (handler: ReturnType<typeof createHandler>, env: Env, pathName: string, body: unknown, headers: Record<string, string> = {}) => {
+  const text = JSON.stringify(body);
+  return handler(new Request(`https://verify.attest.example${pathName}`, {
+    method: "POST", body: text,
+    headers: { "content-type": "application/json", "content-length": String(Buffer.byteLength(text)), ...headers },
   }), env);
+};
+/** Replay records that were actually consumed (failed attempts also create a record). */
+const consumed = (replay: FakeNamespace<ReplayStore>) =>
+  [...replay.instances.values()].filter((i) => (i.storage.data.get("request") as { consumed?: unknown } | undefined)?.consumed).length;
 const get = (handler: ReturnType<typeof createHandler>, env: Env, pathName: string) =>
   handler(new Request(`https://verify.attest.example${pathName}`), env);
 const read = async (res: Response) => ({ status: res.status, body: (await res.json()) as Record<string, unknown> });
@@ -193,7 +207,7 @@ beforeAll(async () => {
   [pep, rogue, resultKey, oldResultKey, idp, otherIdp] = await Promise.all([p256(), p256(), p256(), p256(), p256(), p256()]);
   const chainPublic = deriveSignerPublicKey(chainCarrierKey);
   chainEntry = {
-    ...cglMin2m, synthetic: true,
+    ...cglMin2m, synthetic: false,
     definition: { ...cglMin2m.definition, id: "insurance.cgl.min-2m.chain-test", acceptedIssuers: [{ id: CHAIN_ISSUER, publicKey: chainPublic }] },
     issuers: { [CHAIN_ISSUER]: { authority: "chain", status: "anchor", chainId: 11155111, registry: REGISTRY, account: CHAIN_ACCOUNT,
       scope: (await commitValue(cglMin2m.definition.schema)) as `0x${string}`,
@@ -214,12 +228,12 @@ describe("catalog", () => {
   });
   it("serves the canonical definition and its digest for Gatekeeper to pin", async () => {
     const handler = makeHandler(new FakeChain()), { env } = makeEnv();
-    const { status, body } = await read(await get(handler, env, "/v1/requirements/insurance.cgl.min-2m"));
+    const { status, body } = await read(await get(handler, env, "/v1/requirements/demo.insurance.cgl.min-2m"));
     expect(status).toBe(200);
     expect(body.requirement).toEqual(cglMin2m.definition);
     expect(body.digest).toBe(defaultDigest);
     // Pinned by Gatekeeper and documented in specs/verifier-service.md: changing it is a breaking change.
-    expect(defaultDigest).toBe("22d9e704a055b73a23cf9464f9f3692f790526dbd49190e1c04442706f73df84");
+    expect(defaultDigest).toBe(DEMO_DIGEST);
     expect(body).toMatchObject({ synthetic: true, issuerPolicies: { [DEMO_CARRIER_ID]: { authority: "pinned", status: "issuer-level" } } });
     expect((await get(handler, env, "/v1/requirements/insurance.unknown")).status).toBe(404);
   });
@@ -255,7 +269,7 @@ describe("configuration", () => {
     expect(status).toBe(200);
     expect(body).toMatchObject({ ok: true, revision: "rev-test", verifierId: VERIFIER,
       chain: { ok: true, chainId: 11155111, blockNumber: 998, finality: { kind: "confirmations", confirmations: 3 } } });
-    expect(body.requirements).toContainEqual({ id: "insurance.cgl.min-2m", digest: defaultDigest, synthetic: true });
+    expect(body.requirements).toContainEqual({ id: "demo.insurance.cgl.min-2m", digest: defaultDigest, synthetic: true });
     const text = JSON.stringify(body);
     expect(text).not.toContain(resultKey.privateKey.d!);
     expect(text).not.toContain("rpc-a.example");
@@ -315,7 +329,7 @@ describe("presentation verification (pinned issuer, real GPC proofs)", () => {
   it("refuses a holder key that is not enrolled, without consuming the request; succeeds once enrolled", async () => {
     expect(await read(await post(handler, world.env, "/v1/presentations", { request: token, presentation })))
       .toEqual({ status: 400, body: { code: "holder_not_bound" } });
-    expect(world.replay.instances.size).toBe(0);
+    expect(consumed(world.replay)).toBe(0);
     expect((await enroll(handler, world.env)).status).toBe(201);
     const ok = await read(await post(handler, world.env, "/v1/presentations", { request: token, presentation }));
     expect(ok.status).toBe(200);
@@ -323,13 +337,15 @@ describe("presentation verification (pinned issuer, real GPC proofs)", () => {
     const jwks = (await read(await get(handler, world.env, "/.well-known/jwks.json"))).body.keys as (JsonWebKey & { kid: string })[];
     const result = await Effect.runPromise(checkVerificationResult(ok.body.result as string, {
       resolveKey: async (issuer, kid) => (issuer === VERIFIER ? jwks.find((k) => k.kid === kid) ?? null : null),
-      trustedVerifier: async (issuer, requirement) => issuer === VERIFIER && requirement === "insurance.cgl.min-2m",
+      trustedVerifier: async (issuer, requirement) => issuer === VERIFIER && requirement === "demo.insurance.cgl.min-2m",
       audience: PEP, now: NOW + 1000,
       expected: { requestDigest: await requestDigest(request), subject: user, credentialSubject: "supplier:acme",
         requirement: request.requirement, decisionId: "dec-7" },
     }));
     expect(result).toMatchObject({ issuer: VERIFIER, audience: PEP, credentialIssuer: DEMO_CARRIER_ID,
-      status: { source: "registry", observedAt: NOW }, issuedAt: NOW, expiresAt: NOW + 60_000 });
+      status: { source: "issuer-authority", observedAt: NOW }, issuedAt: NOW, expiresAt: NOW + 60_000 });
+    // Self-labelled as a demonstration by the signed requirement id.
+    expect(result.requirement.id.startsWith("demo.")).toBe(true);
     expect(ok.body.expiresAt).toBe(NOW + 60_000);
     const serialized = JSON.stringify(result);
     for (const secret of [holderPublicKey, presentation.credential.contentId, "5000000"]) expect(serialized).not.toContain(secret);
@@ -338,7 +354,7 @@ describe("presentation verification (pinned issuer, real GPC proofs)", () => {
   it("refuses a replayed request (409) and records it for purge after expiry", async () => {
     expect(await read(await post(handler, world.env, "/v1/presentations", { request: token, presentation })))
       .toEqual({ status: 409, body: { code: "request_replayed" } });
-    const [record] = [...world.replay.instances.values()];
+    const record = [...world.replay.instances.values()].find((i) => (i.storage.data.get("request") as { consumed?: unknown })?.consumed);
     expect(record!.storage.alarm).toBe(request.expiresAt + REPLAY_PURGE_SKEW_MS);
     await (record!.object as ReplayStore).alarm();
     expect(record!.storage.data.size).toBe(0);
@@ -374,7 +390,7 @@ describe("request and requirement checks (fail before any proof work)", () => {
       const r = baseRequest({ issuedAt: NOW - 300_000, expiresAt: NOW }); return { token: await sign(r), presentation: await presentStub(r) };
     }, 400, "request_expired"],
     ["a requirement digest that does not match the catalog", async () => {
-      const r = baseRequest({ requirement: { id: "insurance.cgl.min-2m", digest: "0".repeat(64) } });
+      const r = baseRequest({ requirement: { id: "demo.insurance.cgl.min-2m", digest: "0".repeat(64) } });
       return { token: await sign(r), presentation: await presentStub(r) };
     }, 400, "requirement_mismatch"],
     ["a requirement this verifier does not offer", async () => {
@@ -393,7 +409,7 @@ describe("request and requirement checks (fail before any proof work)", () => {
     const { token, presentation } = await make();
     expect(await read(await post(makeHandler(new FakeChain()), env, "/v1/presentations", { request: token, presentation })))
       .toEqual({ status, body: { code } });
-    expect(replay.instances.size).toBe(0);
+    expect(consumed(replay)).toBe(0);
   });
   it("rejects malformed bodies", async () => {
     const { env } = makeEnv(), handler = makeHandler(new FakeChain());
@@ -424,7 +440,7 @@ describe("chain-anchored issuer (WorkspaceRegistry grant and anchor via ChainSta
     const r = chainRequest();
     const res = await read(await post(handler, env, "/v1/presentations",
       { request: await sign(r), presentation: await presentStub(r, CHAIN_ISSUER, contentId) }));
-    return { ...res, consumed: replay.instances.size };
+    return { ...res, consumed: consumed(replay) };
   }
 
   it("issues a result with chain evidence for a real proof when grant and anchor are active at the settled block", async () => {
@@ -476,5 +492,221 @@ describe("chain-anchored issuer (WorkspaceRegistry grant and anchor via ChainSta
     const chain = new FakeChain(); grant(chain); await anchor(chain, "424242");
     expect(await attempt(chain, makeHandler(chain, { verifyProof: async () => false })))
       .toEqual({ status: 400, body: { code: "proof_invalid" }, consumed: 0 });
+  });
+});
+
+/* ================================================================ security review (ATTE-28) */
+
+const keyAliases = () => {
+  const hex = encodePublicKey(decodePublicKey(holderPublicKey), "hex");
+  return { hex, upperHex: hex.toUpperCase(), mixedHex: hex.slice(0, 20).toUpperCase() + hex.slice(20), padded: holderPublicKey + "=" };
+};
+
+describe("H1: one holder key, one spelling", () => {
+  it.each(["hex", "upperHex", "mixedHex", "padded"] as const)("refuses to enroll a %s-encoded holder key", async (form) => {
+    const handler = makeHandler(new FakeChain()), { env, enrollments } = makeEnv();
+    const alias = keyAliases()[form];
+    expect(canonicalPublicKey(alias)).toBe(holderPublicKey);
+    expect(await enroll(handler, env, { holderPublicKey: alias })).toEqual({ status: 400, body: { code: "noncanonical_holder_key" } });
+    expect(enrollments.instances.size).toBe(0);
+  });
+  it("cannot bind an alias of an enrolled key to a second subject", async () => {
+    const handler = makeHandler(new FakeChain()), { env, enrollments } = makeEnv();
+    expect((await enroll(handler, env)).status).toBe(201);
+    const token = await jwt({ iss: IDP, sub: "user_mallory", aud: IDP_AUDIENCE, exp: NOW / 1000 + 600 }, idp.privateKey);
+    for (const alias of Object.values(keyAliases()))
+      expect((await enroll(handler, env, { subject: { issuer: IDP, subject: "user_mallory" }, holderPublicKey: alias }, { token })).body)
+        .toEqual({ code: "noncanonical_holder_key" });
+    expect([...enrollments.instances.keys()]).toEqual([`holder:${holderPublicKey}`]);
+  });
+  it("refuses a presentation whose holder key is not canonical", async () => {
+    const { env } = makeEnv(), r = baseRequest();
+    const p = { ...(await presentStub(r)), holderPublicKey: keyAliases().hex };
+    expect((await read(await post(makeHandler(new FakeChain()), env, "/v1/presentations", { request: await sign(r), presentation: p }))).body)
+      .toEqual({ code: "noncanonical_holder_key" });
+  });
+});
+
+describe("H2 and catalog assertions", () => {
+  const broken = async (mutate: (e: CatalogEntry) => CatalogEntry) => {
+    const entry = mutate(structuredClone(chainEntry));
+    const handler = makeHandler(new FakeChain(), { catalog: new Map([[entry.definition.id, entry]]) });
+    return (await read(await get(handler, makeEnv().env, "/health"))).body.config;
+  };
+  const chainPolicy = (e: CatalogEntry) => e.issuers[CHAIN_ISSUER] as Extract<CatalogEntry["issuers"][string], { authority: "chain" }>;
+  it("labels the demo requirement and pins its new digest", () => {
+    expect(cglMin2m.definition.id).toBe("demo.insurance.cgl.min-2m");
+    expect(cglMin2m.synthetic).toBe(true);
+  });
+  it.each([
+    ["a synthetic requirement without the demo. prefix", (e: CatalogEntry) => ({ ...e, synthetic: true })],
+    ["a demo. requirement not marked synthetic", (e: CatalogEntry) => {
+      const id = "demo." + e.definition.id; return { ...e, definition: { ...e.definition, id } };
+    }],
+    ["a chain policy whose signing-key commitment is not the accepted key's", (e: CatalogEntry) => {
+      chainPolicy(e).signingKeyHash = `0x${"9".repeat(64)}`; return e;
+    }],
+    ["a chain policy on another chain", (e: CatalogEntry) => { chainPolicy(e).chainId = 1; return e; }],
+    ["a chain policy whose scope is not the schema's", (e: CatalogEntry) => { chainPolicy(e).scope = `0x${"8".repeat(64)}`; return e; }],
+  ] as const)("refuses %s", async (_name, mutate) => {
+    expect(await broken(mutate)).toEqual({ ok: false, code: "verifier_misconfigured" });
+  });
+});
+
+describe("M2: body limits", () => {
+  const raw = (body: BodyInit, headers: Record<string, string>) =>
+    makeHandler(new FakeChain())(new Request("https://v/v1/presentations", {
+      method: "POST", body, headers: { "content-type": "application/json", ...headers }, ...({ duplex: "half" } as object),
+    }), makeEnv().env);
+  it("requires a Content-Length", async () => {
+    expect(await read(await raw("{}", {}))).toEqual({ status: 411, body: { code: "length_required" } });
+  });
+  it("refuses a declared length over the limit before reading", async () => {
+    expect(await read(await raw("{}", { "content-length": String(MAX_BODY_BYTES + 1) })))
+      .toEqual({ status: 413, body: { code: "payload_too_large" } });
+  });
+  it("counts streamed bytes and aborts past the limit even when the declared length lies", async () => {
+    let pulled = 0;
+    const chunk = new Uint8Array(64 * 1024).fill(0x20);
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) { pulled++; if (pulled > 100) controller.close(); else controller.enqueue(chunk); },
+    });
+    expect(await read(await raw(stream, { "content-length": "10" }))).toEqual({ status: 413, body: { code: "payload_too_large" } });
+    expect(pulled).toBeLessThan(20);
+  });
+});
+
+describe("L1: concurrent enrollment of one key", () => {
+  it("binds the key to exactly one of two racing subjects", async () => {
+    const storage = new MemoryStorage(); storage.latencyMs = 5;
+    const store = new EnrollmentStore({ storage });
+    const put = (subject: string) => store.fetch(new Request("https://enrollments/binding", {
+      method: "PUT", body: JSON.stringify({ issuer: IDP, subject, enrolledAt: NOW }),
+    }));
+    const statuses = (await Promise.all([put("user_a"), put("user_b"), put("user_c")])).map((r) => r.status).sort();
+    expect(statuses).toEqual([200, 409, 409]);
+  });
+});
+
+describe("L2: access token type and client", () => {
+  const claims = () => ({ iss: IDP, sub: user.subject, aud: IDP_AUDIENCE, exp: NOW / 1000 + 600, client_id: "gatekeeper-web" });
+  it.each([["JWT"], ["id+jwt"], [null]] as const)("refuses typ %s by default", async (typ) => {
+    const token = await jwt(claims(), idp.privateKey, "idp-1", typ);
+    expect(await enroll(makeHandler(new FakeChain()), makeEnv().env, {}, { token }))
+      .toEqual({ status: 401, body: { code: "unsupported_token_type" } });
+  });
+  it("accepts an explicitly allowed typ, and enforces a pinned client id", async () => {
+    const idps = (over: object) => JSON.stringify([{ issuer: IDP, jwksUri: "https://login.acme.example/jwks", audience: IDP_AUDIENCE, ...over }]);
+    const plain = await jwt(claims(), idp.privateKey, "idp-1", "JWT");
+    expect((await enroll(makeHandler(new FakeChain()), makeEnv({ IDENTITY_PROVIDERS: idps({ allowedTyp: ["JWT"] }) }).env, {}, { token: plain })).status).toBe(201);
+    const token = await jwt(claims(), idp.privateKey);
+    expect((await enroll(makeHandler(new FakeChain()), makeEnv({ IDENTITY_PROVIDERS: idps({ clientId: "gatekeeper-web" }) }).env, {}, { token })).status).toBe(201);
+    expect(await enroll(makeHandler(new FakeChain()), makeEnv({ IDENTITY_PROVIDERS: idps({ clientId: "other-client" }) }).env, {}, { token }))
+      .toEqual({ status: 401, body: { code: "token_client_mismatch" } });
+  });
+});
+
+describe("L4 and L5: configuration probes", () => {
+  it("refuses a result key whose private half does not match its public half, before consuming anything", async () => {
+    const mismatched = { ...resultKey.privateKey, d: oldResultKey.privateKey.d };
+    const { env, replay, enrollments } = makeEnv({ RESULT_SIGNING_KEYS: JSON.stringify({ active: "k", keys: [{ kid: "k", privateKey: mismatched }] }) });
+    const r = baseRequest();
+    expect(await read(await post(makeHandler(new FakeChain()), env, "/v1/presentations", { request: await sign(r), presentation: await presentStub(r) })))
+      .toEqual({ status: 503, body: { code: "verifier_misconfigured" } });
+    expect(replay.instances.size + enrollments.instances.size).toBe(0);
+  });
+  it("requires https RPC URLs except for explicitly local hosts", async () => {
+    const health = async (over: Partial<Env>) => (await read(await get(makeHandler(new FakeChain()), makeEnv(over).env, "/health"))).body;
+    expect((await health({ SEPOLIA_RPC_URL: "http://rpc-a.example" })).config).toEqual({ ok: false, code: "verifier_misconfigured" });
+    expect((await health({ SEPOLIA_RPC_URL: "http://127.0.0.1:8545", SEPOLIA_RPC_URL_SECONDARY: "http://localhost:8546" })).ok).toBe(true);
+    expect(() => rpcUrl("ftp://rpc.example", "X")).toThrow(ConfigError);
+  });
+});
+
+describe("L6: IdP key fetch", () => {
+  const ok = () => new Response(JSON.stringify({ keys: [{ kty: "EC", kid: "idp-1" }] }), { status: 200 });
+  it("times out a hanging JWKS endpoint", async () => {
+    const hanging = ((_u: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_, reject) =>
+      init?.signal?.addEventListener("abort", () => reject(new Error("aborted"))))) as typeof fetch;
+    await expect(defaultJwksFetcher({ fetch: hanging, timeoutMs: 20 })("https://idp/jwks")).rejects.toMatchObject({ code: "idp_keys_unavailable" });
+  });
+  it("caps the response size, including when the length is not declared", async () => {
+    const big = (() => Promise.resolve(new Response("x".repeat(70_000), { status: 200 }))) as unknown as typeof fetch;
+    await expect(defaultJwksFetcher({ fetch: big })("https://idp/jwks")).rejects.toMatchObject({ code: "idp_keys_unavailable" });
+  });
+  it("caches failures briefly and successes longer", async () => {
+    let calls = 0, t = 0, fail = true;
+    const f = (async () => { calls++; return fail ? new Response("", { status: 500 }) : ok(); }) as unknown as typeof fetch;
+    const fetcher = defaultJwksFetcher({ fetch: f, now: () => t });
+    await expect(fetcher("https://idp/jwks")).rejects.toMatchObject({ code: "idp_keys_unavailable" });
+    await expect(fetcher("https://idp/jwks")).rejects.toMatchObject({ code: "idp_keys_unavailable" });
+    expect(calls).toBe(1);
+    fail = false; t += JWKS_FAILURE_TTL_MS;
+    expect((await fetcher("https://idp/jwks")).keys).toHaveLength(1);
+    t += 1000;
+    await fetcher("https://idp/jwks");
+    expect(calls).toBe(2);
+  });
+});
+
+describe("L3 and L7: replay records and attempt budget", () => {
+  const chainRequest = (over: Partial<ProofRequest> = {}) =>
+    baseRequest({ requirement: { id: chainEntry.definition.id, digest: chainDigest }, ...over });
+  const policy = () => chainEntry.issuers[CHAIN_ISSUER] as Extract<CatalogEntry["issuers"][string], { authority: "chain" }>;
+  async function activeChain(enabled = true) {
+    const chain = new FakeChain(), p = policy();
+    chain.grants.set(`${CHAIN_ACCOUNT.toLowerCase()}|${p.scope}`, [enabled, p.signingKeyHash]);
+    const id = await commitValue({ profile: ANCHOR_PROFILE, schema: chainEntry.definition.schema, contentId: "424242" });
+    chain.anchors.set(id, [p.account, p.scope, (await commitValue("424242")) as `0x${string}`, BigInt(NOW / 1000 + 86_400), false]);
+    return chain;
+  }
+
+  it("names replay records from the verified PEP issuer, so two PEPs may reuse a request id", async () => {
+    const PEP2 = "https://gatekeeper.example/api/attest/tenants/globex";
+    const chain = await activeChain(), handler = makeHandler(chain, { verifyProof: async () => true });
+    const { env, replay } = makeEnv({ TRUSTED_PEPS: JSON.stringify([
+      { issuer: PEP, keys: [{ kid: "pep-1", publicKey: pep.publicKey }] },
+      { issuer: PEP2, keys: [{ kid: "pep-1", publicKey: rogue.publicKey }] }]) });
+    expect((await enroll(handler, env)).status).toBe(201);
+    const a = chainRequest({ id: "req-shared" }), b = chainRequest({ id: "req-shared", issuer: PEP2 });
+    for (const [r, key] of [[a, pep.privateKey], [b, rogue.privateKey]] as const)
+      expect((await post(handler, env, "/v1/presentations", { request: await sign(r, key), presentation: await presentStub(r, CHAIN_ISSUER, "424242") })).status).toBe(200);
+    expect(consumed(replay)).toBe(2);
+    expect([...replay.instances.keys()].sort()).toEqual([await replayName(PEP, "req-shared"), await replayName(PEP2, "req-shared")].sort());
+  });
+
+  it(`refuses a request after ${MAX_FAILED_ATTEMPTS} failed attempts with 429, before chain or proof work`, async () => {
+    const chain = await activeChain(false);
+    const handler = makeHandler(chain, { verifyProof: async () => true });
+    const { env } = makeEnv();
+    expect((await enroll(handler, env)).status).toBe(201);
+    const r = chainRequest(), body = { request: await sign(r), presentation: await presentStub(r, CHAIN_ISSUER, "424242") };
+    for (let i = 0; i < MAX_FAILED_ATTEMPTS; i++)
+      expect((await read(await post(handler, env, "/v1/presentations", body))).body).toEqual({ code: "unauthorized_credential_issuer" });
+    // The grant is restored, but this request's budget is spent.
+    const p = policy(); chain.grants.set(`${CHAIN_ACCOUNT.toLowerCase()}|${p.scope}`, [true, p.signingKeyHash]);
+    const before = chain.snapshots;
+    expect(await read(await post(handler, env, "/v1/presentations", body))).toEqual({ status: 429, body: { code: "attempts_exhausted" } });
+    expect(chain.snapshots).toBe(before);
+    // Unsigned or untrusted junk never spends a legitimate request's budget.
+    const fresh = chainRequest();
+    for (let i = 0; i < MAX_FAILED_ATTEMPTS + 2; i++)
+      await post(handler, env, "/v1/presentations", { request: await sign(fresh, rogue.privateKey), presentation: await presentStub(fresh, CHAIN_ISSUER, "424242") });
+    expect((await post(handler, env, "/v1/presentations", { request: await sign(fresh), presentation: await presentStub(fresh, CHAIN_ISSUER, "424242") })).status).toBe(200);
+  });
+
+  it("caches the /health chain snapshot for about 20 s", async () => {
+    const chain = new FakeChain(), handler = makeHandler(chain), { env } = makeEnv();
+    try {
+      await get(handler, env, "/health"); await get(handler, env, "/health");
+      expect(chain.snapshots).toBe(1);
+      clock = NOW + HEALTH_CACHE_MS - 1; await get(handler, env, "/health");
+      expect(chain.snapshots).toBe(1);
+      clock = NOW + HEALTH_CACHE_MS; chain.headTime += BigInt(HEALTH_CACHE_MS / 1000);
+      await get(handler, env, "/health");
+      expect(chain.snapshots).toBe(2);
+    } finally {
+      clock = NOW;
+    }
   });
 });

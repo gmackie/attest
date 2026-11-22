@@ -13,7 +13,7 @@ import {
 } from "@attest/verifier";
 import type { CriteriaRequest, GpcProofEnvelope } from "@attest/proofs";
 import type { Catalog, IssuerPolicy } from "./catalog";
-import type { DurableObjectNamespaceLike, VerifierConfig } from "./config";
+import type { DurableObjectNamespaceLike, DurableObjectStub, VerifierConfig } from "./config";
 import {
   anchorStatus, ChainStatusError, issuerGrantActive, snapshotOnce, statusReader,
   type CredentialStatusRegistry,
@@ -28,15 +28,14 @@ export interface PortDeps {
   config: VerifierConfig;
   catalog: Catalog;
   endpoints: () => readonly ChainEndpoint[];
-  replay: DurableObjectNamespaceLike;
   enrollments: DurableObjectNamespaceLike;
   credentialStatus: CredentialStatusRegistry;
   now: number;
   newId(): string;
   proofArtifacts?: string;
   verifyProof?: (proof: GpcProofEnvelope, request: CriteriaRequest, artifacts?: string) => Promise<boolean>;
-  /** PEP issuer of the request being verified, used only to namespace replay records. */
-  requestIssuer: string;
+  /** Replay record for this request: named from the *verified* PEP issuer and request id. */
+  replayRecord: DurableObjectStub;
 }
 
 const chainFailure = (cause: unknown): never => {
@@ -122,20 +121,20 @@ export function buildPorts(deps: PortDeps): PresentationVerifierPorts {
       const credential = await deps.credentialStatus.lookup(query);
       if (credential) return credential;
       // Issuer-level only: the pinned authority path is active now. This says nothing about
-      // revocation of the individual credential; the evidence source is "registry".
+      // revocation of the individual credential, and the signed evidence says so: "issuer-authority".
       if (policy.authority !== "pinned") return null;
       const authority = pinnedAuthority(policy, query.schema, now);
-      if (!authority) return { status: "revoked", validUntil: now, evidence: { source: "registry", observedAt: now } };
-      return { status: "active", validUntil: authority.validUntil, evidence: { source: "registry", observedAt: now } };
+      const evidence = { source: "issuer-authority" as const, observedAt: now };
+      if (!authority) return { status: "revoked", validUntil: now, evidence };
+      return { status: "active", validUntil: authority.validUntil, evidence };
     },
-    async consumeRequest(requestId, digest, expiresAt) {
-      const stub = deps.replay.get(deps.replay.idFromName(await replayName(deps.requestIssuer, requestId)));
-      const res = await stub.fetch("https://replay/consume", {
+    async consumeRequest(_requestId, digest, expiresAt) {
+      const res = await deps.replayRecord.fetch("https://replay/consume", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ digest, expiresAt, now }),
       });
       if (!res.ok) throw new VerifierError("replay_store_unavailable");
-      return ((await res.json()) as { consumed: boolean }).consumed;
+      return ((await res.json()) as { consumedNow: boolean }).consumedNow;
     },
     resultKey: { kid: config.activeResultKey.kid, privateKey: config.activeResultKey.privateKey },
     now: () => now,

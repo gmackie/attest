@@ -61,6 +61,9 @@ The presentation contains:
 - `proof`, a GPC envelope
 - `holderSignature`, a POD signed by the holder key over the canonical presentation without the signature
 
+`holderPublicKey` must be canonical (`encodePublicKey(decodePublicKey(k))`, unpadded base64); other spellings
+of the same key fail with `noncanonical_holder_key`, so a key has one identity for enrollment.
+
 The verifier sees the credential subject and content ID. The content ID is needed for the status lookup until
 the status lists in ATTE-24 replace per-credential lookups. Hidden values stay hidden.
 
@@ -86,7 +89,10 @@ An ES256 JWS from the verifier, addressed to the requesting PEP. It carries:
 - `credentialSubject`
 - `requirement`
 - the credential issuer ID
-- status evidence (`source`; plus `chainId`, `blockNumber` and `blockHash` for chain sources)
+- status evidence (`source`; plus `chainId`, `blockNumber` and `blockHash` for chain sources). The source is
+  `chain` (credential status on-chain), `registry` (an off-chain credential-level status registry) or
+  `issuer-authority` (only issuer authority was checked; no credential-level revocation was consulted).
+  `verifyVerificationResult` accepts an optional `acceptedStatusSources` to refuse weaker sources
 - `issuedAt` and `expiresAt`
 
 `expiresAt` is the earliest of: the configured TTL (≤ 5 minutes), the request's own expiry, the end of the

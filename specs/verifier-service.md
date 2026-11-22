@@ -33,17 +33,23 @@ them into `TRUSTED_PEPS`. The verifier does not fetch them.
 | `POST /v1/enrollments` | Holder enrollment, described below. Returns `201` when a key is newly bound, or `200` when it was already bound to the same subject. |
 | `GET /v1/requirements/<id>` | The canonical requirement definition, its digest, the per-issuer policy summary and the `synthetic` flag. |
 | `GET /.well-known/jwks.json` | Every configured result public key (ES256, `kid`), so verifiers can rotate keys. |
-| `GET /health` | Revision, `verifierId`, requirement digests, result key IDs, pinned PEP and IdP issuers, and chain head freshness (block number, age and finality). It returns 503 when the chain is stale or the configuration is invalid. It exposes no secrets or RPC URLs. |
+| `GET /health` | Revision, `verifierId`, requirement digests, result key IDs, pinned PEP and IdP issuers, and chain head freshness (block number, age and finality). The chain snapshot is cached for 20 s, so `/health` cannot drive RPC load. It returns 503 when the chain is stale or the configuration is invalid. It exposes no secrets or RPC URLs. |
+
+`POST` bodies must be `application/json` and must declare a `Content-Length` of at most 512 KiB; chunked
+uploads without a length get `411 length_required`. The stream is also counted while it is read, and the
+read aborts with `413 payload_too_large` as soon as the limit is passed, whatever the declared length says.
 
 Errors return `{code}` with a stable code. Most come from `VerifierError`:
 
 | HTTP status | Codes |
 | --- | --- |
-| 400 | Request, requirement, presentation, issuer, holder and proof failures, for example `invalid_signature`, `request_issuer_key_unavailable`, `request_audience_mismatch`, `requirement_mismatch`, `credential_subject_mismatch`, `unauthorized_credential_issuer`, `holder_not_bound`, `proof_invalid` and `credential_not_active` |
-| 401 | Enrollment token failures, such as `unauthenticated`, `untrusted_token_issuer`, `invalid_token_signature`, `token_audience_mismatch` and `token_expired` |
+| 400 | Request, requirement, presentation, issuer, holder and proof failures, for example `invalid_signature`, `request_issuer_key_unavailable`, `request_audience_mismatch`, `requirement_mismatch`, `credential_subject_mismatch`, `noncanonical_holder_key`, `unauthorized_credential_issuer`, `holder_not_bound`, `proof_invalid` and `credential_not_active` |
+| 401 | Enrollment token failures, such as `unauthenticated`, `untrusted_token_issuer`, `unsupported_token_type`, `invalid_token_signature`, `token_audience_mismatch`, `token_client_mismatch` and `token_expired` |
+| 411, 413 | `length_required` and `payload_too_large` |
+| 429 | `attempts_exhausted`: the request has failed verification 5 times |
 | 403 | `enrollment_subject_mismatch` |
 | 409 | `request_replayed` and `holder_already_enrolled` |
-| 503 | `status_unavailable` (no settled status, for example a credential not yet anchored at the settled block), `chain_unavailable` (RPC disagreement, stale head, wrong chain or reorg), `verifier_misconfigured`, `idp_keys_unavailable` and storage unavailability |
+| 503 | `status_unavailable` (no settled status, for example a credential not yet anchored at the settled block), `chain_unavailable` (RPC disagreement, stale head, wrong chain or reorg), `verifier_misconfigured` (including an invalid catalog or an unusable result key), `idp_keys_unavailable` and storage unavailability |
 
 ## Ports
 
@@ -52,10 +58,11 @@ Errors return `{code}` with a stable code. Most come from `VerifierError`:
 | `resolveRequestKey` | `TRUSTED_PEPS` (`[{issuer, keys: [{kid, publicKey}]}]`). The service refuses any key that carries private members such as `d`. |
 | `requirement` | The static catalog in `apps/verifier/src/catalog.ts`. The request pins `requirementDigest(definition)`. |
 | `authorizedIssuer` | The policy for each catalog issuer, described below. |
-| `holderBound` | The `EnrollmentStore` Durable Object (SQLite-backed), with one instance per holder key. |
+| `holderBound` | The `EnrollmentStore` Durable Object (SQLite-backed), with one instance per canonical holder key. |
 | `status` | The policy for each catalog issuer. It uses `ChainStatusReader` for chain issuers and has an ATTE-21 seam for credential-level registries. |
-| `consumeRequest` | The `ReplayStore` Durable Object (SQLite-backed). There is one instance per `(PEP issuer, request id)`, and the check-and-set is atomic. An alarm purges the record at `expiresAt + 2 min`. |
-| `resultKey` | The active key in the `RESULT_SIGNING_KEYS` secret. |
+| `consumeRequest` | The `ReplayStore` Durable Object (SQLite-backed). There is one instance per `(verified PEP issuer, request id)`: the service verifies the request signature before naming the record, so unsigned input never creates or touches one. Every read-check-write runs in a serial queue, so consume is atomic. An alarm purges the record at `expiresAt + 2 min`. |
+| Attempt budget | The same record counts failed verifications of a validly signed request. A consumed request gets `409` and an exhausted one gets `429 attempts_exhausted`, both before any chain or proof work. Transient 503 failures count too; the PEP issues a new request. |
+| `resultKey` | The active key in the `RESULT_SIGNING_KEYS` secret. At first use, every configured key must import, sign a probe and verify it with its public half; otherwise every route answers `verifier_misconfigured` before anything is consumed. |
 | `verifierId` | `VERIFIER_ID`, which is `https://verify.attest.gmac.io`. |
 | Limits | `maxStatusAgeMs = 60 s` and `resultTtlMs = 5 min`. Results are therefore capped at the status lease, which is at most 60 s after observation. |
 
@@ -66,6 +73,12 @@ can never be later than the verifier's own `now`.
 
 Each accepted issuer has an explicit policy. The policy is the verifier's own operational decision. It is
 **not** part of the requirement digest, but the accepted issuer keys are.
+
+The catalog is checked at first use, and a violation makes every route answer `verifier_misconfigured`:
+- every accepted issuer has exactly one policy;
+- a requirement is `synthetic` if and only if its id starts with `demo.`;
+- a chain policy names chain 11155111, its `signingKeyHash` equals `commitValue(accepted issuer key)` and its
+  `scope` equals `commitValue(schema)`.
 
 - **`authority: "chain"`, `status: "anchor"`.** The verifier reads the issuer's `WorkspaceRegistry` grant,
   `issuers(account, scope)`, and the credential anchor at one settled Sepolia block, through
@@ -83,8 +96,8 @@ Each accepted issuer has an explicit policy. The policy is the verifier's own op
   - Authority is a pinned `@attest/authority` graph, evaluated at verification time. For example, the
     contractor-insurance pack's `grant:carrier` grant covers `insurance.*` on `attest:insurance:cgl:v1` until
     2030.
-  - There is **no credential-level revocation**. Status is issuer-level only, and the result evidence says
-    so with `source: "registry"`.
+  - There is **no credential-level revocation**. Status is issuer-level only, and the signed result evidence
+    says so with `source: "issuer-authority"`. `registry` is reserved for a real credential-level registry.
   - `CredentialStatusRegistry` in `src/chain.ts` is the seam for ATTE-21 (StatusRegistry) and ATTE-24
     (status lists). It returns `null` today. When it returns a status, that status takes precedence.
 
@@ -96,7 +109,7 @@ age of 5 minutes. It can also be `finalized`, with a maximum block age of 30 min
 
 | Requirement | Accepted issuer | Authority | Status |
 | --- | --- | --- | --- |
-| `insurance.cgl.min-2m` (CGL aggregate ≥ $2,000,000 and per occurrence ≥ $1,000,000; schema `attest:insurance:cgl:v1`) | `issuer:carrier` (demo carrier from `@attest/domains`) | pinned | issuer-level |
+| `demo.insurance.cgl.min-2m` (CGL aggregate ≥ $2,000,000 and per occurrence ≥ $1,000,000; schema `attest:insurance:cgl:v1`) | `issuer:carrier` (demo carrier from `@attest/domains`) | pinned | issuer-level (`issuer-authority`) |
 
 No shared `WorkspaceRegistry` with a CGL issuer grant is deployed on Sepolia yet; the connected workspace
 ships a deployment tool, not a shared registry. The chain path is implemented and tested against an
@@ -104,9 +117,11 @@ in-memory two-RPC chain. To use it, add a deployed registry address, issuer acco
 entry as `authority: "chain"`, and anchor credentials under the profile above.
 
 The demo carrier's signing key is published in the repository, so anyone can mint a credential it
-accepts. The catalog marks this requirement `synthetic: true`, and `/v1/requirements` and `/health`
-expose that flag. Treat results as protocol demonstrations until a real issuer key replaces it. Replacing
-the key changes the digest that Gatekeeper pins.
+accepts. The requirement is therefore `synthetic: true` and its id starts with `demo.`. The id is inside every
+signed result (`requirement.id`) and in every Gatekeeper attribute and policy derived from it
+(`attest.req.demo.…`), so demonstration results label themselves without a schema change. Treat them as
+protocol demonstrations. A real issuer needs a new, non-`demo.` requirement, with a new digest for
+Gatekeeper to pin.
 
 The domain pack is an example profile. It does not speak for ACORD, insurers or regulators.
 
@@ -129,13 +144,20 @@ The domain pack is an example profile. It does not speak for ACORD, insurers or 
 
 **Token checks.**
 - The token must be ES256 or RS256, with RSA keys of at least 2048 bits.
+- The header `typ` must be `at+jwt` (RFC 9068 access token), so ID tokens and other JWTs from the same IdP are
+  refused. An IdP entry can override this with `allowedTyp`, for IdPs that issue plain `JWT` access tokens.
+- When the IdP entry sets `clientId`, the token's `client_id` (or `azp`) must equal it.
 - Its `iss` must exactly equal a configured IdP.
-- The signing key comes only from that IdP's configured JWKS URI. It is fetched over HTTPS, redirects are
-  refused, and keys are cached for 5 minutes.
+- The signing key comes only from that IdP's configured JWKS URI. It is fetched over HTTPS with a 5 s timeout
+  and a 64 KiB response cap, and redirects are refused. Keys are cached for 5 minutes and failures for 30 s.
 - `aud` must include the configured audience.
 - `exp` is required, and `nbf` and `iat` are checked with 30 seconds of skew.
 
 **Statement and binding checks.**
+- `holderPublicKey` must be in canonical form: `encodePublicKey(decodePublicKey(k))`, unpadded base64.
+  `@pcd/pod` also decodes hex in any case and padded base64 to the same key, so those spellings are refused
+  (`noncanonical_holder_key`); otherwise one key could be enrolled to several subjects under different
+  spellings. `parsePresentation` in `@attest/verifier` applies the same rule.
 - The authenticated subject is the token's `{iss, sub}`. The statement must name the same subject;
   otherwise the request fails with `enrollment_subject_mismatch`. The subject is never taken from the body.
 - The statement must name this verifier, be at most 5 minutes old and be no more than 30 seconds in the
@@ -143,7 +165,8 @@ The domain pack is an example profile. It does not speak for ACORD, insurers or 
 - The POD must verify under the enrolled key.
 - A holder key is bound to at most one subject. A second subject is refused with `holder_already_enrolled`,
   so one key-holder cannot lend presentations to several accounts.
-- Re-enrolling a key to the same subject is idempotent.
+- Re-enrolling a key to the same subject is idempotent. Concurrent enrollments of one key are serialized, so
+  only one subject can win.
 
 Wallets can use `signEnrollment` from `apps/verifier/src/enrollment.ts`. Un-enrollment and key-loss
 recovery are not implemented.
@@ -167,8 +190,8 @@ carrier's private key is not in the bundle.
 | --- | --- | --- |
 | `VERIFIER_ID` | var | `https://verify.attest.gmac.io` |
 | `TRUSTED_PEPS` | var (JSON) | `[{"issuer": "<Gatekeeper tenant issuer>", "keys": [{"kid", "publicKey": <P-256 public JWK>}]}]` |
-| `IDENTITY_PROVIDERS` | var (JSON) | `[{"issuer", "jwksUri", "audience"}]` |
-| `SEPOLIA_RPC_URL`, `SEPOLIA_RPC_URL_SECONDARY` | vars | Two independent providers. The same host twice is refused. |
+| `IDENTITY_PROVIDERS` | var (JSON) | `[{"issuer", "jwksUri", "audience", "allowedTyp"?, "clientId"?}]`; `allowedTyp` defaults to `["at+jwt"]` |
+| `SEPOLIA_RPC_URL`, `SEPOLIA_RPC_URL_SECONDARY` | vars | Two independent https providers. The same host twice is refused; plain http is accepted only for `localhost`, `127.0.0.1` and `[::1]`. |
 | `CHAIN_FINALITY` | var | `confirmations:3` (default) or `finalized` |
 | `RESULT_SIGNING_KEYS` | **secret** | `{"active": kid, "keys": [{"kid", "privateKey": <P-256 private JWK>}]}` |
 
@@ -203,15 +226,21 @@ Remove the old `kid` after that key's last request has expired (at most 10 minut
   "issuer": "https://verify.attest.gmac.io",
   "endpoint": "https://verify.attest.gmac.io/v1/presentations",
   "keys": [{"kid": "<kid>", "publicKey": {"kty": "EC", "crv": "P-256", "x": "…", "y": "…"}}],
-  "requirements": [{"id": "insurance.cgl.min-2m", "digest": "22d9e704a055b73a23cf9464f9f3692f790526dbd49190e1c04442706f73df84"}]
+  "requirements": [{"id": "demo.insurance.cgl.min-2m", "digest": "2251414534a86a6cbe9b53d6a030b6fbe4437f8d1e7341ec0bc91246846b3d20"}]
 }
 ```
 
 - **`issuer`** is `VERIFIER_ID`. It is also the `audience` Gatekeeper puts in each proof request.
 - **`keys`** come from the stderr of `new-result-key.mjs`. Cross-check them against
   `GET /.well-known/jwks.json` after deploying.
-- **`requirements[].digest`** comes from `GET /v1/requirements/insurance.cgl.min-2m`, or from `/health`.
+- **`requirements[].digest`** comes from `GET /v1/requirements/demo.insurance.cgl.min-2m`, or from `/health`.
   Verify it independently by recomputing `requirementDigest` on the returned definition.
+
+Gatekeeper's vendored `verifyVerificationResult` must include the `issuer-authority` status source
+(`STATUS_SOURCES` in `packages/verifier/src/result.ts`). Older copies reject such results with
+`invalid_status_evidence`, which fails closed. A PEP that requires credential-level revocation can pass
+`acceptedStatusSources: ["chain"]` (or `["chain", "registry"]`) and gets `status_source_not_accepted` for
+issuer-level results.
 
 ## What a result does and does not establish
 

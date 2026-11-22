@@ -12,20 +12,15 @@
  * several accounts through this verifier.
  */
 import { POD, type JSONPOD } from "@pcd/pod";
-import { canonicalJson } from "@attest/mandates/protocol";
-import { isCanonicalPublicKey, type SubjectRef } from "@attest/verifier";
+import {
+  canonicalStatement, ENROLLMENT_SCHEMA, isCanonicalPublicKey, signEnrollment,
+  type EnrollmentStatement, type SubjectRef,
+} from "@attest/verifier";
 
-export const ENROLLMENT_SCHEMA = "attest.holder-enrollment/v1";
+// The statement codec lives in @attest/verifier so wallets (the browser journey) can sign it.
+export { canonicalStatement, ENROLLMENT_SCHEMA, signEnrollment, type EnrollmentStatement };
 export const MAX_ENROLLMENT_AGE_MS = 300_000;
 const FUTURE_SKEW_MS = 30_000;
-
-export interface EnrollmentStatement {
-  schema: typeof ENROLLMENT_SCHEMA;
-  verifier: string;
-  subject: SubjectRef;
-  holderPublicKey: string;
-  issuedAt: number;
-}
 
 export class EnrollmentError extends Error {
   constructor(readonly code: string, readonly status = 400) {
@@ -35,13 +30,6 @@ export class EnrollmentError extends Error {
 const need = (ok: unknown, code: string, status = 400): void => {
   if (!ok) throw new EnrollmentError(code, status);
 };
-
-/** Canonical bytes of the statement (the same canonical JSON as attest.* JWS payloads). */
-export const canonicalStatement = (s: EnrollmentStatement): string => canonicalJson(s);
-
-/** Wallet side: sign an enrollment statement with the holder key. */
-export const signEnrollment = (statement: EnrollmentStatement, holderPrivateKey: string): JSONPOD =>
-  POD.sign({ enrollment: { type: "string", value: canonicalStatement(statement) } }, holderPrivateKey).toJSON();
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 

@@ -26,3 +26,4 @@ export const verifyPresentation = (requestToken: string, presentation: unknown, 
   effect(() => verifyPresentationForRequest(requestToken, presentation, ports), "verification_unavailable");
 export const checkVerificationResult = (token: string, options: ResultVerification) =>
   effect(() => verifyVerificationResult(token, options), "result_verification_unavailable");
+export * from "./enrollment.ts";

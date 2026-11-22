@@ -26,6 +26,9 @@
     // IdPs whose access tokens authenticate holder enrollment.
     // JSON [{"issuer": "https://...", "jwksUri": "https://...", "audience": "..."}]
     "IDENTITY_PROVIDERS": "[]",
+    // Browser origins allowed to call the verifier cross-origin (bearer tokens only, never cookies).
+    // The attest.gmac.io vendor portal (ATTE-20) enrolls and presents from the browser.
+    "CORS_ORIGINS": "[\"https://attest.gmac.io\"]",
   },
   // Secret (wrangler secret put RESULT_SIGNING_KEYS): {"active": kid, "keys": [{"kid", "privateKey"}]}.
   // Generate with: node apps/verifier/scripts/new-result-key.mjs

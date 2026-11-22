@@ -44,6 +44,7 @@ export * from "./host-setup";
 export * from "./economy";
 export * from "./status";
 export * from "./decision-log";
+export * from "./decision-receipt";
 export * from "./mandate-status";
 export * from "./revocation";
 export * from "./networks";

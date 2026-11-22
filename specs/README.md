@@ -14,6 +14,7 @@ The [agent mandate profile](agent-mandates.md) specifies experimental operationa
 - [`proof-requests.md`](proof-requests.md) — experimental signed proof requests, holder presentations and short-lived verification results for enforcement points such as Gatekeeper.
 - [`mandate-status-registry.md`](mandate-status-registry.md) — experimental on-chain, digest-bound mandate status (active, revoked, superseded) read through settled, multi-RPC chain snapshots with ≤ 60 s leases.
 - [`networks.md`](networks.md) — per-network EVM configuration (Sepolia, Base Sepolia, write-gated mainnet): RPC providers and measurements, finality policy, the single write gate and contract manifests.
+- [`vendor-portal-demo.md`](vendor-portal-demo.md) — the "prove to access" vendor portal journey: a demo PEP standing in for Gatekeeper, private CGL proof, signed verifier result, and a decision receipt with an RFC 6962 inclusion proof.
 - [`verifier-service.md`](verifier-service.md) — the deployable `attest-verifier` Worker: endpoints, ports, holder enrollment, trust boundaries, configuration and key rotation.
 
 The normative direction is: standardize facts, provenance, authority and proof

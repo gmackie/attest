@@ -45,6 +45,10 @@ import {
   type JourneyPresentation,
 } from "../../../packages/demo/src/testnet-journey";
 import artifact from "../../web/public/contracts/InstitutionRegistry.json";
+import type { DemoPepEnv } from "./demo-pep/config";
+import { DEMO_PEP_OBJECT } from "./demo-pep/durable";
+import { parseOrigins, withCors } from "../../verifier/src/cors";
+export { DemoPepService } from "./demo-pep/durable";
 type Bundle = {
   institutions: {
     id: number;
@@ -54,9 +58,13 @@ type Bundle = {
     credentialPrivateKey: string;
   }[];
 };
-type Env = {
+type Env = DemoPepEnv & {
   ASSETS: Fetcher;
   INSTITUTIONS: DurableObjectNamespace;
+  /** Demo PEP (stand-in for Gatekeeper's attest PEP), one singleton instance. */
+  DEMO_PEP: DurableObjectNamespace;
+  /** JSON array of extra browser origins for /api/demo-pep (default none: the portal is same-origin). */
+  DEMO_PEP_CORS_ORIGINS?: string;
   INSTITUTION_WALLETS: string;
   INDUSTRY_WALLETS: string;
   SEPOLIA_RPC_URL: string;
@@ -183,11 +191,22 @@ async function saltFor(secret: string, value: unknown) {
     (b) => b.toString(16).padStart(2, "0"),
   ).join("");
 }
+/** Same-origin for attest.gmac.io; other browser origins only if listed in DEMO_PEP_CORS_ORIGINS. */
+const demoPep = withCors(
+  (env: Env) => parseOrigins(env.DEMO_PEP_CORS_ORIGINS),
+  "GET, POST",
+  async (request: Request, env: Env) =>
+    (await env.DEMO_PEP.get(env.DEMO_PEP.idFromName(DEMO_PEP_OBJECT)).fetch(
+      request as never,
+    )) as unknown as Response,
+);
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (!url.pathname.startsWith("/api/"))
       return env.ASSETS.fetch(request as never) as unknown as Promise<Response>;
+    if (url.pathname === "/api/demo-pep" || url.pathname.startsWith("/api/demo-pep/"))
+      return demoPep(request, env);
     if (url.pathname === "/api/v2/institutions" && request.method === "GET")
       return response({
         chainId: 11155111,

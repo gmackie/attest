@@ -114,6 +114,17 @@ export function DemoChooser() {
             Build a contractor passport →
           </LinkButton>
         </LayerCard>
+        <LayerCard className="infra-card">
+          <Badge variant="outline">PEP challenge · private proof · receipt</Badge>
+          <h2>Vendor portal: prove to access</h2>
+          <p>
+            Approve a payout for supplier:acme by privately proving CGL
+            insurance ≥ $2M, then verify the decision's inclusion receipt.
+          </p>
+          <LinkButton href="#/testnet/vendor-portal" variant="primary">
+            Prove to access →
+          </LinkButton>
+        </LayerCard>
         {industryIds.map((id) => {
           const d = industryDefinition(id);
           return (

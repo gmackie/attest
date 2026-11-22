@@ -33,6 +33,8 @@ export interface Env {
   SEPOLIA_RPC_URL_SECONDARY: string;
   /** "finalized" or "confirmations:<n>" (default confirmations:3, as ATTE-27). */
   CHAIN_FINALITY?: string;
+  /** JSON array of exact browser origins allowed cross-origin (no credentials), e.g. ["https://attest.gmac.io"]. */
+  CORS_ORIGINS?: string;
   REPLAY: DurableObjectNamespaceLike;
   ENROLLMENTS: DurableObjectNamespaceLike;
   CF_VERSION_METADATA?: { id?: string; tag?: string; timestamp?: string };

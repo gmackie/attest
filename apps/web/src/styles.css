@@ -4177,3 +4177,30 @@ footer p {
     background: #d9e9da;
   }
 }
+
+/* Vendor portal (ATTE-20) */
+.vendor-portal .receipt-facts {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0 0 1rem;
+}
+.vendor-portal .receipt-facts dt {
+  font-weight: 600;
+  margin-top: 0.5rem;
+}
+.vendor-portal .receipt-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.vendor-portal .receipt-facts ol {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+.vendor-portal .receipt-facts code {
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+.vendor-portal [role="region"] + .controls,
+.vendor-portal .guided-columns aside .controls {
+  margin-top: 0.75rem;
+}

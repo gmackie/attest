@@ -168,7 +168,7 @@ The domain pack is an example profile. It does not speak for ACORD, insurers or 
 - Re-enrolling a key to the same subject is idempotent. Concurrent enrollments of one key are serialized, so
   only one subject can win.
 
-Wallets can use `signEnrollment` from `apps/verifier/src/enrollment.ts`. Un-enrollment and key-loss
+Wallets can use `signEnrollment` from `@attest/verifier` (re-exported by `apps/verifier/src/enrollment.ts`). Un-enrollment and key-loss
 recovery are not implemented.
 
 ## Proof verification in a Worker
@@ -193,6 +193,7 @@ carrier's private key is not in the bundle.
 | `IDENTITY_PROVIDERS` | var (JSON) | `[{"issuer", "jwksUri", "audience", "allowedTyp"?, "clientId"?}]`; `allowedTyp` defaults to `["at+jwt"]` |
 | `SEPOLIA_RPC_URL`, `SEPOLIA_RPC_URL_SECONDARY` | vars | Two independent https providers. The same host twice is refused; plain http is accepted only for `localhost`, `127.0.0.1` and `[::1]`. |
 | `CHAIN_FINALITY` | var | `confirmations:3` (default) or `finalized` |
+| `CORS_ORIGINS` | var (JSON) | Exact browser origins allowed cross-origin, without credentials: `["https://attest.gmac.io"]` for the vendor portal ([`vendor-portal-demo.md`](vendor-portal-demo.md)). Missing or invalid means none. |
 | `RESULT_SIGNING_KEYS` | **secret** | `{"active": kid, "keys": [{"kid", "privateKey": <P-256 private JWK>}]}` |
 
 Durable Object bindings `REPLAY` (`ReplayStore`) and `ENROLLMENTS` (`EnrollmentStore`) are created by

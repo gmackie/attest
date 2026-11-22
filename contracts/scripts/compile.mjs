@@ -14,6 +14,7 @@ for (const name of [
   "PrivateClaimRoots",
   "ZkAttestMinterV1",
   "DecisionLogAnchor",
+  "StatusRegistry",
 ]) {
   const sourceFile = ["AttestToken", "AttestClaims", "AttestPassport"].includes(name) ? "AttestEconomy" :
     ["PrivateClaimRoots", "ZkAttestMinterV1"].includes(name) ? "AttestZkMinter" : name;
@@ -49,7 +50,7 @@ for (const name of [
   console.log(`compiled ${destination}`);
 
   // Server-side contracts are not shipped to the web bundle.
-  if (!["AssuranceAnchor", "DecisionLogAnchor"].includes(name)) {
+  if (!["AssuranceAnchor", "DecisionLogAnchor", "StatusRegistry"].includes(name)) {
     const publicDir = new URL(
       "../../apps/web/public/contracts/",
       import.meta.url,

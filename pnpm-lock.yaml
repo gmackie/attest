@@ -148,6 +148,12 @@ importers:
       '@attest/domain':
         specifier: workspace:*
         version: link:../domain
+      '@attest/mandates':
+        specifier: workspace:*
+        version: link:../mandates
+      effect:
+        specifier: 4.0.2
+        version: 4.0.2
       viem:
         specifier: ^2.57.4
         version: 2.57.4(typescript@5.9.3)(zod@4.6.5)

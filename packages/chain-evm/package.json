@@ -9,6 +9,8 @@
   "dependencies": {
     "@attest/core": "workspace:*",
     "@attest/domain": "workspace:*",
+    "@attest/mandates": "workspace:*",
+    "effect": "4.0.2",
     "viem": "^2.57.4"
   },
   "devDependencies": {

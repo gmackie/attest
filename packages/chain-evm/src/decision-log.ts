@@ -8,6 +8,7 @@
  */
 import { parseAbi, type Address, type Hex } from "viem";
 import { ChainStatusError, chainEvidence, type ChainSnapshot, type ChainStatusReader } from "./status";
+import { assertWritable } from "./networks";
 
 export const decisionLogAnchorAbi = parseAbi([
   "constructor(address administrator_)",
@@ -105,8 +106,8 @@ export interface AnchorReceipt { adapter: string; ref: string; anchoredAt: numbe
 /**
  * A RootAnchor adapter for Gatekeeper's ledger (`packages/ledger/anchor.ts`). Idempotent: an epoch
  * already anchored with the same commitment returns a receipt; a different commitment for the same
- * epoch fails with anchor_conflict instead of being overwritten. Mainnet is refused until the
- * production release gate is lifted (specs/production-readiness.md).
+ * epoch fails with anchor_conflict instead of being overwritten. Mainnet and unknown chains are
+ * refused by assertWritable until the production release gate is lifted (specs/production-readiness.md).
  */
 export function decisionLogAnchorAdapter(options: {
   clients: AnchorPublisherClients;
@@ -118,7 +119,8 @@ export function decisionLogAnchorAdapter(options: {
   const { clients, address, log } = options;
   const confirmations = options.confirmations ?? 2;
   const now = options.now ?? (() => Date.now());
-  if (clients.chainId === 1) fail("production_writes_disabled");
+  // Mainnet and unknown chains are refused by the shared write gate (specs/networks.md).
+  assertWritable(clients.chainId);
   const ref = (suffix: string) => `eip155:${clients.chainId}:${address.toLowerCase()}:${log}:${suffix}`;
   return {
     adapter: "attest-evm",

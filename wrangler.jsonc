@@ -19,7 +19,7 @@
     // Gatekeeper-style verifiers[] entry. Copy `keys` from https://verify.attest.gmac.io/.well-known/jwks.json
     // ([{"kid", "publicKey": {kty, crv, x, y}}]); until then the PEP answers challenges with attest_not_configured.
     // The digest is apps/verifier's catalog digest for demo.insurance.cgl.min-2m (a test keeps it in sync).
-    "DEMO_PEP_VERIFIER": "{\"issuer\":\"https://verify.attest.gmac.io\",\"endpoint\":\"https://verify.attest.gmac.io/v1/presentations\",\"keys\":[],\"requirements\":[{\"id\":\"demo.insurance.cgl.min-2m\",\"digest\":\"2251414534a86a6cbe9b53d6a030b6fbe4437f8d1e7341ec0bc91246846b3d20\"}]}",
+    "DEMO_PEP_VERIFIER": "{\"issuer\":\"https://verify.attest.gmac.io\",\"endpoint\":\"https://verify.attest.gmac.io/v1/presentations\",\"keys\":[{\"kid\":\"verifier-2026-11-22-42cfda23\",\"publicKey\":{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"0ZxfLD-kG38b8hniAgnQr4QQWQXkToXQkaidV3ZlYM0\",\"y\":\"EptB6i8fEPRAExJdUkygLeXJmZlb_SNILngLU40r-PI\"}}],\"requirements\":[{\"id\":\"demo.insurance.cgl.min-2m\",\"digest\":\"2251414534a86a6cbe9b53d6a030b6fbe4437f8d1e7341ec0bc91246846b3d20\"}]}",
     // Further IdPs for the caller's access token (seam for Nathan, NATH-15). The demo identity is built in.
     "DEMO_PEP_IDENTITY_PROVIDERS": "[]",
     // Where the demo PEP's sealed epochs are anchored: DecisionLogAnchor on Sepolia (deployed at block 12190829).

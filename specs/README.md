@@ -16,3 +16,4 @@ The [agent mandate profile](agent-mandates.md) specifies experimental operationa
 
 The normative direction is: standardize facts, provenance, authority and proof
 interfaces—not a universal reputation score or a single global credential root.
+- [`registry-v2-governance.md`](registry-v2-governance.md) — experimental WorkspaceRegistryV2: Safe-compatible two-step administrator rotation, irreversible emergency revocation with reason codes, issuer key windows and compromise cutoff, and pinned deployment manifests.

@@ -45,3 +45,5 @@ export * from "./economy";
 export * from "./status";
 export * from "./decision-log";
 export * from "./mandate-status";
+export * from "./manifest";
+export * from "./registry-v2";

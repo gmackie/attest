@@ -19,3 +19,4 @@ The normative direction is: standardize facts, provenance, authority and proof
 interfaces—not a universal reputation score or a single global credential root.
 - [`revocation-roots.md`](revocation-roots.md) — experimental per-issuer revocation epoch roots, non-membership checks through ChainStatusReader, the AT-04 race bound and correlation analysis.
 - [`registry-v2-governance.md`](registry-v2-governance.md) — experimental WorkspaceRegistryV2: Safe-compatible two-step administrator rotation, irreversible emergency revocation with reason codes, issuer key windows and compromise cutoff, and pinned deployment manifests.
+- [`mandate-account.md`](mandate-account.md) — experimental, testnet-only ERC-4337 smart account enforcing signed mandate limits with a Gatekeeper decision co-signature (security review required before any value beyond testnet).

@@ -14,10 +14,10 @@ import {
   sourceDigest, verifyPinnedDeployment, type DeploymentManifest,
 } from "../src/manifest";
 import {
-  deployRegistryV2, encodeRegistryV2Call, reasonCode, reasonLabel, registryV2Abi, registryV2AnchorStatus,
+  deployRegistryV2, encodeRegistryV2Call, reasonCode, reasonLabel, registryV2Abi, registryV2AnchorKey, registryV2AnchorStatus,
   registryV2KeyValidity, registryV2Writer, type RegistryV2AnchorQuery, type RegistryV2Write,
 } from "../src/registry-v2";
-import { createChainStatusReader, publicClientEndpoint, workspaceAnchorStatus } from "../src/status";
+import { createChainStatusReader, publicClientEndpoint, readRegistryVersion, workspaceAnchorStatus } from "../src/status";
 
 const binary = process.env.ANVIL_BIN ?? path.join(homedir(), ".foundry/bin/anvil");
 const available = existsSync(binary);
@@ -138,7 +138,7 @@ describe.skipIf(!available)("WorkspaceRegistryV2", () => {
   const status = (q: RegistryV2AnchorQuery) => registryV2AnchorStatus(statusReader(), manifest, q);
   const anchor = async (id: Hex) => send(issuer(), "anchor", [id, scope, hex("c"), (await now()) + 30n * 86_400n]);
   const anchoredAt = async (id: Hex) =>
-    ((await reader.readContract({ address: registry, abi: registryV2Abi, functionName: "anchorKeys", args: [id] })) as readonly [Hex, bigint])[1];
+    ((await reader.readContract({ address: registry, abi: registryV2Abi, functionName: "anchorBindings", args: [registryV2AnchorKey(issuer(), id)] })) as readonly [Hex, bigint])[1];
 
   describe("manifest verification", () => {
     it("accepts the pinned registry and refuses wrong code hash, wrong chain, wrong contract and missing manifests", async () => {
@@ -218,6 +218,25 @@ describe.skipIf(!available)("WorkspaceRegistryV2", () => {
       expect(await revert(safe, "proposeAdministrator", [safe])).toBe("InvalidInput");
       expect(await reader.readContract({ address: registry, abi: registryV2Abi, functionName: "administrator" })).toBe(safe);
     });
+
+    it("a proposal lapses after PROPOSAL_TTL and cannot be accepted; a fresh proposal can", async () => {
+      const ttl = await reader.readContract({ address: registry, abi: registryV2Abi, functionName: "PROPOSAL_TTL" });
+      expect(ttl).toBe(7n * 86_400n);
+      await viaSafe("proposeAdministrator", [accounts[3]!]);
+      const proposedAt = await now();
+      const deadline = await reader.readContract({ address: registry, abi: registryV2Abi, functionName: "pendingAdministratorDeadline" });
+      expect(deadline).toBe(proposedAt + ttl);
+      expect(await revert(accounts[3]!, "acceptAdministrator")).toBe("ok");
+      await rpc("evm_setNextBlockTimestamp", [Number(deadline) + 1]);
+      await rpc("anvil_mine", ["0x1"]);
+      expect(await revert(accounts[3]!, "acceptAdministrator")).toBe("ProposalExpired");
+      expect(await reader.readContract({ address: registry, abi: registryV2Abi, functionName: "administrator" })).toBe(safe);
+      // A lapsed proposal is replaced by a new one with a new deadline, then cancelled to restore state.
+      await viaSafe("proposeAdministrator", [accounts[3]!]);
+      expect(await revert(accounts[3]!, "acceptAdministrator")).toBe("ok");
+      await viaSafe("cancelAdministratorProposal");
+      expect(await reader.readContract({ address: registry, abi: registryV2Abi, functionName: "pendingAdministratorDeadline" })).toBe(0n);
+    });
   });
 
   describe("compromise drill", () => {
@@ -255,7 +274,8 @@ describe.skipIf(!available)("WorkspaceRegistryV2", () => {
       // Anchors are bound to the key they were written with: presenting another key fails closed.
       expect(await code(status(query(hex("f"), k1)))).toBe("anchor_mismatch");
       expect(await code(status(query(hex("d"), k2)))).toBe("anchor_mismatch");
-      expect(await code(status({ ...query(hex("f"), k2), issuer: accounts[2]! }))).toBe("anchor_mismatch");
+      // Another issuer has its own namespace: the same id there is simply not anchored.
+      expect(await status({ ...query(hex("f"), k2), issuer: accounts[2]! })).toBeNull();
       expect(await code(status({ ...query(hex("f"), k2), commitment: hex("6") }))).toBe("anchor_mismatch");
       expect(await status(query(hex("9")))).toBeNull();
 
@@ -301,21 +321,23 @@ describe.skipIf(!available)("WorkspaceRegistryV2", () => {
       const q = query(hex("7"), hex("5"));
       expect(await status(q)).toMatchObject({ status: "active" });
       const reason = reasonCode("issued_in_error");
-      expect(await revert(issuer(), "emergencyRevokeAnchor", [hex("7"), reason])).toBe("Unauthorized");
-      expect(await revert(accounts[0]!, "emergencyRevokeAnchor", [hex("7"), reason])).toBe("Unauthorized");
-      expect(await revert(safe, "emergencyRevokeAnchor", [hex("7"), hex("0")])).toBe("InvalidInput");
-      expect(await revert(safe, "emergencyRevokeAnchor", [hex("8"), reason])).toBe("InvalidInput");
-      await viaSafe("emergencyRevokeAnchor", [hex("7"), reason]);
+      expect(await revert(issuer(), "emergencyRevokeAnchor", [issuer(), hex("7"), reason])).toBe("Unauthorized");
+      expect(await revert(accounts[0]!, "emergencyRevokeAnchor", [issuer(), hex("7"), reason])).toBe("Unauthorized");
+      expect(await revert(safe, "emergencyRevokeAnchor", [issuer(), hex("7"), hex("0")])).toBe("InvalidInput");
+      expect(await revert(safe, "emergencyRevokeAnchor", [issuer(), hex("8"), reason])).toBe("InvalidInput");
+      // The same id under another issuer's namespace does not exist.
+      expect(await revert(safe, "emergencyRevokeAnchor", [accounts[2]!, hex("7"), reason])).toBe("InvalidInput");
+      await viaSafe("emergencyRevokeAnchor", [issuer(), hex("7"), reason]);
       const revoked = await status(q);
       expect(revoked).toMatchObject({ status: "revoked", reason: "emergency_revoked",
         revocation: { target: "anchor", reason: reason.toLowerCase(), label: "issued_in_error" } });
       expect(reasonLabel(revoked!.revocation!.reason)).toBe("issued_in_error");
       // Irreversible: no undo function exists, a second revocation is refused, and the issuer's own revoke is a no-op.
-      expect(await revert(safe, "emergencyRevokeAnchor", [hex("7"), reasonCode("superseded")])).toBe("AlreadyUsed");
+      expect(await revert(safe, "emergencyRevokeAnchor", [issuer(), hex("7"), reasonCode("superseded")])).toBe("AlreadyUsed");
       expect(await revert(issuer(), "revoke", [hex("7")])).toBe("AlreadyUsed");
       expect(registryV2Abi.some((x) => x.type === "function" && /unrevoke|restore|reinstate/i.test(x.name))).toBe(false);
-      // V1 clients see the revocation through the shared `anchors(...).revoked` flag.
-      const v1View = await reader.readContract({ address: registry, abi: registryAbi, functionName: "anchors", args: [hex("7")] });
+      // The V1-shaped getter, keyed by anchorKey(issuer, id), shows the revocation in its `revoked` flag.
+      const v1View = await reader.readContract({ address: registry, abi: registryAbi, functionName: "anchors", args: [registryV2AnchorKey(issuer(), hex("7"))] });
       expect(v1View[4]).toBe(true);
     });
 
@@ -334,29 +356,75 @@ describe.skipIf(!available)("WorkspaceRegistryV2", () => {
     });
   });
 
-  describe("V1 compatibility", () => {
-    it("keeps the V1 ABI and V1 status semantics, including a disabled grant suspending anchors", async () => {
-      const scope2 = hex("b");
+  describe("anchor namespacing", () => {
+    it("ids are per issuer: another issuer cannot squat, revoke or shadow an id", async () => {
+      const scope2 = hex("b"), other = accounts[2]!, id = hex("3");
       await viaSafe("configureIssuer", [issuer(), scope2, hex("8"), true]);
+      await viaSafe("configureIssuer", [other, scope2, hex("7"), true]);
       const deadline = (await now()) + 86_400n;
-      // V1 ABI writes, signatures unchanged.
+      // `other` front-runs issuer()'s id with its own commitment; issuer() can still anchor it.
+      await send(other, "anchor", [id, scope2, hex("6"), deadline]);
+      await send(issuer(), "anchor", [id, scope2, hex("c"), deadline]);
+      expect(await revert(issuer(), "anchor", [id, scope2, hex("c"), deadline])).toBe("AlreadyUsed");
+      const mine = { registry, anchorId: id, issuer: issuer(), scope: scope2, commitment: hex("c"), signingKeyHash: hex("8") };
+      const theirs = { registry, anchorId: id, issuer: other, scope: scope2, commitment: hex("6"), signingKeyHash: hex("7") };
+      expect(await status(mine)).toMatchObject({ status: "active" });
+      expect(await status(theirs)).toMatchObject({ status: "active" });
+      // Revoking "the same id" only touches the caller's own anchor.
+      await send(other, "revoke", [id]);
+      expect(await status(theirs)).toMatchObject({ reason: "anchor_revoked" });
+      expect(await status(mine)).toMatchObject({ status: "active" });
+      // Presenting the other issuer's commitment under this issuer fails closed.
+      expect(await code(status({ ...mine, commitment: hex("6") }))).toBe("anchor_mismatch");
+      // Contract and client derive the same key; the V1-shaped getter is coherent with it.
+      const key = registryV2AnchorKey(issuer(), id);
+      expect(await reader.readContract({ address: registry, abi: registryV2Abi, functionName: "anchorKey", args: [issuer(), id] })).toBe(key);
+      const view = await reader.readContract({ address: registry, abi: registryAbi, functionName: "anchors", args: [key] });
+      expect(view[0]).toBe(issuer());
+      expect(view[2]).toBe(hex("c"));
+      expect((await reader.readContract({ address: registry, abi: registryAbi, functionName: "anchors", args: [id] }))[0])
+        .toBe("0x0000000000000000000000000000000000000000");
+    });
+  });
+
+  describe("V1 reader against V2", () => {
+    it("V1 workspaceAnchorStatus refuses a V2 registry and still reads a V1 registry", async () => {
+      const r = statusReader();
+      const snap = await r.snapshot();
+      expect(await r.read(snap, (c, n) => readRegistryVersion(c, registry, n))).toBe(2n);
+      expect(await r.read(snap, (c, n) => readRegistryVersion(c, v1, n))).toBe(1n);
+      // A compromised-key anchor (hex "e", see compromise drill) must not come back "active" from the V1 reader.
+      const q = { registry, anchorId: hex("e"), issuer: issuer(), scope, commitment: hex("c"), signingKeyHash: k1 };
+      expect(await code(workspaceAnchorStatus(r, q))).toBe("registry_requires_v2_reader");
+      expect(await code(workspaceAnchorStatus(r, { ...q, anchorId: registryV2AnchorKey(issuer(), hex("e")) }))).toBe("registry_requires_v2_reader");
+      expect(await code(workspaceAnchorStatus(r, { ...q, anchorId: hex("0") }))).toBe("registry_requires_v2_reader");
+
+      // A real V1 registry is unaffected.
+      const v1Write = async (account: Address, functionName: string, args: readonly unknown[]) => {
+        const sim = await reader.simulateContract({ address: v1, abi: registryAbi, account, functionName: functionName as never, args: args as never });
+        await reader.waitForTransactionReceipt({ hash: await wallet.writeContract(sim.request) });
+      };
+      await v1Write(accounts[0]!, "configureIssuer", [issuer(), scope, k1, true]);
+      await v1Write(issuer(), "anchor", [hex("e"), scope, hex("c"), (await now()) + 86_400n]);
+      expect(await workspaceAnchorStatus(statusReader(), { ...q, registry: v1 })).toMatchObject({ status: "active" });
+    });
+  });
+
+  describe("V1 ABI on V2", () => {
+    it("keeps V1 write signatures, receipts and grant suspension semantics", async () => {
+      const scope3 = hex("9");
+      await viaSafe("configureIssuer", [issuer(), scope3, hex("8"), true]);
       const sim = await reader.simulateContract({ address: registry, abi: registryAbi, account: issuer(), functionName: "anchor",
-        args: [hex("3"), scope2, hex("c"), deadline] });
+        args: [hex("2"), scope3, hex("c"), (await now()) + 86_400n] });
       await reader.waitForTransactionReceipt({ hash: await wallet.writeContract(sim.request) });
-      const v1Query = { registry, anchorId: hex("3"), issuer: issuer(), scope: scope2, commitment: hex("c"), signingKeyHash: hex("8") };
-      const v1Reader = createChainStatusReader({ ...statusReader().options });
-      expect(await workspaceAnchorStatus(v1Reader, v1Query)).toMatchObject({ status: "active" });
-      expect(await status({ ...v1Query })).toMatchObject({ status: "active" });
-      await viaSafe("configureIssuer", [issuer(), scope2, hex("8"), false]);
-      expect(await workspaceAnchorStatus(v1Reader, v1Query)).toMatchObject({ reason: "issuer_grant_inactive" });
-      expect(await status({ ...v1Query })).toMatchObject({ status: "revoked", reason: "issuer_grant_inactive" });
-      await viaSafe("configureIssuer", [issuer(), scope2, hex("8"), true]);
-      expect(await status({ ...v1Query })).toMatchObject({ status: "active" });
-      // Documented difference: after rotation V1's reader reports issuer_key_changed; V2 keeps the anchor active.
-      await viaSafe("rotateIssuerKey", [issuer(), scope2, hex("9")]);
-      expect(await workspaceAnchorStatus(v1Reader, v1Query)).toMatchObject({ reason: "issuer_key_changed" });
-      expect(await status({ ...v1Query })).toMatchObject({ status: "active" });
-      // Verifier receipts behave as in V1.
+      const q = { registry, anchorId: hex("2"), issuer: issuer(), scope: scope3, commitment: hex("c"), signingKeyHash: hex("8") };
+      expect(await status(q)).toMatchObject({ status: "active" });
+      await viaSafe("configureIssuer", [issuer(), scope3, hex("8"), false]);
+      expect(await status(q)).toMatchObject({ status: "revoked", reason: "issuer_grant_inactive" });
+      await viaSafe("configureIssuer", [issuer(), scope3, hex("8"), true]);
+      // Unlike V1, rotation keeps earlier anchors active.
+      await viaSafe("rotateIssuerKey", [issuer(), scope3, hex("4")]);
+      expect(await status(q)).toMatchObject({ status: "active" });
       await viaSafe("configureVerifier", [accounts[2]!, true]);
       await send(accounts[2]!, "recordDecision", [hex("1"), hex("2"), true]);
       expect(await revert(accounts[2]!, "recordDecision", [hex("1"), hex("2"), true])).toBe("AlreadyUsed");

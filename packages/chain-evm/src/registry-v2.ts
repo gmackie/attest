@@ -6,7 +6,7 @@
  *
  * Semantics: specs/registry-v2-governance.md.
  */
-import { encodeFunctionData, hexToString, parseAbi, toHex, type Address, type Hex } from "viem";
+import { encodeAbiParameters, encodeFunctionData, hexToString, keccak256, parseAbi, toHex, type Address, type Hex } from "viem";
 import { ChainStatusError, chainEvidence, type ChainSnapshot, type ChainStatusReader, type WorkspaceAnchorQuery } from "./status";
 import { assertPinnedCode, codeHashAt, pinnedDeployment, runtimeCodeHash, type DeploymentManifest } from "./manifest";
 
@@ -18,6 +18,7 @@ export const registryV2Abi = parseAbi([
   "function administrator() view returns (address)",
   "function issuers(address,bytes32) view returns (bool enabled,bytes32 signingKeyHash)",
   "function verifiers(address) view returns (bool)",
+  // V2: keyed by anchorKey(issuer, id), not by the issuer-chosen id.
   "function anchors(bytes32) view returns (address issuer,bytes32 scope,bytes32 commitment,uint64 validUntil,bool revoked)",
   "function usedRequests(address,bytes32) view returns (bool)",
   "function configureIssuer(address issuer,bytes32 scope,bytes32 signingKeyHash,bool enabled)",
@@ -26,9 +27,13 @@ export const registryV2Abi = parseAbi([
   "function revoke(bytes32 id)",
   "function recordDecision(bytes32 requestCommitment,bytes32 proofCommitment,bool satisfied)",
   // V2 governance.
+  "function registryVersion() pure returns (uint256)",
+  "function anchorKey(address issuer,bytes32 id) pure returns (bytes32)",
   "function OPEN_ENDED() view returns (uint64)",
+  "function PROPOSAL_TTL() view returns (uint64)",
   "function pendingAdministrator() view returns (address)",
-  "function anchorKeys(bytes32) view returns (bytes32 signingKeyHash,uint64 anchoredAt)",
+  "function pendingAdministratorDeadline() view returns (uint64)",
+  "function anchorBindings(bytes32) view returns (bytes32 signingKeyHash,uint64 anchoredAt)",
   "function issuerKeys(address,bytes32) view returns (uint64 validFrom,uint64 validUntil,uint64 compromisedAt,bytes32 compromiseReason)",
   "function anchorRevocations(bytes32) view returns (bytes32 reason,uint64 revokedAt)",
   "function grantRevocations(address,bytes32) view returns (bytes32 reason,uint64 revokedAt)",
@@ -40,30 +45,35 @@ export const registryV2Abi = parseAbi([
   "function rotateIssuerKey(address issuer,bytes32 scope,bytes32 signingKeyHash)",
   "function retireIssuerKey(address issuer,bytes32 signingKeyHash,uint64 validUntil)",
   "function markIssuerKeyCompromised(address issuer,bytes32 signingKeyHash,uint64 compromisedAt,bytes32 reason)",
-  "function emergencyRevokeAnchor(bytes32 id,bytes32 reason)",
+  "function emergencyRevokeAnchor(address issuer,bytes32 id,bytes32 reason)",
   "function emergencyRevokeGrant(address issuer,bytes32 scope,bytes32 reason)",
-  "event AdministratorProposed(address indexed current,address indexed proposed)",
+  "event AdministratorProposed(address indexed current,address indexed proposed,uint64 deadline)",
   "event AdministratorProposalCancelled(address indexed current,address indexed proposed)",
   "event AdministratorChanged(address indexed previous,address indexed current)",
   "event CredentialAnchored(bytes32 indexed id,address indexed issuer,bytes32 scope,bytes32 commitment,uint64 validUntil)",
   "event CredentialRevoked(bytes32 indexed id)",
-  "event CredentialKeyBound(bytes32 indexed id,bytes32 signingKeyHash,uint64 anchoredAt)",
+  "event CredentialKeyBound(bytes32 indexed key,address indexed issuer,bytes32 indexed id,bytes32 signingKeyHash,uint64 anchoredAt)",
   "event IssuerKeyRegistered(address indexed issuer,bytes32 indexed signingKeyHash,uint64 validFrom,uint64 validUntil)",
   "event IssuerKeyRetired(address indexed issuer,bytes32 indexed signingKeyHash,uint64 validUntil)",
   "event IssuerKeyCompromised(address indexed issuer,bytes32 indexed signingKeyHash,uint64 compromisedAt,bytes32 reason)",
   "event IssuerKeyRotated(address indexed issuer,bytes32 indexed scope,bytes32 previousKeyHash,bytes32 signingKeyHash)",
-  "event AnchorEmergencyRevoked(bytes32 indexed id,bytes32 indexed reason,uint64 revokedAt)",
+  "event AnchorEmergencyRevoked(bytes32 indexed key,address indexed issuer,bytes32 indexed reason,bytes32 id,uint64 revokedAt)",
   "event GrantEmergencyRevoked(address indexed issuer,bytes32 indexed scope,bytes32 indexed reason,uint64 revokedAt)",
   "error Unauthorized()",
   "error InvalidInput()",
   "error AlreadyUsed()",
   "error NotPendingAdministrator()",
+  "error ProposalExpired()",
   "error GrantRevoked()",
   "error KeyUnusable()",
 ]);
 
 const fail = (code: string, detail?: string): never => { throw new ChainStatusError(code, detail); };
 const ZERO32 = /^0x0{64}$/i;
+
+/** Storage key of an issuer's anchor id in V2 (mirrors the contract's anchorKey). */
+export const registryV2AnchorKey = (issuer: Address, id: Hex): Hex =>
+  keccak256(encodeAbiParameters([{ type: "address" }, { type: "bytes32" }], [issuer, id]));
 
 // ---------------------------------------------------------------- reason codes
 
@@ -89,6 +99,7 @@ export function reasonLabel(code: Hex): string | undefined {
 
 // ---------------------------------------------------------------- status
 
+/** `anchorId` is the issuer-chosen id; the client derives the storage key from (issuer, anchorId). */
 export interface RegistryV2AnchorQuery extends WorkspaceAnchorQuery {
   /**
    * Signing time asserted by the credential itself (ms), if the verifier has one. Key validity
@@ -151,15 +162,16 @@ export async function registryV2AnchorStatus(
   const signedAt = query.signedAt === undefined ? undefined : msToSeconds(query.signedAt);
   const at = snapshot ?? (await reader.snapshot());
   const address = record.address;
+  const storageKey = registryV2AnchorKey(query.issuer, query.anchorId);
   const [codeHash, anchor, bound, key, anchorRevocation, grantRevocation, grant] = (await reader.read(at, (client, blockNumber) => {
     const read = (functionName: string, args: readonly unknown[]) =>
       client.readContract({ address, abi: registryV2Abi, functionName, args, blockNumber });
     return Promise.all([
       codeHashAt(client, address, blockNumber),
-      read("anchors", [query.anchorId]),
-      read("anchorKeys", [query.anchorId]),
+      read("anchors", [storageKey]),
+      read("anchorBindings", [storageKey]),
       read("issuerKeys", [query.issuer, query.signingKeyHash]),
-      read("anchorRevocations", [query.anchorId]),
+      read("anchorRevocations", [storageKey]),
       read("grantRevocations", [query.issuer, query.scope]),
       read("issuers", [query.issuer, query.scope]),
     ]);

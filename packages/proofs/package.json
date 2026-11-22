@@ -11,14 +11,14 @@
     "@attest/domain": "workspace:*",
     "@pcd/gpc": "0.4.1",
     "@pcd/pod": "0.5.1",
-    "@semaphore-protocol/core": "^4.0.3",
-    "effect": "4.0.2"
+    "@semaphore-protocol/core": "4.14.5",
+    "effect": "4.1.4"
   },
   "scripts": {
     "proof:smoke": "tsx scripts/smoke.ts"
   },
   "devDependencies": {
     "@pcd/proto-pod-gpc-artifacts": "0.13.0",
-    "tsx": "^4.20.6"
+    "tsx": "4.23.15"
   }
 }

@@ -27,6 +27,8 @@ for (const name of [
     sources: { [`${sourceFile}.sol`]: { content: source } },
     settings: {
       evmVersion: "paris",
+      // MandateAccount exceeds the EIP-170 size limit unoptimized and needs via-IR for stack depth; other contracts keep their existing output.
+      ...(name === "MandateAccount" ? { optimizer: { enabled: true, runs: 200 }, viaIR: true } : {}),
       outputSelection: {
         "*": {
           "*": ["abi", "evm.bytecode.object", "evm.deployedBytecode.object"],
@@ -52,8 +54,7 @@ for (const name of [
   console.log(`compiled ${destination}`);
 
   // Server-side contracts are not shipped to the web bundle.
-  if (!["AssuranceAnchor", "DecisionLogAnchor", "StatusRegistry"].includes(name)) {
-  if (!["AssuranceAnchor", "DecisionLogAnchor",
+  if (!["AssuranceAnchor", "DecisionLogAnchor", "StatusRegistry",
     "TestStablecoin", // test-only ERC-20, never shipped
   ].includes(name)) {
     const publicDir = new URL(

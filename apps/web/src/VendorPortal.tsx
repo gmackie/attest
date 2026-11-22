@@ -7,7 +7,7 @@
  * The PEP is a demo stand-in for Gatekeeper and the sign-in is a demo identity (Nathan later).
  * Service URLs are configurable so the same journey can point at real Gatekeeper.
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Effect } from "effect";
 import {
   Badge,
@@ -53,6 +53,8 @@ import {
 const json = (v: unknown) => JSON.stringify(v, null, 2);
 const short = (v: string, n = 10) => (v.length > 2 * n + 1 ? `${v.slice(0, n)}…${v.slice(-n)}` : v);
 const STORAGE_KEY = "attest.vendor-portal.endpoints";
+const RECHECK_INTERVAL_MS = 20_000;
+const RECHECK_LIMIT = 15;
 const env = (import.meta as { env?: Record<string, string | undefined> }).env ?? {};
 
 function initialEndpoints(): PortalEndpoints {
@@ -88,6 +90,8 @@ export function VendorPortal() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const trackedVerdict = useRef<string | null>(null);
+  const rechecks = useRef(0);
   const lock = useRef(false);
   const generation = useRef(0);
 
@@ -107,6 +111,8 @@ export function VendorPortal() {
     setReceipt(null);
     setVerification(null);
     setAnchor(null);
+    trackedVerdict.current = null;
+    rechecks.current = 0;
     setMessage("");
     setError("");
   };
@@ -220,14 +226,32 @@ export function VendorPortal() {
       } catch (e) {
         throw new Error(`The receipt does not match the epoch anchored on Sepolia (${e instanceof Error ? e.message : String(e)}). Do not rely on this decision record.`);
       }
-      track("receipt_verified", { surface: "vendor-portal", anchored: verdict === "anchored" });
-      track("demo_completed", { surface: "vendor-portal" });
+      // Re-checks while anchoring is pending must not re-emit the same journey events.
+      if (trackedVerdict.current !== verdict) {
+        trackedVerdict.current = verdict;
+        track("receipt_verified", { surface: "vendor-portal", anchored: verdict === "anchored" });
+        if (verdict === "anchored" || !(a.status === "awaiting-anchoring" || a.status === "awaiting-finality"))
+          track("demo_completed", { surface: "vendor-portal" });
+      }
       setMessage(verdict === "anchored"
         ? "Receipt verified against the root anchored on Sepolia."
         : a.status === "awaiting-anchoring" || a.status === "awaiting-finality"
-          ? "Receipt verified in this browser against the sealed epoch root. On-chain anchoring is pending; check again in a few minutes."
+          ? "Receipt verified in this browser against the sealed epoch root. On-chain anchoring is pending; this page re-checks the chain automatically."
           : "Receipt verified in this browser against the sealed epoch root (not anchored on-chain).");
     });
+
+  // While the epoch is sealed but not yet settled on-chain, re-check every 20 s for up to 5 minutes.
+  const anchorPending = anchor?.status === "awaiting-anchoring" || anchor?.status === "awaiting-finality";
+  useEffect(() => {
+    if (!anchorPending || busy || error || rechecks.current >= RECHECK_LIMIT) return;
+    const timer = setTimeout(() => {
+      rechecks.current += 1;
+      void loadReceipt();
+    }, RECHECK_INTERVAL_MS);
+    return () => clearTimeout(timer);
+    // loadReceipt closes over the current session and decision; re-arm only when the state changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchorPending, busy, error, anchor]);
 
   const saveEndpoints = () => {
     try {
@@ -386,7 +410,14 @@ export function VendorPortal() {
                   Get and verify the receipt
                 </Button>
               ) : (
-                <ReceiptView receipt={receipt} verification={verification} anchor={anchor} />
+                <>
+                  <ReceiptView receipt={receipt} verification={verification} anchor={anchor} />
+                  {anchorPending && (
+                    <Button disabled={busy} variant="secondary" onClick={loadReceipt}>
+                      Check the chain again
+                    </Button>
+                  )}
+                </>
               )}
             </>
           )}

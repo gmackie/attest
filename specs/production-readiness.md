@@ -66,3 +66,21 @@ External Sepolia activation and its end-to-end exercise are owned by ATTE-4 and
 GMA-750 in the separate testnet thread. Their evidence should be linked here when
 available. This readiness work neither submits transactions nor changes registry
 defaults, public invitations, or funding manifests.
+
+## On-chain-verified receipts and trusted setup (ATTE-25)
+
+`contracts/src/PresentationReceipts.sol` records a receipt only after a Groth16 proof verifies on-chain against the
+issuer's live `PrivateClaimRoots` root ([`presentation-receipts.md`](presentation-receipts.md)). That resolves AT-08
+for this statement. `AssuranceAnchor.recordDecision` and `recordVerification` still assert the caller's decision.
+The `zk/ceremony/` tooling supports a multi-party phase 2, and `verify-artifacts --require-production` fails closed
+on synthetic or tampered artifacts. Before mainnet:
+
+- [ ] **Schedule an external audit before mainnet.** It must cover `presentation-receipt-v1.circom`,
+  `private-conversion-v1.circom`, `PresentationReceipts.sol`, `AttestZkMinter.sol` and the ceremony tooling, done by
+  an independent ZK/circuit auditor. No mainnet deployment of a Groth16 verifier until the audit report is published
+  and its findings are resolved.
+- [ ] Run a real multi-party phase-2 ceremony with outside participants, following `zk/ceremony/README.md`.
+  Publish the transcript, and pin the final verification-key hash and verifier bytecode in the deployment manifest.
+- [ ] Promote a phase-1 file only after independent checksum cross-checks. The PSE PPoT entry is still a candidate.
+- [ ] Define the consumer policy for receipts: which issuers are accepted, the minimum block age or finality, the
+  maximum receipt age, and how the subject salt is exchanged.

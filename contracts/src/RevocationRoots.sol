@@ -24,6 +24,7 @@ contract RevocationRoots {
     mapping(bytes32 => mapping(uint64 => Epoch)) private epochs;
 
     event AdministratorProposed(address indexed current, address indexed proposed);
+    event AdministratorProposalCancelled(address indexed current, address indexed proposed);
     event AdministratorChanged(address indexed previous, address indexed current);
     event PublisherSet(bytes32 indexed list, address indexed publisher);
     event EpochPublished(bytes32 indexed list, uint64 indexed epoch, bytes32 root, uint64 size);
@@ -39,9 +40,18 @@ contract RevocationRoots {
         _;
     }
 
+    /// @notice Step one of a handover. Replaces any earlier pending proposal.
     function proposeAdministrator(address next) external onlyAdministrator {
+        require(next != address(0) && next != administrator, "invalid administrator");
         pendingAdministrator = next;
         emit AdministratorProposed(administrator, next);
+    }
+
+    function cancelAdministratorProposal() external onlyAdministrator {
+        address proposed = pendingAdministrator;
+        require(proposed != address(0), "no proposal");
+        pendingAdministrator = address(0);
+        emit AdministratorProposalCancelled(administrator, proposed);
     }
 
     function acceptAdministrator() external {

@@ -1,0 +1,27 @@
+{
+  "name": "@attest/verifier-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy:dry-run": "wrangler deploy --dry-run -c wrangler.jsonc --outdir /tmp/verifier-dry",
+    "new-result-key": "node scripts/new-result-key.mjs"
+  },
+  "dependencies": {
+    "@attest/authority": "workspace:*",
+    "@attest/chain-evm": "workspace:*",
+    "@attest/core": "workspace:*",
+    "@attest/domain": "workspace:*",
+    "@attest/domains": "workspace:*",
+    "@attest/mandates": "workspace:*",
+    "@attest/proofs": "workspace:*",
+    "@attest/verifier": "workspace:*",
+    "@noble/curves": "1.9.7",
+    "@pcd/pod": "0.5.1",
+    "effect": "4.0.2",
+    "viem": "^2.57.4"
+  },
+  "devDependencies": {
+    "@pcd/proto-pod-gpc-artifacts": "0.13.0"
+  }
+}

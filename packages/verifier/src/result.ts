@@ -13,8 +13,15 @@ import {parseSubjectRef, type SubjectRef} from "./request.ts";
 export const VERIFICATION_RESULT_SCHEMA = "attest.verification-result/v1";
 export const MAX_RESULT_TTL_MS = 300_000;
 
+/**
+ * - `chain`: credential status read on-chain (chainId, blockNumber, blockHash required).
+ * - `registry`: credential-level status from an off-chain status registry.
+ * - `issuer-authority`: only the issuer's authority was checked; no credential-level
+ *   revocation source was consulted. PEPs that need revocation must refuse it.
+ */
+export const STATUS_SOURCES = ["chain", "registry", "issuer-authority"] as const;
 export interface StatusEvidence {
-  source: "chain" | "registry";
+  source: (typeof STATUS_SOURCES)[number];
   observedAt: number;
   chainId?: number;
   blockNumber?: number;
@@ -42,7 +49,7 @@ export interface VerificationResult {
 
 export function parseStatusEvidence(value: unknown): StatusEvidence {
   shape(value, ["source", "observedAt"], ["chainId", "blockNumber", "blockHash"]);
-  need((value.source === "chain" || value.source === "registry") && isTime(value.observedAt), "invalid_status_evidence");
+  need((STATUS_SOURCES as readonly unknown[]).includes(value.source) && isTime(value.observedAt), "invalid_status_evidence");
   const chain = value.source === "chain";
   need(chain === Object.hasOwn(value, "chainId") && chain === Object.hasOwn(value, "blockNumber") &&
     chain === Object.hasOwn(value, "blockHash"), "invalid_status_evidence");
@@ -88,6 +95,11 @@ export interface ResultVerification {
   audience: string;
   now: number;
   /**
+   * Optional: status evidence sources this enforcement point accepts. For example
+   * ["chain"] refuses results whose status was issuer-level only ("issuer-authority").
+   */
+  acceptedStatusSources?: readonly StatusEvidence["source"][];
+  /**
    * What this enforcement point asked for. A result is accepted only for the exact pending
    * request, so it cannot be relayed to another user, entity, requirement or decision.
    */
@@ -110,6 +122,8 @@ export async function verifyVerificationResult(token: string, options: ResultVer
   need(result.audience === options.audience, "result_audience_mismatch");
   need(isTime(options.now) && result.issuedAt <= options.now, "result_not_yet_valid");
   need(options.now < result.expiresAt, "result_expired");
+  need(!options.acceptedStatusSources || options.acceptedStatusSources.includes(result.status.source),
+    "status_source_not_accepted");
   const e = options.expected;
   need(result.requestDigest === e.requestDigest && result.subject.issuer === e.subject.issuer &&
     result.subject.subject === e.subject.subject && result.credentialSubject === e.credentialSubject &&

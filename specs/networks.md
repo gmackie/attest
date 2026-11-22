@@ -33,13 +33,30 @@ selector, a configuration object or a raw chain ID, and it fails closed:
 Every write path in `@attest/chain-evm` goes through the gate. `assertContext(...,
 writing = true)` calls it before any provider access, and registry actions, registry
 deployment, journey, institution, industry, host-setup and economy writes all use
-`assertContext`. The decision-log adapter calls it when it is constructed, and
-`deploy-network.mjs` calls it before it touches a signer. `test/write-gate.test.ts`
+`assertContext`. The decision-log adapter asks its clients for the chain ID at every
+`anchor()` call and gates on that value before any read or write (see below), and
+`deploy-network.mjs` calls the gate before it touches a signer. `test/write-gate.test.ts`
 covers every write entry point with a wallet on chain 1 and asserts that nothing is
 sent, signed or deployed. It runs in the normal `pnpm test`, so CI runs the
 direct-adapter rejection tests that `production-readiness.md` requires. There is no
 flag, environment variable or configuration override that opens mainnet. Opening it
 needs a reviewed source change once the GMA-748 requirements are met.
+
+### Decision-log adapter
+
+Before ATTE-26 the adapter trusted a `chainId` number supplied by its caller. A
+mainnet client labelled as Sepolia would have passed the gate. Now:
+
+- `AnchorPublisherClients` has a required `getChainId()`. `anchor()` calls it first
+  and passes the result to `assertWritable` before `latestEpoch`, `getEpoch` or
+  `simulateAndWrite`. The receipt `ref` (`eip155:<chain>:…`) uses that value.
+- `AnchorPublisherClients.chainId` is now optional. If it is given, it is gated when
+  the adapter is constructed (fail fast). `anchor()` then requires it to equal
+  `getChainId()`, or it throws `chain_mismatch`.
+- `viemAnchorClients(publicClient, walletClient, account, chainId?)`: `chainId` is
+  optional and used only as that cross-check. `getChainId()` reads the public client.
+  If the wallet client also exposes `getChainId()` (viem wallet clients do), both
+  must agree, so the chain checked is the one the transaction is sent on.
 
 ## Finality
 
@@ -100,7 +117,7 @@ chain guard.
 `packages/chain-evm/scripts/deploy-network.mjs` deploys `WorkspaceRegistry` and
 `DecisionLogAnchor` to a writable network and prints the manifest JSON on stdout.
 The `contracts` field has the same shape as `NetworkConfig.contracts`, and
-`transactions` records each hash, block and administrator.
+`transactions` records each hash, block, administrator and runtime code hash.
 
 ```sh
 pnpm --filter @attest/contracts build
@@ -114,8 +131,13 @@ ATTEST_DEPLOYER_PRIVATE_KEY=0x... pnpm exec tsx packages/chain-evm/scripts/deplo
   no files.
 - It calls `assertWritable` first, so mainnet is refused before any signer or RPC
   access. It then checks that the RPC reports the network's chain ID
-  (`chain_mismatch` otherwise). After each deployment it checks the receipt, that
-  code exists, and the administrator.
+  (`chain_mismatch` otherwise). After each deployment it checks the receipt
+  status and that the runtime code at the address equals the compiled artifact's
+  `deployedBytecode`. The comparison uses the same length and the same keccak256
+  hash with immutable slots zeroed, using solc's `immutableReferences`, which
+  `contracts/scripts/compile.mjs` now writes to `contracts/artifacts/*.json`. It
+  then checks the administrator by value. That also covers `WorkspaceRegistry`'s
+  only immutable.
 - `WorkspaceRegistry`'s administrator is the deployer and cannot be changed.
   `DecisionLogAnchor`'s administrator defaults to the deployer, can be set with
   `--administrator`, and can be handed over in two steps later.
@@ -169,3 +191,32 @@ times on each of the three networks (read-only).
 These are free public endpoints with no SLA. Their availability and rate limits can
 change. Pilot or production verifiers should pass credentialed providers from
 secrets through the `rpcUrls` override, still from two independent operators.
+
+## Behaviour changes
+
+Notes for the ATTE-26 pull request:
+
+- **Decision-log adapter refuses unlisted chains.** Before, it refused only chain 1.
+  Now `anchor()` refuses every chain that is not a configured writable network
+  (Sepolia, Base Sepolia) or a local development chain (31337, 1337). Base mainnet
+  (8453) and other L2 mainnets fail with `network_not_writable`.
+- **Decision-log adapter checks the real chain.** The gate uses the chain ID from
+  `getChainId()` at anchor time, not a caller-supplied number.
+  - `AnchorPublisherClients` gains a required `getChainId()`. Custom implementations
+    must add it; callers using `viemAnchorClients` need no change.
+  - `chainId` becomes optional and serves only as a cross-check (`chain_mismatch`).
+  - The fourth argument of `viemAnchorClients` becomes optional.
+  - A viem wallet client on a different chain from the reader is refused with
+    `chain_mismatch`.
+- **Mainnet refusal message.** The refusal from `assertContext(..., writing = true)`
+  and the other write helpers is now a `ChainStatusError` with code
+  `production_writes_disabled`. Its message gains a prefix and suffix:
+  `production_writes_disabled: Production writes are disabled pending reviewed
+  contracts, custody, authority and proof configuration (Ethereum, chain 1)`.
+  Before, it was a plain `Error` with only the middle sentence. Substring matches on
+  "Production writes are disabled" still work, but the UI would show the prefix.
+- **Build artifacts.** `contracts/artifacts/*.json` gains `deployedBytecode` and
+  `immutableReferences`. The files under `apps/web/public/contracts/` are unchanged.
+- **Network ids accepted.** `connected.ts` helpers accept the new network ids
+  (`sepolia`, `base-sepolia`, `mainnet`) as well as `testnet` / `production`. The
+  `networks` export is unchanged.

@@ -28,7 +28,7 @@ for (const name of [
       evmVersion: "paris",
       outputSelection: {
         "*": {
-          "*": ["abi", "evm.bytecode.object", "evm.deployedBytecode.object"],
+          "*": ["abi", "evm.bytecode.object", "evm.deployedBytecode.object", "evm.deployedBytecode.immutableReferences"],
         },
       },
     },
@@ -46,7 +46,9 @@ for (const name of [
   await fs.mkdir(path.dirname(destination), { recursive: true });
   await fs.writeFile(
     destination,
-    `${JSON.stringify({ abi: contract.abi, bytecode: `0x${contract.evm.bytecode.object}` }, null, 2)}\n`,
+    `${JSON.stringify({ abi: contract.abi, bytecode: `0x${contract.evm.bytecode.object}`,
+      // Runtime code and immutable offsets let deploy scripts verify what landed on-chain (ATTE-26).
+      deployedBytecode: `0x${contract.evm.deployedBytecode.object}`, immutableReferences: contract.evm.deployedBytecode.immutableReferences ?? {} }, null, 2)}\n`,
   );
   console.log(`compiled ${destination}`);
 

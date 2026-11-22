@@ -12,9 +12,10 @@ import { deployInstitutions } from "../src/institution";
 import { deployIndustryRegistry } from "../src/industry";
 import { hostOperation, sendHostOperation, type HostProfile } from "../src/host-setup";
 import { signConversionVoucher, submitNativeZkConversion, submitSignedConversion, type ConversionVoucher } from "../src/economy";
-import { decisionLogAnchorAdapter, type AnchorPublisherClients } from "../src/decision-log";
+import { decisionLogAnchorAdapter, viemAnchorClients, type AnchorPublisherClients } from "../src/decision-log";
 import { assertWritable, localDevChainIds, networkConfigs, networkIds } from "../src/networks";
-import { deployNetwork } from "../scripts/deploy-network.mjs";
+import { deployNetwork, maskedCodeHash } from "../scripts/deploy-network.mjs";
+import { readFileSync } from "node:fs";
 
 const account = "0x1111111111111111111111111111111111111111" as Address;
 const target = "0x2222222222222222222222222222222222222222" as Address;
@@ -112,6 +113,7 @@ describe("every write entry point refuses mainnet", () => {
     const touched: string[] = [];
     const clients = (chainId: number): AnchorPublisherClients => ({
       chainId,
+      getChainId: async () => { touched.push("chainId"); return chainId; },
       readLatest: async () => { touched.push("read"); return 0n; },
       simulateAndWrite: async () => { touched.push("write"); return h("0"); },
       waitForReceipt: async () => { touched.push("wait"); return { status: "success", blockNumber: 1n }; },
@@ -120,6 +122,40 @@ describe("every write entry point refuses mainnet", () => {
     expect(() => decisionLogAnchorAdapter({ clients: clients(8453), address: target, log: h("1") })).toThrow("network_not_writable");
     expect(() => decisionLogAnchorAdapter({ clients: clients(84532), address: target, log: h("1") })).not.toThrow();
     expect(touched).toEqual([]);
+  });
+
+  it("decisionLogAnchorAdapter gates on the chain the RPC reports, not the declared one", async () => {
+    const epoch = { epoch: 1, root: "a".repeat(64), firstSeq: 1, lastSeq: 1, size: 1, firstPrevHash: "0".repeat(64), lastLeafHash: "b".repeat(64) };
+    const run = async (declared: number | undefined, actual: number) => {
+      const touched: string[] = [];
+      const clients: AnchorPublisherClients = {
+        ...(declared === undefined ? {} : { chainId: declared }),
+        getChainId: async () => actual,
+        readLatest: async () => { touched.push("read"); return 0n; },
+        simulateAndWrite: async () => { touched.push("write"); return h("c"); },
+        waitForReceipt: async () => ({ status: "success", blockNumber: 7n }),
+      };
+      const result = await decisionLogAnchorAdapter({ clients, address: target, log: h("1") }).anchor(epoch)
+        .then((r) => r.ref, (e: { code?: string }) => e.code);
+      return { result, touched };
+    };
+    // A testnet label on a mainnet RPC: refused before any read or write.
+    expect(await run(11155111, 1)).toEqual({ result: "chain_mismatch", touched: [] });
+    expect(await run(undefined, 1)).toEqual({ result: "production_writes_disabled", touched: [] });
+    expect(await run(undefined, 8453)).toEqual({ result: "network_not_writable", touched: [] });
+    expect(await run(84532, 11155111)).toEqual({ result: "chain_mismatch", touched: [] });
+    // The receipt reference is built from the RPC-reported chain.
+    const ok = await run(undefined, 84532);
+    expect(ok.result).toMatch(/^eip155:84532:/);
+    expect(ok.touched).toEqual(["read", "write"]);
+  });
+
+  it("viemAnchorClients refuses a wallet on a different chain than the reader", async () => {
+    const reader = { getChainId: async () => 84532 } as never;
+    const clients = viemAnchorClients(reader, { writeContract: async () => h("c"), getChainId: async () => 1 }, account);
+    await expect(clients.getChainId()).rejects.toThrow("chain_mismatch");
+    expect(clients.chainId).toBeUndefined();
+    expect(await viemAnchorClients(reader, { writeContract: async () => h("c") }, account, 84532).getChainId()).toBe(84532);
   });
 
   it("deployNetwork refuses mainnet before touching the signer", async () => {
@@ -142,4 +178,23 @@ describe("every write entry point refuses mainnet", () => {
     expect(run.stderr).toContain("production_writes_disabled");
     expect(run.stderr).not.toContain("1".repeat(64));
   }, 30_000);
+});
+
+describe("deploy-network runtime code verification", () => {
+  it("masks only immutable slots: the WorkspaceRegistry administrator may differ, any other byte may not", () => {
+    const root = path.resolve(import.meta.dirname, "../../..");
+    const a = JSON.parse(readFileSync(path.join(root, "contracts/artifacts/WorkspaceRegistry.json"), "utf8"));
+    const refs = a.immutableReferences as Record<string, { start: number; length: number }[]>;
+    const slots = Object.values(refs).flat();
+    expect(slots.length).toBeGreaterThan(0);
+    const patch = (at: number, hex: string) => {
+      const code = a.deployedBytecode.slice(2);
+      return `0x${code.slice(0, at * 2)}${hex}${code.slice(at * 2 + hex.length)}` as Hex;
+    };
+    const expected = maskedCodeHash(a.deployedBytecode, refs);
+    const admin = "1111111111111111111111111111111111111111".padStart(64, "0");
+    expect(maskedCodeHash(patch(slots[0]!.start, admin), refs)).toBe(expected);
+    expect(maskedCodeHash(patch(0, "ff"), refs)).not.toBe(expected);
+    expect(() => maskedCodeHash("0x00", refs)).toThrow("outside the code");
+  });
 });

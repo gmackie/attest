@@ -7,7 +7,7 @@ export interface DeploymentManifest {
   chainId: number;
   deployer: Address;
   contracts: Record<"WorkspaceRegistry" | "DecisionLogAnchor", { default: Address }>;
-  transactions: Record<"WorkspaceRegistry" | "DecisionLogAnchor", { hash: Hex; blockNumber: string; administrator: Address }>;
+  transactions: Record<"WorkspaceRegistry" | "DecisionLogAnchor", { hash: Hex; blockNumber: string; administrator: Address; runtimeCodeHash: Hex }>;
 }
 export declare function deployNetwork(options: {
   network: string;
@@ -18,3 +18,4 @@ export declare function deployNetwork(options: {
   confirmations?: number;
   log?: (message: string) => void;
 }): Promise<DeploymentManifest>;
+export declare function maskedCodeHash(code: Hex, immutableReferences?: Record<string, readonly { start: number; length: number }[]>): Hex;

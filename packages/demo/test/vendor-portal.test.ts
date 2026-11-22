@@ -9,13 +9,15 @@ const epoch = { epoch: 1, root: "a".repeat(64), firstSeq: 1, lastSeq: 1, size: 1
 
 describe("vendor portal receipt verdict (ATTE-20 L5)", () => {
   it("succeeds against a matching anchor, or honestly as sealed locally", () => {
-    expect(receiptVerdict(good, { status: "anchored", address: "0x1", epoch, check: { ok: true } })).toBe("anchored");
+    expect(receiptVerdict(good, { status: "anchored", address: "0x1", epoch, check: { ok: true }, txHash: null, explorerUrl: null })).toBe("anchored");
     expect(receiptVerdict(good, { status: "not-configured" })).toBe("sealed-locally");
-    expect(receiptVerdict(good, { status: "not-anchored", address: "0x1" })).toBe("sealed-locally");
+    expect(receiptVerdict(good, { status: "awaiting-anchoring" })).toBe("sealed-locally");
+    expect(receiptVerdict(good, { status: "awaiting-finality", address: "0x1", txHash: null, explorerUrl: null })).toBe("sealed-locally");
   });
   it("fails when an anchor exists but the receipt does not match it, or the receipt is bad", () => {
-    const mismatch: AnchorCheck = { status: "anchored", address: "0x1", epoch, check: { ok: false, reason: "root_mismatch" } };
+    const mismatch: AnchorCheck = { status: "anchored", address: "0x1", epoch, check: { ok: false, reason: "root_mismatch" }, txHash: null, explorerUrl: null };
     expect(() => receiptVerdict(good, mismatch)).toThrow("receipt_anchor_mismatch:root_mismatch");
+    expect(() => receiptVerdict(good, { status: "untrusted-anchor", reason: "other contract" })).toThrow("receipt_anchor_untrusted");
     expect(() => receiptVerdict({ ...good, matchesDecision: false }, { status: "not-configured" })).toThrow("receipt_invalid");
     expect(() => receiptVerdict({ ...good, local: { ok: false, reason: "not_included" } }, { status: "not-configured" })).toThrow("receipt_invalid");
   });

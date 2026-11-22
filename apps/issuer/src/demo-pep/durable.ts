@@ -11,7 +11,8 @@ import type { DurableObjectState } from "@cloudflare/workers-types";
 import { SerialQueue } from "../../../verifier/src/enrollment";
 import type { DemoPepEnv } from "./config";
 import type { Store } from "./ledger";
-import { createDemoPepCore, createDemoPepFront, type DemoPepCommand, type DemoPepEnvWithLimits } from "./pep";
+import { createDemoPepCore, createDemoPepFront, MAINTENANCE_INTERVAL_MS, type DemoPepCommand, type DemoPepEnvWithLimits } from "./pep";
+import { createAnchorPublisher, type AnchorEnv } from "./anchor";
 
 /** The singleton instance name. */
 export const DEMO_PEP_OBJECT = "demo-pep-v1";
@@ -20,8 +21,9 @@ const COMMAND_URL = "https://demo-pep.internal/command";
 export class DemoPepService {
   private readonly queue = new SerialQueue();
   private readonly core = createDemoPepCore();
+  private readonly publisher = createAnchorPublisher();
   private readonly store: Store;
-  constructor(state: DurableObjectState, private readonly env: DemoPepEnv) {
+  constructor(state: DurableObjectState, private readonly env: DemoPepEnv & AnchorEnv) {
     const storage = state.storage;
     this.store = {
       get: <T,>(key: string) => storage.get<T>(key),
@@ -39,8 +41,20 @@ export class DemoPepService {
     const command = (await request.json()) as DemoPepCommand;
     return this.queue.run(() => this.core.run(command, this.env, this.store));
   }
+  /**
+   * Maintenance inside the queue (local storage only), then anchoring outside it: the queue is
+   * entered only for short local reads and writes between chain calls, so requests keep flowing
+   * while a transaction confirms. Failures back off; the next alarm is the earlier of the retry
+   * time and the hourly maintenance.
+   */
   async alarm(): Promise<void> {
     await this.queue.run(() => this.core.maintain(this.store));
+    const report = await this.publisher.publish(this.store, this.env, (task) => this.queue.run(task)).catch(() => null);
+    const at = Date.now();
+    const next = report?.status === "failed" ? report.retryAt
+      : report?.status === "anchored" && report.more ? at + 1_000
+      : at + MAINTENANCE_INTERVAL_MS;
+    await this.store.setAlarm!(Math.min(next, at + MAINTENANCE_INTERVAL_MS));
   }
 }
 

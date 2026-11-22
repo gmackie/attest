@@ -319,7 +319,7 @@ describe("decision ledger", () => {
     // The decision leaf holds no subject identifier in the clear, only its digest.
     expect(JSON.stringify(body.receipt.decision)).not.toContain(request.subject.subject);
     expect(await verifyDecisionReceipt(DEMO_PEP_LEDGER_PROFILE, body.receipt)).toEqual({ ok: true });
-    expect(body.ledger.anchor.address).toBeNull();
+    expect(body.ledger.anchor).toEqual({ status: "not-configured" });
     const other = await signIn();
     expect((await send(`/api/demo-pep/decisions/${allowed.body.decisionId}/receipt`, { token: other.access_token })).status).toBe(404);
     const epoch = await send(`/api/demo-pep/epochs/${body.receipt.epoch.epoch}`);

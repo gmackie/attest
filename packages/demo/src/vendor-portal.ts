@@ -21,7 +21,8 @@ import {
   type Presentation, type ProofRequest, type RequirementDefinition, type SubjectRef,
 } from "@attest/verifier";
 import {
-  chainStatusReaderFor, networkConfigs, readAnchoredEpoch,
+  chainStatusReaderFor, decisionLogId, explorerTxUrl, networkConfigs, readAnchoredEpoch,
+  type ChainStatusReader,
   DEMO_PEP_LEDGER_PROFILE, GATEKEEPER_LEDGER_PROFILE, verifyDecisionReceipt,
   type AnchoredEpoch, type ContractManifest, verifyInclusion,
   type DecisionReceipt, type ReceiptCheck, type TrustedEpoch,
@@ -204,7 +205,12 @@ export const submitPresentation = (endpoints: PortalEndpoints, fetcher: Fetch, c
 
 export interface ReceiptResponse {
   receipt: DecisionReceipt;
-  ledger: { name: string; logId: string; anchor: { network: string; address: string | null } };
+  ledger: {
+    name: string;
+    logId: string;
+    anchor: { status: "not-configured" | "misconfigured" | "awaiting-anchoring" | "anchored"; chainId?: number; address?: string;
+      logId?: string; lastError?: { code: string; epoch: number; at: number } };
+  };
 }
 export const fetchReceipt = (endpoints: PortalEndpoints, fetcher: Fetch, session: Session, decisionId: string) =>
   call<ReceiptResponse>(fetcher, `${trimSlash(endpoints.pep)}/decisions/${encodeURIComponent(decisionId)}/receipt`,
@@ -228,29 +234,59 @@ export async function verifyReceipt(receipt: DecisionReceipt, decisionId: string
 }
 
 /**
- * The DecisionLogAnchor configured for Sepolia in @attest/chain-evm's network manifest, if any.
- * Only this address is trusted for on-chain verification; a PEP-supplied address is ignored.
+ * DecisionLogAnchor deployments this client trusts, per chain. The manifest entry wins when present
+ * (ATTE-26); otherwise the Sepolia deployment the demo PEP publishes to. The address a PEP reports is
+ * only compared against this pin, never used to choose the contract to read.
  */
-export const configuredDecisionAnchor = (): `0x${string}` | null =>
-  ((networkConfigs.sepolia.contracts as ContractManifest).DecisionLogAnchor?.default as `0x${string}` | undefined) ?? null;
+export const SEPOLIA_DECISION_LOG_ANCHOR = "0x7020EE914B517Da8F7F8D42Dc436763898FaA8Ad";
+export const configuredDecisionAnchor = (chainId: number = networkConfigs.sepolia.chainId): `0x${string}` | null => {
+  if (chainId !== networkConfigs.sepolia.chainId) return null;
+  return ((networkConfigs.sepolia.contracts as ContractManifest).DecisionLogAnchor?.default as `0x${string}` | undefined) ??
+    SEPOLIA_DECISION_LOG_ANCHOR;
+};
+/** Log ids this client expects per receipt profile; a PEP cannot point a receipt at another log. */
+export const DEMO_PEP_LOG_NAME = "attest-demo-pep";
+const expectedLogId = async (receipt: DecisionReceipt): Promise<string | null> =>
+  receipt.schema === DEMO_PEP_LEDGER_PROFILE.proof ? decisionLogId(DEMO_PEP_LOG_NAME) : null;
 
+export interface ReportedAnchor {
+  chainId: number; address: string; logId: string; txHash: string | null; blockNumber: number | null;
+}
 export type AnchorCheck =
   | { status: "not-configured" }
-  | { status: "not-anchored"; address: string }
-  | { status: "anchored"; address: string; epoch: AnchoredEpoch; check: ReceiptCheck };
+  | { status: "awaiting-anchoring" }
+  /** The PEP reports an anchoring transaction, but the settled chain does not hold the epoch yet. */
+  | { status: "awaiting-finality"; address: string; txHash: string | null; explorerUrl: string | null }
+  | { status: "anchored"; address: string; epoch: AnchoredEpoch; check: ReceiptCheck; txHash: string | null; explorerUrl: string | null }
+  | { status: "untrusted-anchor"; reason: string };
+
+/** The settled-block reader the browser uses: two agreeing public RPCs, 3 confirmations (as ATTE-27). */
+export const demoAnchorReader = () => chainStatusReaderFor("sepolia", {
+  finality: { kind: "confirmations", confirmations: 3 }, maxBlockAgeMs: 5 * 60_000,
+});
+
 /**
- * Reads the receipt's epoch from DecisionLogAnchor at a settled Sepolia block (two agreeing public
- * RPCs, ChainStatusReader) and checks the receipt against that root and span, not the PEP's copy.
+ * Reads the receipt's epoch from DecisionLogAnchor at a settled block and checks the receipt against
+ * that root and span, not the PEP's copy. Only the pinned contract and the expected log id are used.
  */
-export async function verifyAgainstChain(receipt: DecisionReceipt, logId: string, decisionId: string): Promise<AnchorCheck> {
-  const address = configuredDecisionAnchor();
-  if (!address) return { status: "not-configured" };
-  if (!/^0x[0-9a-f]{64}$/.test(logId)) throw new PortalError("invalid_log_id");
-  const epoch = await readAnchoredEpoch(chainStatusReaderFor("sepolia"),
-    { address, log: logId as `0x${string}`, epoch: receipt.epoch.epoch });
-  if (!epoch) return { status: "not-anchored", address };
+export async function verifyAgainstChain(receipt: DecisionReceipt, ledger: ReceiptResponse["ledger"], decisionId: string,
+  reader: ChainStatusReader = demoAnchorReader(),
+  trustedAnchor: (chainId: number) => string | null = configuredDecisionAnchor): Promise<AnchorCheck> {
+  const reported = (receipt.epoch.anchor ?? null) as ReportedAnchor | null;
+  if (!reported) return ledger.anchor.status === "awaiting-anchoring" ? { status: "awaiting-anchoring" } : { status: "not-configured" };
+  const address = trustedAnchor(reported.chainId);
+  if (!address) return { status: "untrusted-anchor", reason: `no trusted DecisionLogAnchor on chain ${reported.chainId}` };
+  if (reported.address.toLowerCase() !== address.toLowerCase())
+    return { status: "untrusted-anchor", reason: `PEP reports ${reported.address}, this client trusts ${address}` };
+  const logId = (await expectedLogId(receipt)) ?? reported.logId;
+  if (!/^0x[0-9a-f]{64}$/.test(logId) || reported.logId !== logId)
+    return { status: "untrusted-anchor", reason: "the receipt names an unexpected log" };
+  const txHash = reported.txHash && /^0x[0-9a-f]{64}$/.test(reported.txHash) ? reported.txHash : null;
+  const explorerUrl = txHash ? explorerTxUrl("sepolia", txHash) : null;
+  const epoch = await readAnchoredEpoch(reader, { address: address as `0x${string}`, log: logId as `0x${string}`, epoch: receipt.epoch.epoch });
+  if (!epoch) return { status: "awaiting-finality", address, txHash, explorerUrl };
   const { local } = await verifyReceipt(receipt, decisionId, epoch);
-  return { status: "anchored", address, epoch, check: local };
+  return { status: "anchored", address, epoch, check: local, txHash, explorerUrl };
 }
 
 /**
@@ -260,6 +296,7 @@ export async function verifyAgainstChain(receipt: DecisionReceipt, logId: string
  */
 export function receiptVerdict(v: ReceiptVerification, anchor: AnchorCheck): "anchored" | "sealed-locally" {
   if (!v.local.ok || !v.inclusion || !v.matchesDecision) throw new PortalError("receipt_invalid");
+  if (anchor.status === "untrusted-anchor") throw new PortalError(`receipt_anchor_untrusted:${anchor.reason}`);
   if (anchor.status === "anchored") {
     if (!anchor.check.ok) throw new PortalError(`receipt_anchor_mismatch:${anchor.check.reason}`);
     return "anchored";

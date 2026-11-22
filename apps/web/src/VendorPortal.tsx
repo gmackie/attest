@@ -23,7 +23,6 @@ import { track } from "./analytics";
 import {
   authorize,
   checkChallenge,
-  configuredDecisionAnchor,
   DEFAULT_ENDPOINTS,
   demoSignIn,
   enroll,
@@ -208,7 +207,7 @@ export function VendorPortal() {
       setMessage("Checking the epoch root against the on-chain DecisionLogAnchor…");
       let a: AnchorCheck;
       try {
-        a = await verifyAgainstChain(r.receipt, r.ledger.logId, decision!.decisionId);
+        a = await verifyAgainstChain(r.receipt, r.ledger, decision!.decisionId);
       } catch (e) {
         throw new Error(`Receipt verified locally, but the chain read failed: ${e instanceof Error ? e.message : String(e)}`);
       }
@@ -225,7 +224,9 @@ export function VendorPortal() {
       track("demo_completed", { surface: "vendor-portal" });
       setMessage(verdict === "anchored"
         ? "Receipt verified against the root anchored on Sepolia."
-        : "Receipt verified in this browser against the sealed epoch root (not anchored on-chain).");
+        : a.status === "awaiting-anchoring" || a.status === "awaiting-finality"
+          ? "Receipt verified in this browser against the sealed epoch root. On-chain anchoring is pending; check again in a few minutes."
+          : "Receipt verified in this browser against the sealed epoch root (not anchored on-chain).");
     });
 
   const saveEndpoints = () => {
@@ -511,27 +512,51 @@ function ReceiptView({ receipt, verification, anchor }: {
           </Badge>
         </div>
       )}
-      {anchor?.status === "anchored" ? (
-        <Banner
-          variant={anchor.check.ok ? "default" : "error"}
-          title={anchor.check.ok ? "Matches the root anchored on Sepolia" : "Does not match the anchored root"}
-          description={`DecisionLogAnchor ${anchor.address}, epoch ${anchor.epoch.epoch}, read at block ${anchor.epoch.evidence.blockNumber} through two agreeing RPCs.`}
-        />
-      ) : anchor ? (
-        <Banner
-          variant="alert"
-          title="Sealed locally — not yet anchored on-chain"
-          description={anchor.status === "not-configured"
-            ? `No DecisionLogAnchor is configured for Sepolia${configuredDecisionAnchor() ? "" : " in the network manifest"}. The receipt is checked against the root the PEP sealed, so it shows consistency, not that the PEP cannot later rewrite history.`
-            : `DecisionLogAnchor ${anchor.address} has no epoch ${r.epoch.epoch} for this log yet. The receipt is checked against the root the PEP sealed.`}
-        />
-      ) : null}
+      {anchor && <AnchorBanner anchor={anchor} epoch={r.epoch.epoch} />}
       <details className="quiet-details">
         <summary>Opened decision (revealed to you only, with its salt)</summary>
         <pre>{json({ decision: r.decision, salt: r.salt })}</pre>
       </details>
     </div>
   );
+}
+
+function TxLink({ url, hash }: { url: string | null; hash: string | null }) {
+  return url && hash ? (
+    <a href={url} target="_blank" rel="noreferrer">Anchoring transaction {hash.slice(0, 10)}…{hash.slice(-8)} ↗</a>
+  ) : null;
+}
+function AnchorBanner({ anchor, epoch }: { anchor: AnchorCheck; epoch: number }) {
+  const local = "The receipt is checked against the root the PEP sealed, so it shows consistency, not that the PEP cannot later rewrite history.";
+  switch (anchor.status) {
+    case "anchored":
+      return (
+        <>
+          <Banner
+            variant={anchor.check.ok ? "default" : "error"}
+            title={anchor.check.ok ? "Matches the root anchored on Sepolia" : "Does not match the anchored root"}
+            description={`DecisionLogAnchor ${anchor.address}, epoch ${anchor.epoch.epoch}, read at block ${anchor.epoch.evidence.blockNumber} (3 confirmations) through two agreeing RPCs.`}
+          />
+          <TxLink url={anchor.explorerUrl} hash={anchor.txHash} />
+        </>
+      );
+    case "awaiting-finality":
+      return (
+        <>
+          <Banner variant="alert" title="Anchoring transaction sent — awaiting confirmations"
+            description={`The PEP reports epoch ${epoch} anchored in DecisionLogAnchor ${anchor.address}, but the settled chain does not show it yet. ${local}`} />
+          <TxLink url={anchor.explorerUrl} hash={anchor.txHash} />
+        </>
+      );
+    case "awaiting-anchoring":
+      return <Banner variant="alert" title="Sealed — awaiting anchoring"
+        description={`Epoch ${epoch} is sealed and queued for DecisionLogAnchor on Sepolia (published hourly, or shortly after sealing). ${local}`} />;
+    case "untrusted-anchor":
+      return <Banner variant="error" title="Anchor not trusted" description={anchor.reason} />;
+    default:
+      return <Banner variant="alert" title="Sealed locally — not yet anchored on-chain"
+        description={`This PEP does not anchor its decision log. ${local}`} />;
+  }
 }
 
 /** Stable codes from the PEP and verifier, in words. */

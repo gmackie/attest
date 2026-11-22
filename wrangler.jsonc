@@ -22,8 +22,11 @@
     "DEMO_PEP_VERIFIER": "{\"issuer\":\"https://verify.attest.gmac.io\",\"endpoint\":\"https://verify.attest.gmac.io/v1/presentations\",\"keys\":[],\"requirements\":[{\"id\":\"demo.insurance.cgl.min-2m\",\"digest\":\"2251414534a86a6cbe9b53d6a030b6fbe4437f8d1e7341ec0bc91246846b3d20\"}]}",
     // Further IdPs for the caller's access token (seam for Nathan, NATH-15). The demo identity is built in.
     "DEMO_PEP_IDENTITY_PROVIDERS": "[]",
+    // Where the demo PEP's sealed epochs are anchored: DecisionLogAnchor on Sepolia (deployed at block 12190829).
+    // logId = decisionLogId("attest-demo-pep"). Publisher key: secret DEMO_PEP_ANCHOR_KEY (0x + 64 hex).
+    "DEMO_PEP_ANCHOR": "{\"chainId\":11155111,\"address\":\"0x7020EE914B517Da8F7F8D42Dc436763898FaA8Ad\",\"logId\":\"0x6b0b609dfc1698b1d74ce391632963f26f2e8e658f85b133594967a3145a054c\"}",
   },
-  // Secrets (wrangler secret put): DEMO_PEP_SIGNING_KEY and DEMO_IDENTITY_SIGNING_KEY,
+  // Secrets (wrangler secret put): DEMO_PEP_ANCHOR_KEY (publisher EVM key), DEMO_PEP_SIGNING_KEY and DEMO_IDENTITY_SIGNING_KEY,
   // each {"active": kid, "keys": [{kid, privateKey}]}. Generate with apps/issuer/scripts/new-demo-pep-key.mjs
   // (rotate with --merge-stdin; the current secret is never written to disk).
   // Per-IP limits for the demo PEP (ATTE-20), applied in the Worker before the Durable Object.

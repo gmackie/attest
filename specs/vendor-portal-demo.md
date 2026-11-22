@@ -132,16 +132,68 @@ commitment and leaf from the revealed decision and salt, then checks RFC 6962 in
 epoch, it also compares the root, the span and the size. The browser picks the label profile from labels it
 knows, never from the server.
 
-**On-chain anchoring.** If `networkConfigs.sepolia.contracts.DecisionLogAnchor.default` is set, the browser
-reads the epoch with `readAnchoredEpoch`, at a settled block through two agreeing RPCs, and verifies against it.
-Only the manifest's address is trusted; an address supplied by the PEP is ignored.
+**On-chain anchoring.** The demo PEP publishes its sealed epochs to `DecisionLogAnchor` on Sepolia:
 
-**Today no DecisionLogAnchor is deployed in the manifest, and the demo PEP does not publish epochs.** The UI
-therefore says "sealed locally — not yet anchored on-chain". A locally sealed receipt shows only internal
-consistency: the PEP could still rewrite its own history. Anchoring needs these follow-ups:
-- deploy `DecisionLogAnchor` and add it to the manifest;
-- set a publisher for log id `decisionLogId("attest.gmac.io/demo-pep/decision-ledger")`;
-- run `decisionLogAnchorAdapter` on a schedule.
+| | |
+| --- | --- |
+| Contract | `0x7020EE914B517Da8F7F8D42Dc436763898FaA8Ad` (chain 11155111, deployed at block 12190829) |
+| Administrator | `0x98770836EA0C26c7a2259B2b8F8E44Ee01D213ee` (testnet deployer) |
+| Log name / id | `attest-demo-pep` / `decisionLogId("attest-demo-pep")` = `0x6b0b609dfc1698b1d74ce391632963f26f2e8e658f85b133594967a3145a054c` |
+| Publisher | `0xD8BF0e16f8273D086B6873a3F8ef9A6b127D55Ad` (`setPublisher` tx `0x6c639903171c2da6f8938c1cccf788d590853c562a15a6778c99ce6efc10fc46`, block 12190863) |
+
+**Publishing.**
+- **When.** It runs from `DemoPepService`'s alarm, after the hourly maintenance. A receipt read that seals an
+  epoch on demand wakes the alarm about a second later.
+- **Outside the request queue.** The queue is entered only for short local reads and writes. The simulation,
+  the transaction and the wait for its receipt happen between them, so requests keep flowing while a
+  transaction confirms. At most one publication is in flight.
+- **Clients.** It uses `decisionLogAnchorAdapter` with `viemAnchorClients`, over both of the network's RPCs (a
+  viem fallback transport).
+- **Fee cap.** Every write is capped at `maxFeePerGas` 1000 wei with a 10 wei priority fee; Sepolia's base fee
+  is about 17 wei.
+- **Chain check.** The adapter checks the chain the RPC reports against the configured one
+  (`chain_mismatch`), and the shared write gate refuses mainnet and unlisted chains.
+- **Retries.** They are idempotent: an epoch already anchored with the same commitment is recognised and no
+  transaction is sent, and a different commitment is refused (`anchor_conflict`).
+- **Failures.** A failure records only a sanitized code on the epoch (`anchorError`) and in `anchor:state`, for
+  example `contract_reverted:not_publisher` or `chain_mismatch`. Retries back off exponentially from 1 minute
+  to 1 hour.
+- **Success.** The epoch row records `{chainId, address, logId, txHash, blockNumber, anchoredAt}`.
+
+**Fail closed, degrade honestly.**
+- With no `DEMO_PEP_ANCHOR`, or an invalid one, nothing is sent and the PEP works as before. Invalid settings
+  include a wrong log id, an unlisted or non-writable chain, and a missing or malformed key.
+- Receipts carry `ledger.anchor.status`:
+  - `not-configured` or `misconfigured`: anchoring is off; the UI shows "sealed locally";
+  - `awaiting-anchoring`: anchoring is configured but this epoch is not on-chain yet;
+  - `anchored`: the epoch row records the anchoring transaction.
+
+**Browser check.**
+- **Pinned contract and log.** The browser pins the contract: the manifest entry when present, otherwise
+  `0x7020…A8Ad`. It also pins the expected log id for the demo profile. An address or log id reported by the
+  PEP is only compared against these pins, and a mismatch is an error.
+- **Settled read.** It reads the epoch with `readAnchoredEpoch` through the Sepolia reader: both public RPCs
+  must agree, at 3 confirmations, as in ATTE-27. It then checks the receipt with `verifyDecisionReceipt`
+  against that root, span and size.
+- **What the UI shows:**
+  - "matches the root anchored on Sepolia", with the anchoring transaction linked on Etherscan;
+  - "awaiting confirmations" when the transaction is not settled yet;
+  - "awaiting anchoring" when the epoch is not on-chain yet;
+  - an error when the on-chain root disagrees; the journey then does not complete.
+
+**Publisher setup (one-time, by the administrator).**
+1. Generate a publisher key and fund the address with a little Sepolia ETH; 0.00005 ETH covers many epochs at
+   these fees.
+2. From the administrator account, call `setPublisher(logId, publisher)` on `DecisionLogAnchor`, with
+   `logId = 0x6b0b609dfc1698b1d74ce391632963f26f2e8e658f85b133594967a3145a054c`. The contract has no plural
+   `publishers` getter; check the setting with the `PublisherSet` event or `publisher(logId)`.
+3. Set the secret: `pnpm exec wrangler secret put DEMO_PEP_ANCHOR_KEY`, entering the 0x-prefixed 64-hex
+   private key interactively. It is never logged, stored in the Durable Object or returned.
+4. `DEMO_PEP_ANCHOR` is already in `wrangler.jsonc`. To rotate the publisher, the administrator calls
+   `setPublisher` with the new address, and you replace the secret.
+
+The demo ledger's log name changed to `attest-demo-pep` with this work. Epoch 1 of that log is the first epoch
+the deployed PEP seals.
 
 ## Trust boundaries
 
@@ -172,7 +224,7 @@ Who sees what:
 - **The status source is `issuer-authority`.** There is no credential-level revocation.
 - **POD/GPC is beta and has not been audited.** The verification result is the verifier's signed assertion, not
   a zero-knowledge proof given to the PEP.
-- **Decisions are not anchored yet** (see above).
+- **Anchoring is testnet-only.** Epochs are anchored on Sepolia by a single hot publisher key, and the contract has not been audited (see above).
 - **The demo does not speak for anyone.** It does not speak for ACORD, insurers, regulators or Gatekeeper.
 
 ## Configuration
@@ -185,6 +237,8 @@ Who sees what:
 | `DEMO_PEP_VERIFIER` | var (JSON) | Gatekeeper `verifiers[]` shape: `{issuer, endpoint, keys: [{kid, publicKey}], requirements: [{id, digest}]}`. `keys` come from `https://verify.attest.gmac.io/.well-known/jwks.json`. With `keys: []` the PEP challenges with `attest_not_configured`. |
 | `DEMO_PEP_IDENTITY_PROVIDERS` | var (JSON) | Default `[]`. Further IdPs in the verifier's `IDENTITY_PROVIDERS` shape. |
 | `DEMO_PEP_CORS_ORIGINS` | var (JSON, optional) | Extra browser origins. The portal itself is same-origin. Every response carries `Vary: Origin`. |
+| `DEMO_PEP_ANCHOR` | var (JSON) | `{"chainId":11155111,"address":"0x7020EE914B517Da8F7F8D42Dc436763898FaA8Ad","logId":"0x6b0b609dfc1698b1d74ce391632963f26f2e8e658f85b133594967a3145a054c"}`. Optional; unset or invalid disables anchoring. |
+| `DEMO_PEP_ANCHOR_KEY` | **secret** | The publisher's EVM private key, `0x` plus 64 hex digits, parsed strictly |
 | `DEMO_PEP_TOKEN_LIMITER`, `DEMO_PEP_API_LIMITER` | `ratelimits` bindings | Namespaces `2001` and `2002`; see the limits table above. |
 | `DEMO_PEP_SIGNING_KEY` | **secret** | `{"active": kid, "keys": [{kid, privateKey}]}`: the proof-request key |
 | `DEMO_IDENTITY_SIGNING_KEY` | **secret** | The same shape, a different key: the access-token key |
@@ -275,3 +329,10 @@ journey's "Service endpoints" panel, which is stored in localStorage.
   - the cap on holder keys per subject, expiring bindings and the enrollment rate limit;
   - `Vary: Origin`;
   - the receipt verdict when an anchor disagrees.
+- `apps/issuer/test/demo-pep-anchor.test.ts` runs against anvil with `--chain-id 11155111` and a 7 wei base
+  fee. It deploys `DecisionLogAnchor` and authorizes the publisher, then:
+  - seals and publishes from the alarm path, and checks the transaction's fee cap;
+  - verifies receipts against the on-chain root and continues to a second epoch;
+  - checks idempotent retries and a single in-flight publication;
+  - negative cases: an unauthorized publisher (error recorded, backoff, no transaction), a chain mismatch, a
+    tampered root or decision, a foreign contract address, and strict configuration and key parsing.

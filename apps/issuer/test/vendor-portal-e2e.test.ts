@@ -123,7 +123,7 @@ describe("vendor portal: prove to access (demo PEP + verifier + GPC)", () => {
     await expect(authorize(endpoints, fetcher, session, { requestId: challenge.requestId, result })).rejects.toThrow("request_consumed");
 
     const { receipt, ledger } = await fetchReceipt(endpoints, fetcher, session, allowed.decisionId);
-    expect(ledger.anchor.address).toBeNull();
+    expect(ledger.anchor.status).toBe("not-configured");
     const check = await verifyReceipt(receipt, allowed.decisionId);
     expect(check).toEqual({ local: { ok: true }, inclusion: true, matchesDecision: true });
     // Against the sealed epoch as published by the PEP (not on-chain: no anchor is configured).

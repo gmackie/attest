@@ -22,7 +22,7 @@
  * supplier:acme. Results are demo-grade: the accepted credential issuer's key is public.
  */
 import { Effect } from "effect";
-import { decisionLogId, networkConfigs, type ContractManifest } from "@attest/chain-evm";
+import { decisionLogId, networkByChainId } from "@attest/chain-evm";
 import { canonicalJson, sha256 } from "@attest/mandates/protocol";
 import {
   PROOF_REQUEST_SCHEMA, requestDigest, signProofRequest, STATUS_SOURCES, verifyVerificationResult, VerifierError,
@@ -37,6 +37,7 @@ import {
   type DemoPepConfig, type DemoPepEnv,
 } from "./config";
 import { DEMO_TOKEN_TTL_MS, mintAccessToken, newDemoSubject } from "./identity";
+import { anchorSetup, createAnchorPublisher, type AnchorDeps, type AnchorEnv, type AnchorReport, type AnchorState } from "./anchor";
 import {
   appendDecision, decisionReceipt, DEMO_PEP_LEDGER_PROFILE, LedgerError, purgeLedger, readEpoch, sealEpoch,
   type LedgerDecision, type Store,
@@ -60,9 +61,11 @@ export const DAILY_TOKENS = 5_000;
 export const DAILY_DECISIONS = 20_000;
 /** The maintenance alarm: expiry purge, sealing, retention, old quota counters. */
 export const MAINTENANCE_INTERVAL_MS = 3_600_000;
+/** After an on-demand seal, the alarm wakes this soon to publish the new epoch. */
+export const ANCHOR_WAKE_MS = 1_000;
 const PURGE_BATCH = 500;
 
-export interface DemoPepEnvWithLimits extends DemoPepEnv {
+export interface DemoPepEnvWithLimits extends DemoPepEnv, AnchorEnv {
   /** Workers Rate Limiting binding for POST /identity/token, keyed by client IP. */
   DEMO_PEP_TOKEN_LIMITER?: RateLimiter;
   /** Workers Rate Limiting binding for /authorize, receipts and epochs, keyed by client IP. */
@@ -130,9 +133,21 @@ const day = (at: number) => new Date(at).toISOString().slice(0, 10);
 /** IPs are stored only as a day-scoped digest, in quota keys that the alarm drops after the day. */
 const ipKey = (ip: string, at: number) => sha256(`attest.demo-pep.ip/v1\n${day(at)}\n${ip}`);
 
-/** The DecisionLogAnchor configured for Sepolia in the network manifest, if any. */
-export const demoLedgerAnchor = () =>
-  (networkConfigs.sepolia.contracts as ContractManifest).DecisionLogAnchor?.default ?? null;
+/**
+ * Where this PEP's epochs are anchored, as served with discovery and receipts. Only public facts:
+ * chain, contract, log id and a status (never the key, never a raw error).
+ */
+export async function anchorInfo(env: AnchorEnv, state?: AnchorState) {
+  const setup = await anchorSetup(env);
+  if (setup.status === "not-configured") return { status: "not-configured" as const };
+  if (setup.status === "misconfigured") return { status: "misconfigured" as const, code: setup.code };
+  const { chainId, address, logId } = setup.config;
+  return {
+    status: "configured" as const, chainId, address, logId,
+    network: networkByChainId(chainId)?.id ?? null,
+    ...(state?.lastError ? { lastError: { code: state.lastError.code, epoch: state.lastError.epoch, at: state.lastError.at } } : {}),
+  };
+}
 
 /** What the front hands the core: parsed, authenticated, small. */
 export type DemoPepCommand =
@@ -212,7 +227,7 @@ export function createDemoPepFront(deps: DemoPepDeps = {}) {
       if (!success) return yield* failWith("rate_limited");
     });
 
-  const discovery = (cfg: DemoPepConfig) =>
+  const discovery = (cfg: DemoPepConfig, env: AnchorEnv) =>
     Effect.gen(function* () {
       return json({
         service: "attest-demo-pep", standIn: "gatekeeper", notice: DEMO_PEP_NOTICE,
@@ -224,7 +239,7 @@ export function createDemoPepFront(deps: DemoPepDeps = {}) {
           keys: [...cfg.verifier.keys.keys()] },
         policy: DEMO_POLICY,
         ledger: { name: DEMO_LEDGER_NAME, logId: yield* attempt(() => decisionLogId(DEMO_LEDGER_NAME)),
-          profile: DEMO_PEP_LEDGER_PROFILE, anchor: { network: "sepolia", address: demoLedgerAnchor() } },
+          profile: DEMO_PEP_LEDGER_PROFILE, anchor: yield* attempt(() => anchorInfo(env)) },
       }, 200, { "cache-control": "public, max-age=60" });
     });
 
@@ -239,7 +254,7 @@ export function createDemoPepFront(deps: DemoPepDeps = {}) {
     const base = "/api/demo-pep";
     const route = (): Effect.Effect<Response, HttpFailure> => {
       // Served here from configuration only: never reaches the Durable Object.
-      if (pathname === base || pathname === `${base}/`) return only("GET", () => config(env).pipe(Effect.flatMap(discovery)));
+      if (pathname === base || pathname === `${base}/`) return only("GET", () => config(env).pipe(Effect.flatMap((c) => discovery(c, env))));
       if (pathname === `${base}/jwks`) return only("GET", () => config(env).pipe(Effect.map((c) =>
         json(jwks(c.requestKeys), 200, { "cache-control": "public, max-age=300" }))));
       if (pathname === `${base}/identity/jwks`) return only("GET", () => config(env).pipe(Effect.map((c) =>
@@ -489,13 +504,17 @@ export function createDemoPepCore(deps: Pick<DemoPepDeps, "now"> = {}) {
       }, 201);
     });
 
-  const receipt = (cmd: Extract<DemoPepCommand, { op: "receipt" }>, store: Store) =>
+  const receipt = (cmd: Extract<DemoPepCommand, { op: "receipt" }>, env: DemoPepEnv & AnchorEnv, store: Store) =>
     Effect.gen(function* () {
       const proof = yield* attempt(() => decisionReceipt(store, cmd.decisionId, cmd.principalId, now()));
+      const state = yield* attempt(() => store.get<AnchorState>("anchor:state"));
+      const info = yield* attempt(() => anchorInfo(env, state));
+      // "anchored": the epoch row records the anchoring transaction. "awaiting-anchoring": configured, not yet.
+      const status = info.status !== "configured" ? info.status : proof.epoch.anchor ? "anchored" : "awaiting-anchoring";
       return json({
         receipt: proof, profile: DEMO_PEP_LEDGER_PROFILE,
         ledger: { name: DEMO_LEDGER_NAME, logId: yield* attempt(() => decisionLogId(DEMO_LEDGER_NAME)),
-          anchor: { network: "sepolia", address: demoLedgerAnchor(), publisher: null } },
+          anchor: { ...info, status } },
       });
     });
 
@@ -503,7 +522,7 @@ export function createDemoPepCore(deps: Pick<DemoPepDeps, "now"> = {}) {
     Effect.gen(function* () {
       const row = yield* attempt(() => readEpoch(store, n));
       if (!row) return yield* failWith("not_found");
-      return json({ ...row, anchor: null }, 200, { "cache-control": "public, max-age=300" });
+      return json({ ...row, anchor: row.anchor ?? null }, 200, { "cache-control": row.anchor ? "public, max-age=300" : "no-store" });
     });
 
   /** Ensures the maintenance alarm is armed. */
@@ -512,15 +531,19 @@ export function createDemoPepCore(deps: Pick<DemoPepDeps, "now"> = {}) {
   };
 
   return {
-    run(command: DemoPepCommand, env: DemoPepEnv, store: Store): Promise<Response> {
+    async run(command: DemoPepCommand, env: DemoPepEnv & AnchorEnv, store: Store): Promise<Response> {
+      const sealedBefore = command.op === "receipt" ? (await store.get<{ epoch: number }>("ledger:epoch-head"))?.epoch : undefined;
       const program = command.op === "token" ? token(command, env, store)
         : command.op === "authorize" ? authorize(command, env, store)
-        : command.op === "receipt" ? receipt(command, store)
+        : command.op === "receipt" ? receipt(command, env, store)
         : epoch(store, command.epoch);
-      return respond(program).then(async (res) => {
-        await arm(store, now()).catch(() => {});
-        return res;
-      });
+      const res = await respond(program);
+      await arm(store, now()).catch(() => {});
+      // An epoch was just sealed on demand: wake the alarm soon to publish it, outside this queue.
+      if (command.op === "receipt" && store.setAlarm &&
+        (await store.get<{ epoch: number }>("ledger:epoch-head"))?.epoch !== sealedBefore)
+        await store.setAlarm(now() + ANCHOR_WAKE_MS).catch(() => {});
+      return res;
     },
     /**
      * Maintenance: drop expired requests, facts and pending lists; seal pending leaves; drop leaves past
@@ -574,15 +597,22 @@ export function createDemoPepCore(deps: Pick<DemoPepDeps, "now"> = {}) {
  * Front and core in one process, with the core behind a serial queue: what the Worker and
  * DemoPepService do together, for tests and local use.
  */
-export function createDemoPep(deps: DemoPepDeps = {}) {
+export function createDemoPep(deps: DemoPepDeps & { anchor?: AnchorDeps } = {}) {
   const front = createDemoPepFront(deps);
   const core = createDemoPepCore(deps);
+  const publisher = createAnchorPublisher({ ...(deps.now ? { now: deps.now } : {}), ...deps.anchor });
   const queues = new WeakMap<Store, SerialQueue>();
-  const handle = (request: Request, env: DemoPepEnvWithLimits, store: Store) => {
+  const queueFor = (store: Store) => {
     let queue = queues.get(store);
     if (!queue) queues.set(store, (queue = new SerialQueue()));
-    const q = queue;
-    return front(request, env, (command) => q.run(() => core.run(command, env, store)));
+    return queue;
   };
-  return Object.assign(handle, { maintain: (store: Store) => core.maintain(store) });
+  const handle = (request: Request, env: DemoPepEnvWithLimits, store: Store) =>
+    front(request, env, (command) => queueFor(store).run(() => core.run(command, env, store)));
+  return Object.assign(handle, {
+    maintain: (store: Store) => queueFor(store).run(() => core.maintain(store)),
+    /** What the alarm does after maintenance: publish sealed epochs, chain calls outside the queue. */
+    publish: (store: Store, env: DemoPepEnvWithLimits): Promise<AnchorReport> =>
+      publisher.publish(store, env, (task) => queueFor(store).run(task)),
+  });
 }

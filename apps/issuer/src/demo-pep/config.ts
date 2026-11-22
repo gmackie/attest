@@ -54,7 +54,8 @@ export const DEMO_POLICY = {
   revision: "demo-pep.vendor-payout/1",
 } as const;
 export const DEFAULT_DEMO_PEP_ISSUER = "https://attest.gmac.io/api/demo-pep";
-export const DEMO_LEDGER_NAME = "attest.gmac.io/demo-pep/decision-ledger";
+/** On-chain log id: decisionLogId(DEMO_LEDGER_NAME) = 0x6b0b609dfc1698b1d74ce391632963f26f2e8e658f85b133594967a3145a054c. */
+export const DEMO_LEDGER_NAME = "attest-demo-pep";
 
 const kidPattern = /^[A-Za-z0-9._:-]{1,128}$/;
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);

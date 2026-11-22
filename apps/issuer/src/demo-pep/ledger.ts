@@ -63,6 +63,10 @@ interface Head { seq: number; lastLeafHash: string }
 export interface EpochRow {
   epoch: number; root: string; firstSeq: number; lastSeq: number; size: number;
   firstPrevHash: string; lastLeafHash: string; sealedAt: number;
+  /** Set once DecisionLogAnchor holds this epoch (see anchor.ts). */
+  anchor?: unknown;
+  /** The last failed anchoring attempt, as a sanitized code. */
+  anchorError?: { code: string; at: number } | null;
 }
 interface EpochHead { epoch: number; lastSeq: number; lastLeafHash: string }
 
@@ -138,7 +142,7 @@ export const readEpoch = (store: Store, epoch: number) => store.get<EpochRow>(`l
  * that, a read is one leaf, one epoch and an O(log n) check of the stored path.
  */
 export async function decisionReceipt(store: Store, decisionId: string, principalId: string, now: number):
-  Promise<DecisionReceipt & { epoch: EpochRow & { anchor: null } }> {
+  Promise<DecisionReceipt & { epoch: EpochRow & { anchor: unknown } }> {
   const seq = await store.get<number>(`ledger:decision:${decisionId}`);
   let leaf = seq === undefined ? undefined : await store.get<LeafRow>(leafKey(seq));
   if (!leaf || leaf.principalId !== principalId) throw new LedgerError("unknown_decision");
@@ -154,7 +158,7 @@ export async function decisionReceipt(store: Store, decisionId: string, principa
   return {
     schema: DEMO_PEP_LEDGER_PROFILE.proof, decision: JSON.parse(leaf.canonical) as LedgerDecision & Record<string, unknown>,
     salt: leaf.salt, seq: leaf.seq, prevHash: leaf.prevHash, leafHash: leaf.leafHash,
-    epoch: { ...epoch, anchor: null }, leafIndex: index, path: leaf.path,
+    epoch: { ...epoch, anchor: epoch.anchor ?? null }, leafIndex: index, path: leaf.path,
   };
 }
 

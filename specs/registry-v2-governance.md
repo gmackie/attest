@@ -6,7 +6,8 @@ Status: experimental, testnet only. Not audited. Mainnet writes stay closed
 `contracts/src/WorkspaceRegistryV2.sol` addresses the governance and revocation
 rows of the production-readiness table: V1's administrator is immutable, it has
 no administrator emergency revocation, and it has no issuer key lifecycle. V2
-keeps the V1 ABI and adds those controls. It still anchors only commitments,
+keeps the V1 function signatures and adds those controls; anchor ids are
+namespaced per issuer, and V1 readers must not be used against it (see below). It still anchors only commitments,
 key-hash commitments and reason codes; it does not verify proofs or establish
 real-world authority.
 
@@ -26,8 +27,15 @@ Tests: `packages/chain-evm/test/registry-v2.test.ts` (anvil).
   proposal), `acceptAdministrator()` (the proposed account), and
   `cancelAdministratorProposal()` (admin). Proposing zero or the current admin
   is refused. After acceptance the old administrator has no authority.
+- Proposals lapse: `proposeAdministrator` sets `pendingAdministratorDeadline =
+  now + PROPOSAL_TTL` (7 days). Acceptance after the deadline reverts
+  `ProposalExpired`, so a forgotten proposal to a since-compromised or
+  decommissioned account cannot be accepted months later. The administrator
+  re-proposes to start a new window. `pendingAdministrator` keeps showing the
+  lapsed address until replaced or cancelled; check the deadline.
 - Lost-key drill: acceptance needs nothing from the current administrator, so a
-  rotation proposed before the key was lost still completes. Recovery from a
+  rotation proposed before the key was lost still completes, provided it is
+  accepted within the 7-day window. Recovery from a
   lost administrator key with no pending proposal is not possible by design (no
   backdoor); that is why the administrator should be a Safe, whose own owner
   set can be rotated when one owner key is lost.
@@ -52,7 +60,7 @@ seconds. A key is usable at `t` when `validFrom <= t < validUntil` and, if
 - `markIssuerKeyCompromised(issuer, keyHash, T, reason)` (admin or the issuer
   account): compromise cutoff. `T <= now`. The cutoff may later be moved earlier,
   never later.
-- `anchor` records `anchorKeys(id) = (grant key, block time)` and reverts
+- `anchor` records `anchorBindings(key) = (grant key, block time)` and reverts
   `KeyUnusable` if the grant's key is not usable now.
 
 **Compromise semantics.** Anything anchored with the key at or after `T` is
@@ -68,14 +76,33 @@ how long its credentials live; credential lifetime is the anchor's `validUntil`.
 An anchor written inside the window stays valid after the key expires or is
 retired.
 
+## Anchor namespacing
+
+V1 keys anchors by the issuer-chosen id in one global map, so any enabled
+issuer can front-run another issuer's id and make its anchor revert
+`AlreadyUsed` (id squatting). V2 stores every anchor under
+`key = anchorKey(issuer, id) = keccak256(abi.encode(issuer, id))`:
+
+- `anchor(id, ...)` and `revoke(id)` keep their V1 signatures; `id` is in the
+  caller's namespace. Two issuers can use the same id independently, and
+  neither can revoke or shadow the other's anchor.
+- The V1-shaped getter `anchors(bytes32)`, plus `anchorBindings` and
+  `anchorRevocations`, take the derived key. `anchorKey(issuer, id)` is
+  exposed on-chain and as `registryV2AnchorKey` in the client.
+- Events carry the derived key in their `id`/`key` position
+  (`CredentialAnchored`, `CredentialRevoked`); `CredentialKeyBound` and
+  `AnchorEmergencyRevoked` also carry the issuer and the issuer-chosen id.
+- `registryV2AnchorStatus` takes the issuer-chosen id and derives the key.
+
 ## Emergency revocation
 
 Both functions are administrator-only, take a non-zero `bytes32` reason code,
 emit an event, and are **irreversible**:
 
-- `emergencyRevokeAnchor(id, reason)`: records `anchorRevocations(id)` and also
-  sets the V1 `revoked` flag, so V1 readers see it. Emits
-  `AnchorEmergencyRevoked(id, reason, revokedAt)`.
+- `emergencyRevokeAnchor(issuer, id, reason)`: records
+  `anchorRevocations(anchorKey(issuer, id))` and also sets the `revoked` flag
+  in `anchors(key)`. Emits
+  `AnchorEmergencyRevoked(key, issuer, reason, id, revokedAt)`.
 - `emergencyRevokeGrant(issuer, scope, reason)`: records
   `grantRevocations(issuer, scope)`, disables the grant, and invalidates every
   anchor under it regardless of time. The grant can never be configured again
@@ -127,14 +154,24 @@ reasons plus `key_unknown`.
 | Grant key change makes all earlier anchors `issuer_key_changed` | Anchors bind the key at write time; rotation does not invalidate them. Use compromise cutoff or revocation to invalidate |
 | No key lifecycle | Validity windows, retirement, compromise cutoff; `anchor` and `configureIssuer` revert `KeyUnusable` |
 | `configureIssuer` always succeeds for the admin | Reverts `GrantRevoked` after emergency grant revocation, `KeyUnusable` for an unusable key |
+| Anchors in one global map keyed by id; ids can be squatted | Anchors keyed by `anchorKey(issuer, id)`; `anchors(bytes32)` and event ids take/carry the derived key |
+| No version marker | `registryVersion()` returns 2 |
 
-Unchanged: function signatures and getters `administrator`, `issuers`,
-`verifiers`, `anchors`, `usedRequests`, `configureIssuer`, `configureVerifier`,
-`anchor`, `revoke`, `recordDecision`, V1 events and errors. V1's
-`workspaceAnchorStatus` and `registryAbi` work against V2 with V1 semantics (and
-will report `issuer_key_changed` after a V2 rotation). `administrator` is now a
-storage variable, so the runtime code has no immutables and its hash is fixed by
-the compiler output alone.
+Unchanged: function signatures of `administrator`, `issuers`, `verifiers`,
+`anchors`, `usedRequests`, `configureIssuer`, `configureVerifier`, `anchor`,
+`revoke`, `recordDecision`, and the V1 event and error signatures. Writers built
+on V1's `registryAbi` therefore work against V2 unchanged.
+
+**V1 readers must not read V2.** V1 status semantics ignore key windows,
+compromise cutoffs and per-issuer namespacing, so they could report a
+compromised credential as active. `workspaceAnchorStatus` (V1) reads
+`registryVersion()` in the same agreeing-RPC read as the anchor and grant: a
+contract revert or empty return means V1; a result of 2 or more is refused with
+`registry_requires_v2_reader`. Transport errors are never read as V1, and
+endpoints that disagree on the version fail closed (`rpc_disagreement`).
+
+`administrator` is now a storage variable, so the runtime code has no
+immutables and its hash is fixed by the compiler output alone.
 
 ## Pinned deployment manifest
 
@@ -162,9 +199,11 @@ self-contained so network configuration (ATTE-26) can load manifests per network
 
 - Not audited; no independent review of the governance model.
 - No timelock on administrator actions or rotation; a Safe's threshold is the
-  only brake. A timelock (or Safe guard/delay module) is recommended before any
+  only brake (proposals do lapse after 7 days, which is not a delay). A timelock (or Safe guard/delay module) is recommended before any
   pilot.
-- No on-chain migration from V1: V1 anchors are not imported. Clients choose V1
+- No on-chain migration from V1: V1 anchors are not imported. Older V1 readers
+  deployed before this change do not check `registryVersion()`; pin readers to
+  the manifest's contract name as well. Clients choose V1
   or V2 per pinned deployment.
 - Compiler version is not pinned in `compile.mjs` (it uses the installed `solc`
   ^0.8.30); a release manifest must record the exact version used.

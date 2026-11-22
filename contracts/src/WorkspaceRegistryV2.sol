@@ -13,27 +13,37 @@ pragma solidity ^0.8.30;
 ///
 ///      V1 compatibility: the V1 ABI (administrator, issuers, verifiers, anchors, usedRequests,
 ///      configureIssuer, configureVerifier, anchor, revoke, recordDecision and their events/errors) is
-///      preserved with the same signatures. Differences are listed in specs/registry-v2-governance.md.
+///      preserved with the same signatures. Anchors are namespaced per issuer: storage, getters and events
+///      use key = anchorKey(issuer, id), so one issuer cannot claim (squat) another issuer's id. V1 readers
+///      must not be used against V2 (they ignore key lifecycle); registryVersion() lets them detect V2.
+///      Differences are listed in specs/registry-v2-governance.md.
 contract WorkspaceRegistryV2 {
     struct Grant { bool enabled; bytes32 signingKeyHash; }
     struct Anchor { address issuer; bytes32 scope; bytes32 commitment; uint64 validUntil; bool revoked; }
     /// @dev The issuer signing key in effect when the anchor was written, and the block time it was written.
-    struct AnchorKey { bytes32 signingKeyHash; uint64 anchoredAt; }
+    struct AnchorBinding { bytes32 signingKeyHash; uint64 anchoredAt; }
     /// @dev Key usable for t in [validFrom, validUntil) and, if compromisedAt != 0, t < compromisedAt.
     ///      validUntil == 0 means the key is not registered.
     struct SigningKey { uint64 validFrom; uint64 validUntil; uint64 compromisedAt; bytes32 compromiseReason; }
     struct EmergencyRevocation { bytes32 reason; uint64 revokedAt; }
 
     uint64 public constant OPEN_ENDED = type(uint64).max;
+    /// @notice An administrator proposal not accepted within this period lapses.
+    uint64 public constant PROPOSAL_TTL = 7 days;
 
     address public administrator;
     address public pendingAdministrator;
+    /// @notice Last block time (inclusive) at which pendingAdministrator may accept; 0 when none is pending.
+    uint64 public pendingAdministratorDeadline;
     mapping(address => mapping(bytes32 => Grant)) public issuers;
     mapping(address => bool) public verifiers;
+    /// @dev Keyed by anchorKey(issuer, id).
     mapping(bytes32 => Anchor) public anchors;
     mapping(address => mapping(bytes32 => bool)) public usedRequests;
-    mapping(bytes32 => AnchorKey) public anchorKeys;
+    /// @dev Keyed by anchorKey(issuer, id).
+    mapping(bytes32 => AnchorBinding) public anchorBindings;
     mapping(address => mapping(bytes32 => SigningKey)) public issuerKeys;
+    /// @dev Keyed by anchorKey(issuer, id).
     mapping(bytes32 => EmergencyRevocation) public anchorRevocations;
     mapping(address => mapping(bytes32 => EmergencyRevocation)) public grantRevocations;
 
@@ -44,19 +54,29 @@ contract WorkspaceRegistryV2 {
     event CredentialRevoked(bytes32 indexed id);
     event DecisionRecorded(address indexed verifier, bytes32 indexed requestCommitment, bytes32 proofCommitment, bool satisfied);
     // V2 events.
-    event AdministratorProposed(address indexed current, address indexed proposed);
+    event AdministratorProposed(address indexed current, address indexed proposed, uint64 deadline);
     event AdministratorProposalCancelled(address indexed current, address indexed proposed);
     event AdministratorChanged(address indexed previous, address indexed current);
-    event CredentialKeyBound(bytes32 indexed id, bytes32 signingKeyHash, uint64 anchoredAt);
+    /// @dev `key` is anchorKey(issuer, id); `id` is the issuer-chosen id.
+    event CredentialKeyBound(bytes32 indexed key, address indexed issuer, bytes32 indexed id, bytes32 signingKeyHash, uint64 anchoredAt);
     event IssuerKeyRegistered(address indexed issuer, bytes32 indexed signingKeyHash, uint64 validFrom, uint64 validUntil);
     event IssuerKeyRetired(address indexed issuer, bytes32 indexed signingKeyHash, uint64 validUntil);
     event IssuerKeyCompromised(address indexed issuer, bytes32 indexed signingKeyHash, uint64 compromisedAt, bytes32 reason);
     event IssuerKeyRotated(address indexed issuer, bytes32 indexed scope, bytes32 previousKeyHash, bytes32 signingKeyHash);
-    event AnchorEmergencyRevoked(bytes32 indexed id, bytes32 indexed reason, uint64 revokedAt);
+    event AnchorEmergencyRevoked(bytes32 indexed key, address indexed issuer, bytes32 indexed reason, bytes32 id, uint64 revokedAt);
     event GrantEmergencyRevoked(address indexed issuer, bytes32 indexed scope, bytes32 indexed reason, uint64 revokedAt);
 
     error Unauthorized(); error InvalidInput(); error AlreadyUsed();
-    error NotPendingAdministrator(); error GrantRevoked(); error KeyUnusable();
+    error NotPendingAdministrator(); error ProposalExpired(); error GrantRevoked(); error KeyUnusable();
+
+    /// @notice Interface version marker. V1 has no such function, so a revert or empty return means V1.
+    function registryVersion() external pure returns (uint256) { return 2; }
+
+    /// @notice Storage key of an issuer's anchor id. Ids are per issuer: the same id under two issuers
+    ///         is two independent anchors.
+    function anchorKey(address issuer, bytes32 id) public pure returns (bytes32) {
+        return keccak256(abi.encode(issuer, id));
+    }
 
     /// @param administrator_ Initial administrator, typically a Safe. Explicit so a factory or deployer
     ///        EOA never becomes the governance root by accident.
@@ -70,28 +90,34 @@ contract WorkspaceRegistryV2 {
 
     // ---------------------------------------------------------------- administrator lifecycle
 
-    /// @notice Step one of a handover. Replaces any earlier pending proposal.
+    /// @notice Step one of a handover. Replaces any earlier pending proposal. Lapses after PROPOSAL_TTL.
     function proposeAdministrator(address next) external onlyAdmin {
         if (next == address(0) || next == administrator) revert InvalidInput();
+        uint64 deadline = uint64(block.timestamp) + PROPOSAL_TTL;
         pendingAdministrator = next;
-        emit AdministratorProposed(administrator, next);
+        pendingAdministratorDeadline = deadline;
+        emit AdministratorProposed(administrator, next, deadline);
     }
 
     function cancelAdministratorProposal() external onlyAdmin {
         address proposed = pendingAdministrator;
         if (proposed == address(0)) revert InvalidInput();
         pendingAdministrator = address(0);
+        pendingAdministratorDeadline = 0;
         emit AdministratorProposalCancelled(administrator, proposed);
     }
 
     /// @notice Step two, called by the proposed administrator (for example through a Safe transaction).
     ///         Needs nothing from the current administrator, so a pre-arranged handover completes even if
-    ///         the current administrator's key has since been lost.
+    ///         the current administrator's key has since been lost, as long as it is accepted before the
+    ///         deadline. An expired proposal cannot be accepted; the administrator must propose again.
     function acceptAdministrator() external {
         if (msg.sender != pendingAdministrator || msg.sender == address(0)) revert NotPendingAdministrator();
+        if (block.timestamp > pendingAdministratorDeadline) revert ProposalExpired();
         emit AdministratorChanged(administrator, msg.sender);
         administrator = msg.sender;
         pendingAdministrator = address(0);
+        pendingAdministratorDeadline = 0;
     }
 
     // ---------------------------------------------------------------- grants and verifiers (V1 ABI)
@@ -174,35 +200,40 @@ contract WorkspaceRegistryV2 {
 
     // ---------------------------------------------------------------- anchors (V1 ABI)
 
+    /// @notice V1 signature; `id` is in the caller's namespace. CredentialAnchored carries the storage key
+    ///         anchorKey(msg.sender, id); CredentialKeyBound carries both.
     function anchor(bytes32 id, bytes32 scope, bytes32 commitment, uint64 validUntil) external {
         Grant storage grant = issuers[msg.sender][scope];
         if (!grant.enabled) revert Unauthorized();
         if (id == bytes32(0) || commitment == bytes32(0) || validUntil <= block.timestamp) revert InvalidInput();
-        if (anchors[id].issuer != address(0)) revert AlreadyUsed();
+        bytes32 key = anchorKey(msg.sender, id);
+        if (anchors[key].issuer != address(0)) revert AlreadyUsed();
         if (!keyUsableAt(msg.sender, grant.signingKeyHash, uint64(block.timestamp))) revert KeyUnusable();
-        anchors[id] = Anchor(msg.sender, scope, commitment, validUntil, false);
-        anchorKeys[id] = AnchorKey(grant.signingKeyHash, uint64(block.timestamp));
-        emit CredentialAnchored(id, msg.sender, scope, commitment, validUntil);
-        emit CredentialKeyBound(id, grant.signingKeyHash, uint64(block.timestamp));
+        anchors[key] = Anchor(msg.sender, scope, commitment, validUntil, false);
+        anchorBindings[key] = AnchorBinding(grant.signingKeyHash, uint64(block.timestamp));
+        emit CredentialAnchored(key, msg.sender, scope, commitment, validUntil);
+        emit CredentialKeyBound(key, msg.sender, id, grant.signingKeyHash, uint64(block.timestamp));
     }
 
-    /// @notice V1: the original issuer may permanently revoke its own anchor.
+    /// @notice V1: the original issuer may permanently revoke its own anchor (`id` in its namespace).
     function revoke(bytes32 id) external {
-        if (anchors[id].issuer != msg.sender) revert Unauthorized();
-        if (anchors[id].revoked) revert AlreadyUsed();
-        anchors[id].revoked = true; emit CredentialRevoked(id);
+        bytes32 key = anchorKey(msg.sender, id);
+        if (anchors[key].issuer != msg.sender) revert Unauthorized();
+        if (anchors[key].revoked) revert AlreadyUsed();
+        anchors[key].revoked = true; emit CredentialRevoked(key);
     }
 
     // ---------------------------------------------------------------- emergency revocation (irreversible)
 
     /// @notice Administrator revocation of one anchor, for example when the issuer's account is lost.
     ///         Also sets the V1 `revoked` flag so V1 readers see it. There is no undo.
-    function emergencyRevokeAnchor(bytes32 id, bytes32 reason) external onlyAdmin {
-        if (anchors[id].issuer == address(0) || reason == bytes32(0)) revert InvalidInput();
-        if (anchorRevocations[id].revokedAt != 0) revert AlreadyUsed();
-        anchorRevocations[id] = EmergencyRevocation(reason, uint64(block.timestamp));
-        emit AnchorEmergencyRevoked(id, reason, uint64(block.timestamp));
-        if (!anchors[id].revoked) { anchors[id].revoked = true; emit CredentialRevoked(id); }
+    function emergencyRevokeAnchor(address issuer, bytes32 id, bytes32 reason) external onlyAdmin {
+        bytes32 key = anchorKey(issuer, id);
+        if (anchors[key].issuer == address(0) || reason == bytes32(0)) revert InvalidInput();
+        if (anchorRevocations[key].revokedAt != 0) revert AlreadyUsed();
+        anchorRevocations[key] = EmergencyRevocation(reason, uint64(block.timestamp));
+        emit AnchorEmergencyRevoked(key, issuer, reason, id, uint64(block.timestamp));
+        if (!anchors[key].revoked) { anchors[key].revoked = true; emit CredentialRevoked(key); }
     }
 
     /// @notice Administrator revocation of an issuer grant. Invalidates every anchor under (issuer, scope),

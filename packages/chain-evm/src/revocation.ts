@@ -24,9 +24,11 @@ export const revocationRootsAbi = parseAbi([
   "function getEpoch(bytes32 list,uint64 epoch) view returns ((bytes32 root,uint64 size,uint64 publishedAt))",
   "function latest(bytes32 list) view returns (uint64 epoch,bytes32 root,uint64 size,uint64 publishedAt)",
   "function proposeAdministrator(address next)",
+  "function cancelAdministratorProposal()",
   "function acceptAdministrator()",
   "function setPublisher(bytes32 list,address publisher_)",
   "function publishEpoch(bytes32 list,uint64 epoch,bytes32 root,uint64 size)",
+  "event AdministratorProposalCancelled(address indexed current,address indexed proposed)",
   "event EpochPublished(bytes32 indexed list,uint64 indexed epoch,bytes32 root,uint64 size)",
 ]);
 
@@ -49,8 +51,9 @@ export async function revocationListId(issuer: string): Promise<Hex> {
  * Revocation identifier for one credential: SHA-256 over a domain tag, the issuer list, the credential content
  * id and an optional salt. Without a salt, anyone who already knows the content id (the holder, the issuer, and
  * every verifier it was presented to) can test it against the public list. With a salt that only the issuer and
- * holder know, a list downloader cannot map entries back to content ids; the holder must then reveal the salt
- * (or the identifier) to each verifier, which learns it from then on.
+ * holder know, a list downloader cannot map entries back to content ids. The verifier must then obtain the salt
+ * from an issuer-signed field of the verified credential (and learns it from then on); a salt or identifier the
+ * holder merely asserts is never acceptable, because a fresh one yields an id that is not on the list.
  */
 export async function deriveRevocationId(input: { list: Hex; contentId: string; salt?: string }): Promise<string> {
   if (!/^0x[0-9a-fA-F]{64}$/.test(input.list)) fail("invalid_revocation_input", "list");
@@ -164,16 +167,33 @@ export type NonRevocationEvidence =
   | { kind: "list"; ids: readonly string[] }
   | { kind: "proof"; proof: NonMembershipProof };
 
+/**
+ * The credential being checked, as the verifier has already verified it. The revocation id is always derived
+ * here from these fields; callers cannot pass an id. A holder-chosen id or salt would let a revoked holder
+ * present an identifier that is simply not on the list, so:
+ * - `contentId` must be the content id the verified proof is bound to (the issuer's signature covers it);
+ * - `issuerSignedSalt` must come from an issuer-signed field of that credential (for example a POD entry the
+ *   proof reveals, or an issuer-signed salt record bound to this content id and checked against the issuer's
+ *   key), never from holder-asserted presentation material, request parameters or any holder-controlled channel.
+ */
+export interface VerifiedCredential {
+  contentId: string;
+  issuerSignedSalt?: string;
+}
+
 export interface RevocationStatusQuery {
   address: Address;
   list: Hex;
-  revocationId: string;
+  credential: VerifiedCredential;
   /** Maximum age of the latest epoch, measured from its publication to the observation time. */
   maxEpochAgeMs: number;
   /** Credential validity end (ms), if known; the result's validUntil never exceeds it. */
   credentialValidUntil?: number;
-  /** Called with the epoch read from chain so list or proof is fetched for exactly that epoch. */
-  evidence(epoch: RevocationEpoch): Promise<NonRevocationEvidence>;
+  /**
+   * Called with the epoch read from chain and the derived revocation id, so a list or proof is fetched for exactly
+   * that epoch and id. A holder proof is checked against the derived id, never against an id inside the proof.
+   */
+  evidence(epoch: RevocationEpoch, revocationId: string): Promise<NonRevocationEvidence>;
 }
 
 /** Structurally @attest/verifier's CredentialStatus, plus the epoch it was checked against. */
@@ -198,7 +218,8 @@ export async function revocationStatus(
   snapshot?: ChainSnapshot,
 ): Promise<RevocationStatus | null> {
   if (!Number.isSafeInteger(query.maxEpochAgeMs) || query.maxEpochAgeMs <= 0) fail("invalid_revocation_query", "maxEpochAgeMs");
-  if (!hex64.test(query.revocationId)) fail("invalid_revocation_id");
+  const revocationId = await deriveRevocationId({ list: query.list, contentId: query.credential.contentId,
+    ...(query.credential.issuerSignedSalt === undefined ? {} : { salt: query.credential.issuerSignedSalt }) });
   const at = snapshot ?? (await reader.snapshot());
   const epoch = await readRevocationEpoch(reader, { address: query.address, list: query.list }, at);
   if (!epoch) return null;
@@ -206,21 +227,26 @@ export async function revocationStatus(
   if (at.observedAt >= freshUntil) fail("revocation_root_stale", `epoch ${epoch.epoch}`);
   const validUntil = Math.min(freshUntil, query.credentialValidUntil ?? Number.MAX_SAFE_INTEGER);
   const base = { validUntil, epoch: epoch.epoch, evidence: epoch.evidence };
-  const evidence = await query.evidence(epoch);
+  const evidence = await query.evidence(epoch, revocationId);
   if (evidence.kind === "list") {
     if (!(await verifyRevocationList(evidence.ids, epoch))) fail("revocation_list_mismatch", `epoch ${epoch.epoch}`);
     let lo = 0, hi = evidence.ids.length;
-    while (lo < hi) { const mid = (lo + hi) >> 1; if (evidence.ids[mid]! < query.revocationId) lo = mid + 1; else hi = mid; }
-    return evidence.ids[lo] === query.revocationId ? { status: "revoked", reason: "listed_revoked", ...base } : { status: "active", ...base };
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (evidence.ids[mid]! < revocationId) lo = mid + 1; else hi = mid; }
+    return evidence.ids[lo] === revocationId ? { status: "revoked", reason: "listed_revoked", ...base } : { status: "active", ...base };
   }
   if (evidence.proof.epoch !== epoch.epoch) fail("revocation_epoch_mismatch", `proof ${evidence.proof.epoch}, chain ${epoch.epoch}`);
-  if (!(await verifyNonMembership(query.revocationId, evidence.proof, epoch))) fail("revocation_proof_invalid");
+  if (!(await verifyNonMembership(revocationId, evidence.proof, epoch))) fail("revocation_proof_invalid");
   return { status: "active", ...base };
 }
 
 /**
  * A @attest/verifier `status` port backed by revocation roots. Any failure (RPC disagreement, reorg, stale root,
- * bad list or proof, unknown issuer) yields null, which the verifier reports as `status_unavailable`: never active.
+ * bad list or proof, unknown issuer, missing issuer-signed salt) yields null, which the verifier reports as
+ * `status_unavailable`: never active.
+ *
+ * The port only ever sees fields @attest/verifier has verified before calling it: the authorized credential
+ * issuer, the pinned schema and the proof-bound content id. The revocation id is derived from those, so nothing
+ * the holder asserts can choose it.
  */
 export function revocationStatusPort(options: {
   reader: ChainStatusReader;
@@ -228,8 +254,13 @@ export function revocationStatusPort(options: {
   maxEpochAgeMs: number;
   /** The issuer's list id, or null if this verifier does not track one for that issuer. */
   listFor(credentialIssuer: string): Promise<Hex | null>;
-  /** Defaults to the unsalted deriveRevocationId over the content id. */
-  revocationIdFor?(query: { credentialIssuer: string; schema: string; contentId: string; list: Hex }): Promise<string>;
+  /**
+   * Set when this issuer list uses salted revocation ids. Receives only verified fields and must return the salt
+   * from an issuer-signed field of that credential (see VerifiedCredential), or null if none is available, which
+   * fails closed. Never source it from the holder's presentation or any holder-controlled channel. Without this
+   * option ids are unsalted; a list must not mix salted and unsalted ids.
+   */
+  issuerSignedSalt?(verified: { credentialIssuer: string; schema: string; contentId: string; list: Hex }): Promise<string | null>;
   evidence(query: { credentialIssuer: string; contentId: string; revocationId: string }, epoch: RevocationEpoch): Promise<NonRevocationEvidence>;
   onError?(error: unknown): void;
 }) {
@@ -237,12 +268,17 @@ export function revocationStatusPort(options: {
     try {
       const list = await options.listFor(query.credentialIssuer);
       if (!list) return null;
-      const revocationId = options.revocationIdFor
-        ? await options.revocationIdFor({ ...query, list })
-        : await deriveRevocationId({ list, contentId: query.contentId });
+      const verified = { credentialIssuer: query.credentialIssuer, schema: query.schema, contentId: query.contentId, list };
+      let credential: VerifiedCredential = { contentId: query.contentId };
+      if (options.issuerSignedSalt) {
+        const salt = await options.issuerSignedSalt(verified);
+        if (salt === null) fail("revocation_salt_unavailable");
+        credential = { contentId: query.contentId, issuerSignedSalt: salt! };
+      }
       return await revocationStatus(options.reader, {
-        address: options.address, list, revocationId, maxEpochAgeMs: options.maxEpochAgeMs,
-        evidence: (epoch) => options.evidence({ credentialIssuer: query.credentialIssuer, contentId: query.contentId, revocationId }, epoch),
+        address: options.address, list, credential, maxEpochAgeMs: options.maxEpochAgeMs,
+        evidence: (epoch, revocationId) =>
+          options.evidence({ credentialIssuer: query.credentialIssuer, contentId: query.contentId, revocationId }, epoch),
       });
     } catch (error) {
       options.onError?.(error);
@@ -253,7 +289,10 @@ export function revocationStatusPort(options: {
 
 /** Minimal clients the issuer-side publisher needs (viem PublicClient / WalletClient satisfy these via viemRevocationClients). */
 export interface RevocationPublisherClients {
+  /** The chain the issuer intends to write to. */
   chainId: number;
+  /** The chain the connected RPC actually serves; checked before every write. */
+  getChainId(): Promise<number>;
   read(args: { address: Address; functionName: "latestEpoch" | "getEpoch"; args: readonly unknown[] }): Promise<unknown>;
   simulateAndWrite(args: { address: Address; functionName: "publishEpoch"; args: readonly unknown[] }): Promise<Hex>;
   waitForReceipt(hash: Hex, confirmations: number): Promise<{ status: "success" | "reverted"; blockNumber: bigint }>;
@@ -268,7 +307,8 @@ export function publishEpochArgs(list: Hex, epoch: number, revocations: Revocati
 /**
  * Issuer-side publisher. Idempotent for an epoch already published with the same root and size; refuses a
  * different commitment for a published epoch (`epoch_conflict`) or a skipped epoch (`epoch_out_of_order`).
- * Mainnet is refused while production writes are gated (specs/production-readiness.md).
+ * Mainnet is refused while production writes are gated (specs/production-readiness.md): both the declared chain
+ * and, before every write, the chain the RPC actually reports (`chain_mismatch` if they differ).
  */
 export function revocationRootsPublisher(options: { clients: RevocationPublisherClients; address: Address; list: Hex; confirmations?: number }) {
   const { clients, address, list } = options;
@@ -285,6 +325,7 @@ export function revocationRootsPublisher(options: { clients: RevocationPublisher
         return { epoch };
       }
       if (latest + 1 !== epoch) fail("epoch_out_of_order", `chain at ${latest}, epoch ${epoch}`);
+      await assertWriteChain(clients);
       const tx = await clients.simulateAndWrite({ address, functionName: "publishEpoch", args });
       const receipt = await clients.waitForReceipt(tx, confirmations);
       if (receipt.status !== "success") fail("epoch_reverted", tx);
@@ -293,19 +334,30 @@ export function revocationRootsPublisher(options: { clients: RevocationPublisher
   };
 }
 
+async function assertWriteChain(clients: { chainId: number; getChainId(): Promise<number> }) {
+  const actual = await clients.getChainId();
+  if (actual === 1 || clients.chainId === 1) fail("production_writes_disabled");
+  if (actual !== clients.chainId) fail("chain_mismatch", `declared ${clients.chainId}, connected ${actual}`);
+}
+
 /** Adapt viem clients for the publisher (keeps viem generics out of callers). */
 export function viemRevocationClients(publicClient: {
+  getChainId(): Promise<number>;
   readContract(args: never): Promise<unknown>;
   simulateContract(args: never): Promise<{ request: unknown }>;
   waitForTransactionReceipt(args: never): Promise<{ status: "success" | "reverted"; blockNumber: bigint }>;
 }, walletClient: { writeContract(args: never): Promise<Hex> }, account: Address, chainId: number): RevocationPublisherClients {
-  return {
+  const clients: RevocationPublisherClients = {
     chainId,
+    getChainId: () => publicClient.getChainId(),
     read: (a) => publicClient.readContract({ ...a, abi: revocationRootsAbi } as never),
     simulateAndWrite: async (a) => {
+      // Re-checked here too, so the adapter is safe when used without revocationRootsPublisher.
+      await assertWriteChain(clients);
       const sim = await publicClient.simulateContract({ ...a, abi: revocationRootsAbi, account } as never);
       return walletClient.writeContract(sim.request as never);
     },
     waitForReceipt: (hash, confirmations) => publicClient.waitForTransactionReceipt({ hash, confirmations } as never),
   };
+  return clients;
 }

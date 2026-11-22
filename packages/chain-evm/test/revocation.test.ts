@@ -9,7 +9,7 @@ import type { CredentialStatus } from "@attest/verifier";
 import {
   buildRevocationList, deriveRevocationId, nonMembershipProof, publishEpochArgs, readRevocationEpoch, revocationListId,
   revocationRootsAbi, revocationRootsPublisher, revocationStatus, revocationStatusPort, verifyNonMembership,
-  verifyRevocationList, viemRevocationClients, type NonMembershipProof, type RevocationList, type RevocationStatusQuery,
+  verifyRevocationList, viemRevocationClients, type NonMembershipProof, type NonRevocationEvidence, type RevocationList, type RevocationStatusQuery,
 } from "../src/revocation";
 import { inclusionProof } from "../src/decision-log";
 import { createChainStatusReader, publicClientEndpoint, type ChainEndpoint, type ChainStatusReaderOptions } from "../src/status";
@@ -149,7 +149,7 @@ describe.skipIf(!available)("RevocationRoots", () => {
   const contentId = "4242";
   let mine1: string, others: string[], epoch1: RevocationList, epoch2: RevocationList;
   const query = (evidence: RevocationStatusQuery["evidence"], over: Partial<RevocationStatusQuery> = {}): RevocationStatusQuery =>
-    ({ address, list, revocationId: mine1, maxEpochAgeMs: 24 * HOUR, evidence, ...over });
+    ({ address, list, credential: { contentId }, maxEpochAgeMs: 24 * HOUR, evidence, ...over });
   const asList = (l: RevocationList) => async () => ({ kind: "list" as const, ids: l.ids });
 
   it("only the registered issuer publishes, epochs are strictly sequential, and a missing list is unavailable", async () => {
@@ -199,12 +199,52 @@ describe.skipIf(!available)("RevocationRoots", () => {
     expect(await code(revocationStatus(await statusReader(), query(asList(epoch1))))).toBe("revocation_list_mismatch");
     // An unrelated credential stays active under epoch 2.
     const other = await deriveRevocationId({ list, contentId: "7" });
-    expect((await revocationStatus(await statusReader(), query(async (e) => ({ kind: "proof", proof: (await nonMembershipProof(epoch2, e.epoch, other))! }), { revocationId: other })))?.status).toBe("active");
+    expect((await revocationStatus(await statusReader(), query(async (e) => ({ kind: "proof", proof: (await nonMembershipProof(epoch2, e.epoch, other))! }), { credential: { contentId: "7" } })))?.status).toBe("active");
+  });
+
+  it("derives the revocation id from verified fields only: a holder-chosen id or salt cannot dodge a revocation", async () => {
+    const errors: string[] = [];
+    const onError = (e: unknown) => errors.push((e as { code?: string }).code ?? String(e));
+    // Holder-chosen id: its non-membership proof is genuinely valid, but for an id the port never uses.
+    const chosen = randomId();
+    const chosenProof = (await nonMembershipProof(epoch2, 2, chosen))!;
+    expect(await verifyNonMembership(chosen, chosenProof, epoch2)).toBe(true);
+    const port = revocationStatusPort({ reader: await statusReader(), address, maxEpochAgeMs: 24 * HOUR, listFor: async () => list,
+      evidence: async () => ({ kind: "proof", proof: chosenProof }), onError });
+    expect(await port({ credentialIssuer: "carrier:northwind", schema: "s", contentId })).toBeNull();
+    expect(errors.pop()).toBe("revocation_proof_invalid");
+    // The library takes no id: a smuggled revocationId field is ignored and the derived id is still revoked.
+    const smuggled = { ...query(asList(epoch2)), revocationId: chosen } as RevocationStatusQuery;
+    expect(await revocationStatus(await statusReader(), smuggled)).toMatchObject({ status: "revoked" });
+
+    // Salted list: the issuer revokes the id derived with the salt it signed into the credential.
+    const salted = await revocationListId("carrier:salted");
+    await send(accounts[0]!, "setPublisher", [salted, issuer()]);
+    const signedSalts = new Map([["5150", "ab".repeat(16)]]); // stands in for an issuer-signed credential field
+    const revokedId = await deriveRevocationId({ list: salted, contentId: "5150", salt: signedSalts.get("5150")! });
+    const saltedList = await buildRevocationList([revokedId, randomId(), randomId()]);
+    await revocationRootsPublisher({ clients: viemRevocationClients(pub, wallet, issuer(), 11155111), address, list: salted, confirmations: 1 })
+      .publish(1, saltedList);
+    await mine();
+    // The holder makes up a fresh salt; the resulting id is not listed and has a valid proof.
+    const freshId = await deriveRevocationId({ list: salted, contentId: "5150", salt: "cd".repeat(16) });
+    const freshProof = (await nonMembershipProof(saltedList, 1, freshId))!;
+    const check = async (evidence: NonRevocationEvidence, salts = signedSalts) => revocationStatusPort({
+      reader: await statusReader(), address, maxEpochAgeMs: 24 * HOUR, listFor: async () => salted, onError,
+      // Receives only verified fields; there is no parameter through which a holder salt could arrive.
+      issuerSignedSalt: async (verified) => salts.get(verified.contentId) ?? null,
+      evidence: async () => evidence,
+    })({ credentialIssuer: "carrier:salted", schema: "s", contentId: "5150" });
+    expect(await check({ kind: "proof", proof: freshProof })).toBeNull();
+    expect(errors.pop()).toBe("revocation_proof_invalid");
+    expect(await check({ kind: "list", ids: saltedList.ids })).toMatchObject({ status: "revoked", reason: "listed_revoked" });
+    // No issuer-signed salt available: fail closed rather than fall back to an unsalted (unlisted) id.
+    expect(await check({ kind: "list", ids: saltedList.ids }, new Map())).toBeNull();
+    expect(errors.pop()).toBe("revocation_salt_unavailable");
   });
 
   it("refuses roots older than the verifier's maximum staleness, so withholding epoch N+1 stops working", async () => {
-    const other = await deriveRevocationId({ list, contentId: "8" });
-    const q = (maxEpochAgeMs: number) => query(asList(epoch2), { revocationId: other, maxEpochAgeMs });
+    const q = (maxEpochAgeMs: number) => query(asList(epoch2), { credential: { contentId: "8" }, maxEpochAgeMs });
     expect((await revocationStatus(await statusReader(), q(HOUR)))?.status).toBe("active");
     // The issuer stops publishing; chain time moves on past the verifier's bound.
     await rpc("evm_increaseTime", [2 * 3600]);
@@ -248,11 +288,43 @@ describe.skipIf(!available)("RevocationRoots", () => {
       readContract: async (args) => { reorg ??= rpc("anvil_reorg", [2, []]); await reorg; return e.client.readContract(args); } } });
     const snap = await confirmed.snapshot();
     const reorgReader = createChainStatusReader({ ...confirmed.options, endpoints: confirmed.options.endpoints.map(reorging) });
-    expect(await code(revocationStatus(reorgReader, query(asList(epoch2), { revocationId: randomId() }), snap))).toBe("reorg_detected");
+    expect(await code(revocationStatus(reorgReader, query(asList(epoch2), { credential: { contentId: "10" } }), snap))).toBe("reorg_detected");
 
     await rpc("evm_increaseTime", [48 * 3600]);
     await mine();
     expect(await port(await statusReader())).toBeNull();
     expect(errors.pop()).toBe("revocation_root_stale");
+  });
+
+  it("checks the RPC's actual chain before writing, and refuses mainnet or a mismatch", async () => {
+    const latest = async () => Number(await pub.readContract({ address, abi: revocationRootsAbi, functionName: "latestEpoch", args: [list] }));
+    const next = (await latest()) + 1;
+    // Declared Sepolia's sibling chain id, connected to Sepolia (11155111).
+    const wrong = viemRevocationClients(pub, wallet, issuer(), 31337);
+    expect(await code(revocationRootsPublisher({ clients: wrong, address, list, confirmations: 1 }).publish(next, epoch2))).toBe("chain_mismatch");
+    expect(await code(wrong.simulateAndWrite({ address, functionName: "publishEpoch", args: publishEpochArgs(list, next, epoch2) }))).toBe("chain_mismatch");
+    // An RPC that reports mainnet, whatever was declared.
+    const right = viemRevocationClients(pub, wallet, issuer(), 11155111);
+    const mainnetRpc = { ...right, getChainId: async () => 1 };
+    expect(await code(revocationRootsPublisher({ clients: mainnetRpc, address, list, confirmations: 1 }).publish(next, epoch2))).toBe("production_writes_disabled");
+    expect(await latest()).toBe(next - 1);
+    await revocationRootsPublisher({ clients: right, address, list, confirmations: 1 }).publish(next, epoch2);
+    expect(await latest()).toBe(next);
+  });
+
+  it("hands over administration in two steps, rejecting zero or self and allowing cancellation", async () => {
+    const zero = "0x0000000000000000000000000000000000000000";
+    expect(await revertReason(accounts[0]!, "proposeAdministrator", [zero])).toBe("invalid administrator");
+    expect(await revertReason(accounts[0]!, "proposeAdministrator", [accounts[0]!])).toBe("invalid administrator");
+    expect(await revertReason(accounts[0]!, "cancelAdministratorProposal", [])).toBe("no proposal");
+    await send(accounts[0]!, "proposeAdministrator", [accounts[3]!]);
+    expect(await revertReason(accounts[3]!, "cancelAdministratorProposal", [])).toBe("not administrator");
+    await send(accounts[0]!, "cancelAdministratorProposal", []);
+    expect(await pub.readContract({ address, abi: revocationRootsAbi, functionName: "pendingAdministrator" })).toBe(zero);
+    expect(await revertReason(accounts[3]!, "acceptAdministrator", [])).toBe("not proposed");
+    await send(accounts[0]!, "proposeAdministrator", [accounts[3]!]);
+    await send(accounts[3]!, "acceptAdministrator", []);
+    expect(await pub.readContract({ address, abi: revocationRootsAbi, functionName: "administrator" })).toBe(accounts[3]);
+    expect(await revertReason(accounts[0]!, "setPublisher", [list, accounts[0]!])).toBe("not administrator");
   });
 });

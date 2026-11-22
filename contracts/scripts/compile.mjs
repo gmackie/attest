@@ -51,7 +51,7 @@ for (const name of [
   console.log(`compiled ${destination}`);
 
   // Server-side contracts are not shipped to the web bundle.
-  if (!["AssuranceAnchor", "DecisionLogAnchor", "StatusRegistry"].includes(name)) {
+  if (!["AssuranceAnchor", "DecisionLogAnchor", "StatusRegistry", "RevocationRoots"].includes(name)) {
     const publicDir = new URL(
       "../../apps/web/public/contracts/",
       import.meta.url,

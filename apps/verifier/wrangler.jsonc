@@ -3,7 +3,7 @@
   // Attest verifier service (ATTE-28). Separate Worker from attest-demo (root wrangler.jsonc).
   "name": "attest-verifier",
   "account_id": "c07a7e704db1808e1fff91bed2b1cd49",
-  "compatibility_date": "2026-10-08",
+  "compatibility_date": "2026-11-17",
   "main": "src/index.ts",
   // GPC verification in a Worker: the same shims as attest-demo (noble BN254 Groth16 verifier,
   // pinned verification keys). Nothing is fetched to verify a proof.

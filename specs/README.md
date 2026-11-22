@@ -16,3 +16,4 @@ The [agent mandate profile](agent-mandates.md) specifies experimental operationa
 
 The normative direction is: standardize facts, provenance, authority and proof
 interfaces—not a universal reputation score or a single global credential root.
+- [`revocation-roots.md`](revocation-roots.md) — experimental per-issuer revocation epoch roots, non-membership checks through ChainStatusReader, the AT-04 race bound and correlation analysis.

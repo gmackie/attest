@@ -46,3 +46,23 @@ code controls, trust boundaries, and unresolved mainnet release requirements.
 Production requires audited cryptography, durable status/revocation, rate limits on
 adaptive threshold queries, network-metadata protections, key recovery, issuer
 compromise procedures, interoperable source adapters and formal conformance tests.
+
+## Revocation status correlation (ATTE-24)
+
+[Issuer revocation roots](revocation-roots.md) check non-revocation without per-credential lookups: the chain read
+names only the issuer list, and the list is downloaded whole (or the holder proves non-membership locally).
+
+- **Issuer:** learns who downloads its list and when, if it hosts it; not which credential is checked.
+- **RPC providers:** learn that an issuer list's latest root was read at a block, plus network metadata; not the
+  credential.
+- **Chain observers:** learn per-issuer epoch count, list size and publication times (revocation volume and
+  cadence); no identifiers or reasons.
+- **Verifier:** learns the presented credential's revocation id and can keep watching it in later epochs.
+- **Linkability across verifiers:** the unsalted revocation id is derived from the content id that presentations
+  already reveal, so it adds no new cross-verifier linkage but does not remove the existing one. Unlinkable
+  non-revocation would need the check inside the zero-knowledge proof.
+- **Residual risks:** fetch timing correlated with use (mitigate by scheduled fetches and caching); small or
+  one-step list growth revealing a specific revocation (mitigate with decoy padding and a fixed cadence); an
+  issuer un-revoking or committing an unsorted tree (detectable from consecutive public lists, not prevented
+  on-chain); availability loss when an issuer stops publishing (deliberately fail-closed after the verifier's
+  maximum epoch age).

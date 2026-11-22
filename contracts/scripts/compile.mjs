@@ -15,6 +15,8 @@ for (const name of [
   "ZkAttestMinterV1",
   "DecisionLogAnchor",
   "StatusRegistry",
+  "MandateAccount",
+  "TestStablecoin",
 ]) {
   const sourceFile = ["AttestToken", "AttestClaims", "AttestPassport"].includes(name) ? "AttestEconomy" :
     ["PrivateClaimRoots", "ZkAttestMinterV1"].includes(name) ? "AttestZkMinter" : name;
@@ -51,6 +53,9 @@ for (const name of [
 
   // Server-side contracts are not shipped to the web bundle.
   if (!["AssuranceAnchor", "DecisionLogAnchor", "StatusRegistry"].includes(name)) {
+  if (!["AssuranceAnchor", "DecisionLogAnchor",
+    "TestStablecoin", // test-only ERC-20, never shipped
+  ].includes(name)) {
     const publicDir = new URL(
       "../../apps/web/public/contracts/",
       import.meta.url,

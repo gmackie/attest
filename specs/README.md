@@ -16,3 +16,4 @@ The [agent mandate profile](agent-mandates.md) specifies experimental operationa
 
 The normative direction is: standardize facts, provenance, authority and proof
 interfaces—not a universal reputation score or a single global credential root.
+- [`mandate-account.md`](mandate-account.md) — experimental, testnet-only ERC-4337 smart account enforcing signed mandate limits with a Gatekeeper decision co-signature (security review required before any value beyond testnet).

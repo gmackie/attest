@@ -14,6 +14,7 @@ for (const name of [
   "PrivateClaimRoots",
   "ZkAttestMinterV1",
   "DecisionLogAnchor",
+  "RevocationRoots",
 ]) {
   const sourceFile = ["AttestToken", "AttestClaims", "AttestPassport"].includes(name) ? "AttestEconomy" :
     ["PrivateClaimRoots", "ZkAttestMinterV1"].includes(name) ? "AttestZkMinter" : name;

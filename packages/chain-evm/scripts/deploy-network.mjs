@@ -10,12 +10,14 @@
  * The signer is injected: either an EIP-1193 provider (programmatic `deployNetwork({ provider })`)
  * or a private key read from an environment variable. The script never writes key material or
  * any other file. Mainnet (and every non-writable network) is refused by assertWritable before
- * any provider or RPC access. The demo registries (Institution, Industry, DemoJourney) and the
+ * any provider or RPC access. After each deployment it checks the receipt, that the runtime code
+ * matches the compiled artifact (immutables masked, then checked by value) and the administrator.
+ * The demo registries (Institution, Industry, DemoJourney) and the
  * economy contracts are Sepolia-only by constructor and are not deployed here.
  */
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import { createPublicClient, createWalletClient, custom, getAddress, http, isAddress } from "viem";
+import { createPublicClient, createWalletClient, custom, getAddress, http, isAddress, keccak256 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { assertWritable, networkConfig } from "../src/networks.ts";
 
@@ -30,8 +32,23 @@ async function artifact(name) {
   } catch {
     throw new Error(`Missing ${name} artifact. Run pnpm --filter @attest/contracts build first.`);
   }
-  if (!/^0x[0-9a-fA-F]+$/.test(parsed.bytecode ?? "")) throw new Error(`Invalid ${name} artifact`);
+  if (!/^0x[0-9a-fA-F]+$/.test(parsed.bytecode ?? "") || !/^0x[0-9a-fA-F]+$/.test(parsed.deployedBytecode ?? ""))
+    throw new Error(`Invalid ${name} artifact (rebuild with pnpm --filter @attest/contracts build)`);
   return parsed;
+}
+
+/**
+ * keccak256 of runtime code with every immutable slot zeroed (solc immutableReferences), so
+ * on-chain code can be compared with the compiled artifact. Immutable values are checked separately.
+ */
+export function maskedCodeHash(code, immutableReferences = {}) {
+  const bytes = Buffer.from(code.slice(2), "hex");
+  for (const refs of Object.values(immutableReferences))
+    for (const { start, length } of refs) {
+      if (start + length > bytes.length) throw new Error("Immutable reference outside the code");
+      bytes.fill(0, start, start + length);
+    }
+  return keccak256(`0x${bytes.toString("hex")}`);
 }
 
 /**
@@ -81,7 +98,7 @@ export async function deployNetwork(options) {
 
   const contracts = {}, transactions = {};
   for (const name of deployedContracts) {
-    const { abi, bytecode } = await artifact(name);
+    const { abi, bytecode, deployedBytecode, immutableReferences } = await artifact(name);
     const args = name === "DecisionLogAnchor" ? [administrator] : [];
     log(`deploying ${name} on ${config.name} from ${deployer}`);
     const hash = await wallet.deployContract({ abi, bytecode, args, account, chain: config.chain });
@@ -90,12 +107,16 @@ export async function deployNetwork(options) {
     const address = getAddress(receipt.contractAddress);
     const code = await reader.getCode({ address });
     if (!code || code === "0x") throw new Error(`${name} has no code at ${address}`);
+    // Runtime code must be exactly the compiled artifact (immutables masked).
+    const codeHash = maskedCodeHash(code, immutableReferences);
+    if (code.length !== deployedBytecode.length || codeHash !== maskedCodeHash(deployedBytecode, immutableReferences))
+      throw new Error(`${name} runtime code at ${address} does not match the compiled artifact`);
     const admin = await reader.readContract({ address, abi, functionName: "administrator" });
     // WorkspaceRegistry's administrator is the deployer and immutable.
     const expected = name === "DecisionLogAnchor" ? administrator : deployer;
     if (getAddress(admin) !== getAddress(expected)) throw new Error(`${name} administrator is ${admin}, expected ${expected}`);
     contracts[name] = { default: address };
-    transactions[name] = { hash, blockNumber: receipt.blockNumber.toString(), administrator: getAddress(admin) };
+    transactions[name] = { hash, blockNumber: receipt.blockNumber.toString(), administrator: getAddress(admin), runtimeCodeHash: keccak256(code) };
     log(`${name} at ${address} (${config.explorer.url}/address/${address})`);
   }
   return { version: 1, network: config.id, chainId: config.chainId, deployer, contracts, transactions };

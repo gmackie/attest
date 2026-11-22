@@ -153,6 +153,17 @@ describe.skipIf(!available)("DecisionLogAnchor", () => {
     expect(() => adapter(accounts[1]!, 8453)).toThrow("network_not_writable");
   });
 
+  it("refuses to anchor when the declared chain disagrees with the RPC", async () => {
+    const other = network.id === "sepolia" ? 84532 : 11155111;
+    const before = await reader.readContract({ address, abi: decisionLogAnchorAbi, functionName: "latestEpoch", args: [log] });
+    const next = await span(Number(before) + 1, 100, 1, randomHash());
+    expect(await code(adapter(accounts[2]!, other).anchor(next.sealed))).toBe("chain_mismatch");
+    expect(await reader.readContract({ address, abi: decisionLogAnchorAbi, functionName: "latestEpoch", args: [log] })).toBe(before);
+    // Without a declared chain the RPC-reported one is used for the gate and the reference.
+    const undeclared = decisionLogAnchorAdapter({ clients: viemAnchorClients(reader, wallet, accounts[2]!), address, log, confirmations: 1 });
+    expect(await code(undeclared.anchor({ ...next.sealed, epoch: Number(before) + 2 }))).toBe("anchor_out_of_order");
+  });
+
   it("deploy-network refuses a signer whose RPC reports another chain", async () => {
     const other = network.id === "sepolia" ? "base-sepolia" : "sepolia";
     await expect(deployNetwork({ network: other, privateKey: anvilKey0, rpcUrl: url, confirmations: 1 })).rejects.toThrow("chain_mismatch");

@@ -62,6 +62,9 @@ mirrors `LocalStatusRegistry`:
 The writer comes from `viemStatusClients`, and its rules are:
 
 - It refuses chain ID 1 (`production_writes_disabled`), as `decisionLogAnchorAdapter` does.
+- Before every write, both `viemStatusClients` and the service ask the write RPC for its chain ID
+  (`getChainId`). The write is refused if the RPC reports chain 1 (`production_writes_disabled`) or a chain
+  other than the declared one (`chain_mismatch`), so a mislabelled client cannot reach mainnet.
 - It must match the reader's chain and the configured issuer (`writer_not_issuer`).
 - Pre-checks read the latest block. Verifiers never use that path.
 
@@ -116,8 +119,10 @@ Once a revocation is **settled** at the reader's finality height, it is seen by:
 
 - **Uncached readers (the default):** the next status read, and so the next mandate operation that re-verifies.
   They refuse it immediately.
-- **`cacheActive: true`:** a previously observed *active* `LiveStatus` is returned unchanged, with its original
-  `observedAt` and `validUntil`, until `now >= validUntil`. After that the chain is read again. A cached active
+- **`cacheActive: true`:** a previously observed *active* `LiveStatus` keeps its original `observedAt`. It is
+  served only while `now < observedAt + leaseMs`, using the `leaseMs` of the current call, with `validUntil`
+  capped to that bound. Otherwise the chain is read again. Expired entries are pruned whenever a new one is
+  cached. A cached active
   can therefore authorise operations for at most `leaseMs` (≤ 60 s) after its observation. That is the same bound
   as a verifier holding the first read's result. Non-active results and failures are never cached.
 - **A chain the verifier already verified:** usable until its `expiresAt`, which is at most `leaseMs` after the

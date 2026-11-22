@@ -308,6 +308,61 @@ describe.skipIf(!available)("mandate status over StatusRegistry", () => {
     expect(await run(reg.read("status:expiring", digest))).toBeNull();
   });
 
+  it("bounds a cache hit by the caller's lease, not the lease that filled the cache", async () => {
+    const reg = service(), cached = service({ cacheActive: true, leaseMs: 60_000 });
+    const f = await fixture("status:lease-key", reg.status);
+    const digest = await run(reg.register(f.mandate));
+    await mine();
+    clock = await chainTime();
+    const base = clock;
+    expect(await run(cached.read("status:lease-key", digest, 60_000))).toMatchObject({ status: "active", validUntil: base + 60_000 });
+    await run(reg.revoke("status:lease-key"));
+    await mine();
+    // Within a 1 s lease the hit is served, but capped to observedAt + 1 s.
+    clock = base + 500;
+    expect(await run(cached.read("status:lease-key", digest, 1000))).toMatchObject({ status: "active", observedAt: base, validUntil: base + 1000 });
+    // Past the caller's 1 s lease the cache is bypassed even though the 60 s entry is still live.
+    clock = base + 1000;
+    expect((await run(cached.read("status:lease-key", digest, 1000)))?.status).toBe("revoked");
+    clock = base;
+  });
+
+  it("prunes expired active observations when a new one is cached", async () => {
+    const reg = service(), cached = service({ cacheActive: true, leaseMs: 1000 });
+    const docs = await Promise.all(["status:prune-1", "status:prune-2", "status:prune-3"].map((r) => fixture(r, reg.status)));
+    const digests = [] as string[];
+    for (const d of docs) digests.push(await run(reg.register(d.mandate)));
+    await mine();
+    clock = await chainTime();
+    const base = clock;
+    await run(cached.read("status:prune-1", digests[0]!));
+    await run(cached.read("status:prune-2", digests[1]!));
+    expect(cached.cacheSize).toBe(2);
+    clock = base + 1000;
+    await run(cached.read("status:prune-3", digests[2]!));
+    expect(cached.cacheSize).toBe(1);
+    clock = base;
+  });
+
+  it("checks the RPC's real chain before every write, not only the declared one", async () => {
+    const lyingPublic = (id: number) => ({ ...pub, getChainId: async () => id }) as typeof pub;
+    const f = await fixture("status:chain-check", async () => null);
+    // Declared Sepolia, RPC reports mainnet or another chain: refused before simulating.
+    for (const [id, expected] of [[1, "production_writes_disabled"], [31337, "chain_mismatch"]] as const) {
+      const writer = viemStatusClients(lyingPublic(id), wallet, issuer(), 11155111);
+      expect(await code(run(service({ writer }).register(f.mandate)))).toBe(expected);
+      expect(await code(writer.simulateAndWrite({ address: registry, functionName: "revoke", args: [await statusRefId("x")] }))).toBe(expected);
+    }
+    // A hand-built writer is checked by the service too, and its write function is never reached.
+    let wrote = false;
+    const honest = viemStatusClients(pub, wallet, issuer(), 11155111);
+    const custom = { ...honest, getChainId: async () => 1, simulateAndWrite: async () => { wrote = true; return "0x" as Hex; } };
+    expect(await code(run(service({ writer: custom }).register(f.mandate)))).toBe("production_writes_disabled");
+    expect(wrote).toBe(false);
+    expect(await readStatusRecord(reader(), { registry, issuer: issuer(), ref: await statusRefId("status:chain-check") }))
+      .toMatchObject({ record: null });
+  });
+
   it("refuses to write to Ethereum mainnet while production writes are gated", () => {
     expect(() => viemStatusClients(pub, wallet, issuer(), 1)).toThrow("production_writes_disabled");
     expect(() => mandateStatusRegistry({ registry, issuer: issuer(), reader: reader(),

@@ -118,7 +118,10 @@ export async function mandateCredentialStatus(
 
 /** Minimal clients the issuer's writer needs (viem PublicClient / WalletClient satisfy these via viemStatusClients). */
 export interface StatusWriterClients {
+  /** Declared chain. Every write re-checks it against the RPC (`getChainId`). */
   chainId: number;
+  /** The chain the write RPC actually serves. */
+  getChainId(): Promise<number>;
   /** The sending account; it must be the registry's issuer. */
   account: Address;
   /** Writer pre-checks at the latest block. Verifiers never use this path. */
@@ -140,9 +143,10 @@ export interface MandateStatusRegistryOptions {
   leaseMs?: number;
   /**
    * Reuse an *active* observation until its lease ends instead of re-reading the chain (default false).
-   * The cached LiveStatus keeps its original observedAt/validUntil, so the verifier's own lease and
-   * maxStatusAgeMs checks still bound it exactly as if the verifier had kept the first read. Non-active
-   * results and failures are never cached.
+   * The cached LiveStatus keeps its original observedAt, and a hit is served only while
+   * now < observedAt + leaseMs of *this* call, with validUntil capped to that, so the verifier's own lease
+   * and maxStatusAgeMs checks still bound it exactly as if the verifier had kept the first read. Expired
+   * entries are pruned on insert. Non-active results and failures are never cached.
    */
   cacheActive?: boolean;
 }
@@ -169,6 +173,8 @@ export function mandateStatusRegistry(options: MandateStatusRegistryOptions) {
   const latest = async (ref: Hex) => decode(await needWriter().readRecord({ address: registry, issuer, ref }));
   const send = async (functionName: "register" | "revoke" | "supersede", args: readonly unknown[]) => {
     const w = needWriter();
+    // Never trust the declared chain alone: ask the RPC that will carry the write.
+    await assertWriteChain(w.getChainId, w.chainId);
     const hash = await w.simulateAndWrite({ address: registry, functionName, args });
     const receipt = await w.waitForReceipt(hash, confirmations);
     if (receipt.status !== "success") fail("status_write_reverted", hash);
@@ -180,8 +186,12 @@ export function mandateStatusRegistry(options: MandateStatusRegistryOptions) {
     if (!/^[0-9a-f]{64}$/.test(digest)) return null;
     const key = `${statusRef}\n${digest}`;
     const cached = options.cacheActive ? cache.get(key) : undefined;
-    if (cached && reader.options.now() < cached.validUntil) return cached;
-    cache.delete(key);
+    if (cached) {
+      const now = reader.options.now(), until = Math.min(cached.validUntil, cached.observedAt + leaseMs);
+      // The caller's lease bounds a hit as tightly as it would bound a fresh read.
+      if (now < until) return { ...cached, validUntil: until };
+      if (now >= cached.validUntil) cache.delete(key);
+    }
     const { record, snapshot } = await readStatusRecord(reader, { registry, issuer, ref: await statusRefId(statusRef) });
     if (!record || record.digest !== digest) return null;
     // LiveStatus cannot say "expired"; an expired document has no usable status.
@@ -189,7 +199,11 @@ export function mandateStatusRegistry(options: MandateStatusRegistryOptions) {
     const status = record.status as LiveStatus["status"];
     const live: LiveStatus = { digest, status, observedAt: snapshot.observedAt,
       validUntil: Math.min(snapshot.observedAt + leaseMs, record.validUntil) };
-    if (options.cacheActive && status === "active") cache.set(key, live);
+    if (options.cacheActive && status === "active") {
+      const now = reader.options.now();
+      for (const [k, v] of cache) if (now >= v.validUntil) cache.delete(k);
+      cache.set(key, live);
+    }
     return live;
   };
 
@@ -239,11 +253,22 @@ export function mandateStatusRegistry(options: MandateStatusRegistryOptions) {
       try { return await readLive(statusRef, digest, defaultLease); }
       catch { throw new MandateError("status_unavailable"); }
     }) satisfies VerificationPorts["status"],
+    /** Number of cached active observations (diagnostics). */
+    get cacheSize() { return cache.size; },
   };
 }
 
 /** Adapt viem clients for the writer (keeps viem generics out of callers). */
+/** Refuse mainnet and any disagreement between the declared chain and the RPC's chain. */
+async function assertWriteChain(getChainId: () => Promise<number>, declared: number) {
+  if (declared === 1) fail("production_writes_disabled");
+  const actual = await getChainId();
+  if (actual === 1) fail("production_writes_disabled");
+  if (actual !== declared) fail("chain_mismatch", `declared ${declared}, rpc ${actual}`);
+}
+
 export function viemStatusClients(publicClient: {
+  getChainId(): Promise<number>;
   readContract(args: never): Promise<unknown>;
   simulateContract(args: never): Promise<{ request: unknown }>;
   waitForTransactionReceipt(args: never): Promise<{ status: "success" | "reverted"; blockNumber: bigint }>;
@@ -254,7 +279,9 @@ export function viemStatusClients(publicClient: {
     account,
     readRecord: async (a) => (await publicClient.readContract({ address: a.address, abi: statusRegistryAbi,
       functionName: "getStatus", args: [a.issuer, a.ref] } as never)) as RawRecord,
+    getChainId: () => publicClient.getChainId(),
     simulateAndWrite: async (a) => {
+      await assertWriteChain(() => publicClient.getChainId(), chainId);
       const sim = await publicClient.simulateContract({ ...a, abi: statusRegistryAbi, account } as never);
       return walletClient.writeContract(sim.request as never);
     },

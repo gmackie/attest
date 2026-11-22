@@ -40,7 +40,6 @@ import {
   signingPublicKey,
   trainingSchema,
   verifyConnectedPresentation,
-  type ConnectedCredential,
   type ConnectedPresentation,
   type ConnectedRequest,
   type ConnectedVault,
@@ -1552,10 +1551,8 @@ export function ConnectedWorkspace() {
                     void perform(
                       "Rechecking current status before preparing the receipt…",
                       async (check) => {
-                        const ctx = context(),
-                          request = connectedRequestSchema.parse(
-                            JSON.parse(requestText),
-                          );
+                        const ctx = context();
+                        connectedRequestSchema.parse(JSON.parse(requestText));
                         await assertContext(
                           ctx.provider,
                           network,

@@ -5,7 +5,7 @@ import path from "node:path";
 const base = new URL(process.env.ATTEST_VERIFY_URL ?? "https://attest.gmac.io");
 const root = path.resolve(import.meta.dirname, "../apps/web/dist");
 const index = await readFile(path.join(root, "index.html"));
-const assets = [...index.toString().matchAll(/(?:src|href)="(\/assets\/[^\"]+)"/g)].map((match) => match[1]);
+const assets = [...index.toString().matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((match) => match[1]);
 const contracts = (await readdir(path.join(root, "contracts"))).filter((name) => name.endsWith(".json"));
 const paths = ["/", ...assets, ...contracts.map((name) => `/contracts/${name}`), "/demo-deployment.json", "/industry-deployments.json"];
 const evidence = [];

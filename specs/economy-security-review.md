@@ -54,3 +54,10 @@ an experimental Sepolia-only research implementation.
 The PR can be merged as test-only reference code once CI passes. It must not
 be used as a signal that issuance is economically backed, objectively measures
 trust, is regulatory compliant, or is secure for production.
+
+**AT-08 update (ATTE-25):** for the presentation-receipt statement (an issuer-root
+membership plus a hidden value above a public threshold, bound to a request
+digest), `PresentationReceipts` now verifies the Groth16 proof on-chain
+([`presentation-receipts.md`](presentation-receipts.md)). The circuit and
+contract are unaudited, and the only keys are synthetic test keys. GPC/POD
+proofs and `recordVerification` remain checked off-chain.

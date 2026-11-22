@@ -16,3 +16,5 @@ The [agent mandate profile](agent-mandates.md) specifies experimental operationa
 
 The normative direction is: standardize facts, provenance, authority and proof
 interfaces—not a universal reputation score or a single global credential root.
+
+- [`presentation-receipts.md`](presentation-receipts.md) — experimental receipts that `PresentationReceipts` records only after on-chain Groth16 verification against a live issuer root (ATTE-25, AT-08). The ceremony runbook is [`zk/ceremony/README.md`](../zk/ceremony/README.md).

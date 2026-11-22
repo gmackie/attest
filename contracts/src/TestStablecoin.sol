@@ -16,7 +16,8 @@ contract TestStablecoin {
     event Approval(address indexed owner, address indexed spender, uint256 value);
 
     constructor(string memory name_, string memory symbol_, uint8 decimals_) {
-        require(block.chainid != 1, "testnet only");
+        uint256 id = block.chainid;
+        require(id == 31337 || id == 1337 || id == 11155111 || id == 84532, "testnet only");
         name = name_;
         symbol = symbol_;
         decimals = decimals_;

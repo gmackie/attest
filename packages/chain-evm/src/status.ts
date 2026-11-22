@@ -12,7 +12,9 @@
  * Results carry chain evidence (chain ID, block number and hash, observation
  * time) in the shape @attest/verifier's status port expects.
  */
-import type { Address, Hex } from "viem";
+import {
+  BaseError, ContractFunctionRevertedError, ContractFunctionZeroDataError, parseAbi, type Address, type Hex,
+} from "viem";
 import { registryAbi } from "./connected";
 
 export type Finality =
@@ -195,10 +197,30 @@ export type AnchorStatus = {
   evidence: ReturnType<typeof chainEvidence>;
 };
 
+const registryVersionAbi = parseAbi(["function registryVersion() pure returns (uint256)"]);
 /**
- * Status of a WorkspaceRegistry anchor plus its issuer grant, read consistently at one
+ * Interface version of a WorkspaceRegistry at a block. V1 has no registryVersion(): a contract
+ * revert or empty return means 1. Transport errors are rethrown, never read as V1.
+ */
+export async function readRegistryVersion(client: ChainReadClient, address: Address, blockNumber: bigint): Promise<bigint> {
+  try {
+    return (await client.readContract({ address, abi: registryVersionAbi, functionName: "registryVersion", blockNumber })) as bigint;
+  } catch (cause) {
+    const reverted = cause instanceof BaseError &&
+      cause.walk((e) => e instanceof ContractFunctionRevertedError || e instanceof ContractFunctionZeroDataError);
+    if (reverted) return 1n;
+    throw cause;
+  }
+}
+
+/**
+ * Status of a WorkspaceRegistry (V1) anchor plus its issuer grant, read consistently at one
  * settled block. Returns null when no anchor exists. Directly usable as the return value
  * of @attest/verifier's `status` port.
+ *
+ * V1 semantics only: a registry reporting registryVersion() >= 2 is refused with
+ * `registry_requires_v2_reader`, because this reader ignores V2 key windows, compromise
+ * cutoffs and per-issuer anchor ids. Use registryV2AnchorStatus for V2.
  */
 export async function workspaceAnchorStatus(
   reader: ChainStatusReader,
@@ -206,12 +228,14 @@ export async function workspaceAnchorStatus(
   snapshot?: ChainSnapshot,
 ): Promise<AnchorStatus | null> {
   const at = snapshot ?? (await reader.snapshot());
-  const [anchor, grant] = await reader.read(at, (client, blockNumber) =>
+  const [version, anchor, grant] = await reader.read(at, (client, blockNumber) =>
     Promise.all([
+      readRegistryVersion(client, query.registry, blockNumber),
       client.readContract({ address: query.registry, abi: registryAbi, functionName: "anchors", args: [query.anchorId], blockNumber }),
       client.readContract({ address: query.registry, abi: registryAbi, functionName: "issuers", args: [query.issuer, query.scope], blockNumber }),
     ]),
-  ) as [[Address, Hex, Hex, bigint, boolean], [boolean, Hex]];
+  ) as [bigint, [Address, Hex, Hex, bigint, boolean], [boolean, Hex]];
+  if (version >= 2n) fail("registry_requires_v2_reader", `registryVersion ${version}`);
   const [issuer, scope, commitment, validUntil, revoked] = anchor;
   if (/^0x0{40}$/i.test(issuer)) return null;
   if (issuer.toLowerCase() !== query.issuer.toLowerCase() || scope.toLowerCase() !== query.scope.toLowerCase() ||

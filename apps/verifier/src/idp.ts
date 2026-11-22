@@ -8,6 +8,7 @@
  */
 import type { SubjectRef } from "@attest/verifier";
 import type { IdentityProvider } from "./config";
+import { readLimited } from "./limits";
 
 export class TokenError extends Error {
   constructor(readonly code: string) {
@@ -42,24 +43,43 @@ function b64urlJson(part: string): Record<string, unknown> {
   return fail("invalid_token");
 }
 
-export function defaultJwksFetcher(): JwksFetcher {
-  const cache = new Map<string, { at: number; keys: JsonWebKey[] }>();
+export interface JwksFetcherOptions {
+  fetch?: typeof fetch;
+  now?: () => number;
+  timeoutMs?: number;
+  maxBytes?: number;
+}
+export const JWKS_TIMEOUT_MS = 5_000;
+export const JWKS_MAX_BYTES = 64 * 1024;
+/** Failures are cached briefly so a slow or failing IdP cannot be hammered through enrollment. */
+export const JWKS_FAILURE_TTL_MS = 30_000;
+
+export function defaultJwksFetcher(options: JwksFetcherOptions = {}): JwksFetcher {
+  const doFetch = options.fetch ?? ((input, init) => fetch(input, init));
+  const now = options.now ?? (() => Date.now());
+  const timeoutMs = options.timeoutMs ?? JWKS_TIMEOUT_MS, maxBytes = options.maxBytes ?? JWKS_MAX_BYTES;
+  const cache = new Map<string, { at: number; keys: JsonWebKey[] } | { at: number; failed: true }>();
   return async (uri) => {
     const hit = cache.get(uri);
-    if (hit && Date.now() - hit.at < JWKS_TTL_MS) return { keys: hit.keys };
-    let body: { keys?: unknown };
+    if (hit && "failed" in hit && now() - hit.at < JWKS_FAILURE_TTL_MS) return fail("idp_keys_unavailable");
+    if (hit && "keys" in hit && now() - hit.at < JWKS_TTL_MS) return { keys: hit.keys };
+    let keys: JsonWebKey[];
     try {
-      // "manual": a redirect is a non-2xx response and is refused (Workers do not support redirect: "error").
-      const res = await fetch(uri, { headers: { accept: "application/json" }, redirect: "manual" });
-      if (res.status !== 200) return fail("idp_keys_unavailable");
-      body = (await res.json()) as { keys?: unknown };
-    } catch (e) {
-      if (e instanceof TokenError) throw e;
+      // "manual": a redirect is a non-200 response and is refused (Workers do not support redirect: "error").
+      const res = await doFetch(uri, {
+        headers: { accept: "application/json" }, redirect: "manual", signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (res.status !== 200) throw new Error("status");
+      const declared = Number(res.headers.get("content-length") ?? "0");
+      if (declared > maxBytes) throw new Error("size");
+      const body = JSON.parse(new TextDecoder().decode(await readLimited(res.body, maxBytes))) as { keys?: unknown };
+      if (!Array.isArray(body.keys) || body.keys.length > 100) throw new Error("shape");
+      keys = body.keys as JsonWebKey[];
+    } catch {
+      cache.set(uri, { at: now(), failed: true });
       return fail("idp_keys_unavailable");
     }
-    if (!Array.isArray(body.keys)) fail("idp_keys_unavailable");
-    const keys = body.keys as JsonWebKey[];
-    cache.set(uri, { at: Date.now(), keys });
+    cache.set(uri, { at: now(), keys });
     return { keys };
   };
 }
@@ -101,6 +121,9 @@ export async function verifyAccessToken(
   if (header.crit !== undefined) fail("unsupported_token_alg");
   const provider = providers.find((x) => x.issuer === claims.iss);
   if (!provider) fail("untrusted_token_issuer");
+  // RFC 9068 access tokens carry typ "at+jwt"; this refuses ID tokens and other JWTs from the same IdP.
+  if (typeof header.typ !== "string" || !provider!.allowedTyp.some((t) => t.toLowerCase() === (header.typ as string).toLowerCase()))
+    fail("unsupported_token_type");
   const kid = typeof header.kid === "string" ? header.kid : undefined;
   const { keys } = await fetchJwks(provider!.jwksUri);
   const candidates = (keys as (JsonWebKey & { kid?: string })[]).filter((k) =>
@@ -123,6 +146,10 @@ export async function verifyAccessToken(
   if (nbf !== undefined && nbf > now + CLOCK_SKEW_MS) fail("token_not_yet_valid");
   const iat = claims.iat === undefined ? undefined : seconds(claims.iat) ?? fail("invalid_token");
   if (iat !== undefined && iat > now + CLOCK_SKEW_MS) fail("token_not_yet_valid");
+  if (provider!.clientId !== undefined) {
+    const client = claims.client_id ?? claims.azp;
+    if (client !== provider!.clientId) fail("token_client_mismatch");
+  }
   const sub = claims.sub;
   if (typeof sub !== "string" || sub.length === 0 || sub.length > 512 || /[\u0000-\u001f]/.test(sub)) fail("invalid_token_subject");
   return { subject: { issuer: provider!.issuer, subject: sub as string }, expiresAt: exp! };

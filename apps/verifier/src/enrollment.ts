@@ -13,7 +13,7 @@
  */
 import { POD, type JSONPOD } from "@pcd/pod";
 import { canonicalJson } from "@attest/mandates/protocol";
-import type { SubjectRef } from "@attest/verifier";
+import { isCanonicalPublicKey, type SubjectRef } from "@attest/verifier";
 
 export const ENROLLMENT_SCHEMA = "attest.holder-enrollment/v1";
 export const MAX_ENROLLMENT_AGE_MS = 300_000;
@@ -53,6 +53,8 @@ export function parseStatement(value: unknown): EnrollmentStatement {
   need(typeof v.verifier === "string" && typeof v.holderPublicKey === "string" &&
     v.holderPublicKey.length > 0 && v.holderPublicKey.length <= 256 &&
     Number.isSafeInteger(v.issuedAt) && isRecord(v.subject), "invalid_enrollment");
+  // One key, one spelling: otherwise hex/padded aliases of one key could bind several subjects.
+  need(isCanonicalPublicKey(v.holderPublicKey), "noncanonical_holder_key");
   const s = v.subject as Record<string, unknown>;
   need(Object.keys(s).sort().join(",") === "issuer,subject" && typeof s.issuer === "string" &&
     typeof s.subject === "string", "invalid_enrollment");
@@ -110,25 +112,44 @@ interface Binding { issuer: string; subject: string; enrolledAt: number }
 const reply = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
+/** Runs tasks one at a time, so a read-check-write never interleaves with another request. */
+export class SerialQueue {
+  private tail: Promise<unknown> = Promise.resolve();
+  run<T>(task: () => Promise<T>): Promise<T> {
+    const next = this.tail.then(task, task);
+    this.tail = next.catch(() => undefined);
+    return next;
+  }
+}
+
 /**
- * One instance per holder public key (idFromName(holderPublicKey)), SQLite-backed.
- * The instance is single-threaded, so the read-then-write below is atomic.
+ * One instance per holder public key (idFromName of the canonical key), SQLite-backed.
+ * The body is parsed before any storage access, and every read-check-write runs in a serial
+ * queue, so two concurrent enrollments of one key cannot both see "unbound".
  */
 export class EnrollmentStore {
+  private readonly queue = new SerialQueue();
   constructor(private readonly state: DurableState, _env?: unknown) {}
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    const current = await this.state.storage.get<Binding>("binding");
-    if (request.method === "GET" && url.pathname === "/binding") return reply({ binding: current ?? null });
-    if (request.method === "PUT" && url.pathname === "/binding") {
-      const next = (await request.json()) as Binding;
+    if (url.pathname !== "/binding" || (request.method !== "GET" && request.method !== "PUT"))
+      return reply({ code: "not_found" }, 404);
+    let next: Binding | undefined;
+    if (request.method === "PUT") {
+      const body = (await request.json()) as Partial<Binding>;
+      if (typeof body.issuer !== "string" || typeof body.subject !== "string" || !Number.isSafeInteger(body.enrolledAt))
+        return reply({ code: "invalid_binding" }, 400);
+      next = { issuer: body.issuer, subject: body.subject, enrolledAt: body.enrolledAt! };
+    }
+    return this.queue.run(async () => {
+      const current = await this.state.storage.get<Binding>("binding");
+      if (!next) return reply({ binding: current ?? null });
       if (current && (current.issuer !== next.issuer || current.subject !== next.subject))
         return reply({ code: "holder_already_enrolled" }, 409);
       await this.state.storage.put("binding", { issuer: next.issuer, subject: next.subject,
         enrolledAt: current?.enrolledAt ?? next.enrolledAt });
       return reply({ enrolled: true, existing: Boolean(current) });
-    }
-    return reply({ code: "not_found" }, 404);
+    });
   }
 }

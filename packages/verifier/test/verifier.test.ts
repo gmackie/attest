@@ -2,10 +2,10 @@ import path from "node:path";
 import {deriveSignerPublicKey} from "@pcd/pod";
 import {Effect} from "effect";
 import {beforeAll, describe, expect, it} from "vitest";
-import {deriveSignerPublicKey as derive, POD} from "@pcd/pod";
+import {decodePublicKey, deriveSignerPublicKey as derive, encodePublicKey, POD} from "@pcd/pod";
 import {issueCriteriaPod, proveCriteria} from "@attest/proofs";
 import {
-  canonicalPresentationBody, checkVerificationResult, criteriaRequestFor, PRESENTATION_SCHEMA, PROOF_REQUEST_SCHEMA, present, requestDigest, requirementDigest, signProofRequest,
+  canonicalPresentationBody, canonicalPublicKey, checkVerificationResult, isCanonicalPublicKey, criteriaRequestFor, PRESENTATION_SCHEMA, PROOF_REQUEST_SCHEMA, present, requestDigest, requirementDigest, signProofRequest,
   signVerificationResult, verifyPresentation, verifyProofRequest,
   type CredentialStatus, type Presentation, type PresentationVerifierPorts, type ProofRequest,
   type RequirementDefinition, type ResultVerification, type SubjectRef, type VerificationResult,
@@ -290,5 +290,50 @@ describe("result consumption", () => {
       .rejects.toThrow("invalid_result_time");
     await expect(signVerificationResult({...result, status: {source: "chain", observedAt: NOW - 1}}, "verifier-1",
       verifier.privateKey)).rejects.toThrow("invalid_status_evidence");
+  });
+});
+
+let provenOnce: Promise<Presentation> | undefined;
+describe("holder key encodings (one key, one spelling)", () => {
+  const aliases = () => {
+    const hex = encodePublicKey(decodePublicKey(holderPublicKey), "hex");
+    return {
+      hex, upperHex: hex.toUpperCase(), mixedHex: hex.slice(0, 32).toUpperCase() + hex.slice(32),
+      padded: holderPublicKey + "=",
+    };
+  };
+  it("treats only unpadded base64 as canonical, though @pcd/pod decodes every alias to the same key", () => {
+    expect(isCanonicalPublicKey(holderPublicKey)).toBe(true);
+    for (const alias of Object.values(aliases())) {
+      expect(canonicalPublicKey(alias)).toBe(holderPublicKey);
+      expect(isCanonicalPublicKey(alias)).toBe(false);
+    }
+  });
+  it.each(["hex", "upperHex", "mixedHex", "padded"] as const)("rejects a presentation whose holder key is %s-encoded", async (form) => {
+    const token = await sign(baseRequest);
+    const p = await (provenOnce ??= prove(baseRequest));
+    const aliased = {...p, holderPublicKey: aliases()[form]};
+    expect(await code(run(token, aliased, world()))).toBe("noncanonical_holder_key");
+  });
+});
+
+describe("issuer-level status evidence", () => {
+  it("signs and parses the issuer-authority source, and lets a PEP refuse it", async () => {
+    const result: VerificationResult = {
+      schema: "attest.verification-result/v1", id: "res-ia", issuer: VERIFIER, audience: PEP, requestId: "req-1",
+      requestDigest: "a".repeat(64), subject, credentialSubject: "supplier:acme",
+      requirement: {id: definition.id, digest: "b".repeat(64)}, credentialIssuer: "carrier:northwind",
+      status: {source: "issuer-authority", observedAt: NOW - 1000}, issuedAt: NOW, expiresAt: NOW + 60_000,
+    };
+    const token = await signVerificationResult(result, "verifier-1", verifier.privateKey);
+    const expected = {requestDigest: "a".repeat(64), subject, credentialSubject: "supplier:acme",
+      requirement: {id: definition.id, digest: "b".repeat(64)}};
+    expect((await Effect.runPromise(checkVerificationResult(token, consumer(expected)))).status.source).toBe("issuer-authority");
+    expect(await code(Effect.runPromise(checkVerificationResult(token, consumer(expected, {acceptedStatusSources: ["chain"]})))))
+      .toBe("status_source_not_accepted");
+    await expect(signVerificationResult({...result, status: {source: "pinned" as never, observedAt: NOW - 1}}, "verifier-1",
+      verifier.privateKey)).rejects.toThrow("invalid_status_evidence");
+    await expect(signVerificationResult({...result, status: {source: "issuer-authority", observedAt: NOW - 1, chainId: 1,
+      blockNumber: 1, blockHash: "0x" + "ab".repeat(32)}}, "verifier-1", verifier.privateKey)).rejects.toThrow("invalid_status_evidence");
   });
 });

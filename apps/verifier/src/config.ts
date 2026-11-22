@@ -47,7 +47,15 @@ export class ConfigError extends Error {
 
 export interface PepKey { kid: string; publicKey: JsonWebKey }
 export interface TrustedPep { issuer: string; keys: PepKey[] }
-export interface IdentityProvider { issuer: string; jwksUri: string; audience: string }
+export interface IdentityProvider {
+  issuer: string;
+  jwksUri: string;
+  audience: string;
+  /** Accepted JWT `typ` header values (RFC 9068). Default ["at+jwt"]: ID tokens and other JWTs are refused. */
+  allowedTyp: string[];
+  /** Optional: the access token's `client_id` (or `azp`) must equal this. */
+  clientId?: string;
+}
 export interface ResultKey { kid: string; privateKey: JsonWebKey; publicKey: JsonWebKey }
 export type Finality = { kind: "finalized" } | { kind: "confirmations"; confirmations: number };
 
@@ -109,8 +117,19 @@ export function parseIdentityProviders(raw: unknown): IdentityProvider[] {
     if (!isRecord(p) || !isHttps(p.issuer) || !isHttps(p.jwksUri) || typeof p.audience !== "string" ||
       p.audience.length === 0 || seen.has(p.issuer))
       throw new ConfigError("IDENTITY_PROVIDERS");
+    for (const k of Object.keys(p))
+      if (!["issuer", "jwksUri", "audience", "allowedTyp", "clientId"].includes(k)) throw new ConfigError("IDENTITY_PROVIDERS");
+    const allowedTyp = p.allowedTyp === undefined ? ["at+jwt"] : p.allowedTyp;
+    if (!Array.isArray(allowedTyp) || allowedTyp.length === 0 ||
+      !allowedTyp.every((t) => typeof t === "string" && t.length > 0 && t.length <= 64))
+      throw new ConfigError("IDENTITY_PROVIDERS (allowedTyp)");
+    if (p.clientId !== undefined && (typeof p.clientId !== "string" || p.clientId.length === 0))
+      throw new ConfigError("IDENTITY_PROVIDERS (clientId)");
     seen.add(p.issuer);
-    return { issuer: p.issuer, jwksUri: p.jwksUri, audience: p.audience };
+    return {
+      issuer: p.issuer, jwksUri: p.jwksUri, audience: p.audience, allowedTyp: allowedTyp as string[],
+      ...(p.clientId === undefined ? {} : { clientId: p.clientId as string }),
+    };
   });
 }
 
@@ -140,15 +159,18 @@ export function parseFinality(raw: unknown): Finality {
   return { kind: "confirmations", confirmations: n };
 }
 
-const rpcUrl = (v: unknown, setting: string) => {
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+/** https only; plain http is allowed solely for explicitly local hosts (Anvil, local nodes). */
+export const rpcUrl = (v: unknown, setting: string) => {
   if (typeof v !== "string") throw new ConfigError(setting);
+  let u: URL;
   try {
-    const u = new URL(v);
-    if (u.protocol !== "https:" && u.protocol !== "http:") throw new Error();
-    return v;
+    u = new URL(v);
   } catch {
     throw new ConfigError(setting);
   }
+  if (u.protocol === "https:" || (u.protocol === "http:" && LOCAL_HOSTS.has(u.hostname))) return v;
+  throw new ConfigError(`${setting} (https required)`);
 };
 
 export function parseConfig(env: Env): VerifierConfig {
@@ -166,4 +188,24 @@ export function parseConfig(env: Env): VerifierConfig {
     rpcUrls: [primary, secondary],
     finality: parseFinality(env.CHAIN_FINALITY),
   };
+}
+
+/**
+ * Proves every configured result key is usable before anything is consumed: import the private
+ * key, sign a probe, verify it with the public half derived from the same JWK.
+ */
+export async function probeResultKeys(keys: readonly ResultKey[]): Promise<void> {
+  const probe = new TextEncoder().encode("attest-verifier result key probe");
+  for (const key of keys) {
+    let ok = false;
+    try {
+      const priv = await crypto.subtle.importKey("jwk", key.privateKey, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+      const pub = await crypto.subtle.importKey("jwk", key.publicKey, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
+      const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, priv, probe);
+      ok = await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, pub, sig, probe);
+    } catch {
+      ok = false;
+    }
+    if (!ok) throw new ConfigError(`RESULT_SIGNING_KEYS (${key.kid} unusable)`);
+  }
 }

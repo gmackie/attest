@@ -2,7 +2,7 @@
  * using noble's BN254 arithmetic because snarkjs's browser worker/WASM loader
  * cannot run in Cloudflare Workers. No proving implementation is shipped here.
  */
-import { bn254 } from "@noble/curves/bn254";
+import { bn254 } from "@noble/curves/bn254.js";
 const integer = (v: unknown) => {
   if (typeof v === "bigint") return v;
   if (typeof v === "string" && /^\d{1,80}$/.test(v)) return BigInt(v);

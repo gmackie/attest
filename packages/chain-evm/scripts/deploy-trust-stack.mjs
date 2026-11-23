@@ -26,8 +26,10 @@ const networks = {
   sepolia: { chain: sepolia, rpc: "https://ethereum-sepolia-rpc.publicnode.com" },
   "base-sepolia": { chain: baseSepolia, rpc: "https://base-sepolia-rpc.publicnode.com" },
 };
-const supported = ["DecisionLogAnchor", "StatusRegistry", "RevocationRoots"];
-const withAdministrator = new Set(["DecisionLogAnchor", "RevocationRoots"]);
+const supported = ["DecisionLogAnchor", "StatusRegistry", "RevocationRoots", "WorkspaceRegistryV2"];
+const withAdministrator = new Set(["DecisionLogAnchor", "RevocationRoots", "WorkspaceRegistryV2"]);
+// Must match contracts/scripts/compile.mjs.
+const optimized = new Set(["WorkspaceRegistryV2"]);
 
 const { values } = parseArgs({
   options: {
@@ -88,7 +90,7 @@ for (const name of names) {
   deployments.push({
     contract: name, address, deployTx: hash, blockNumber: Number(receipt.blockNumber), runtimeCodeHash,
     sourceDigest: `0x${createHash("sha256").update(source).digest("hex")}`,
-    compiler: { solc: solcVersion, evmVersion: "paris", optimizer: { enabled: false } },
+    compiler: { solc: solcVersion, evmVersion: "paris", optimizer: optimized.has(name) ? { enabled: true, runs: 200 } : { enabled: false } },
     ...(withAdministrator.has(name) ? { administrator } : {}),
   });
 }

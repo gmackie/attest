@@ -1,0 +1,70 @@
+{
+  "schema": "attest.deployment-manifest/v1",
+  "chainId": 84532,
+  "deployments": [
+    {
+      "contract": "DecisionLogAnchor",
+      "address": "0x7020EE914B517Da8F7F8D42Dc436763898FaA8Ad",
+      "deployTx": "0x5699bdb07d7f801a6c001de3f9f53c61c783d10ce2cab7e693dafc4f281e873a",
+      "blockNumber": 62323722,
+      "runtimeCodeHash": "0x6c2d9a6d57dabdabc9366e957bdab18c4e110c58a63122eb3d0d4c8372ae03cb",
+      "sourceDigest": "0x0afe4f04cf0d451c097c0936803f6cf20ea5d6a4015c31d5166ebf44b6a64677",
+      "compiler": {
+        "solc": "0.8.37",
+        "evmVersion": "paris",
+        "optimizer": {
+          "enabled": false
+        }
+      },
+      "administrator": "0x98770836EA0C26c7a2259B2b8F8E44Ee01D213ee"
+    },
+    {
+      "contract": "StatusRegistry",
+      "address": "0xCe5d1042f9fA72303e9F58e2962b620Dc57Ec181",
+      "deployTx": "0xb645300fee5d89c6f15f88f17a8dcd1509eeefcb183d9c739d74cc8ba8e76958",
+      "blockNumber": 62323733,
+      "runtimeCodeHash": "0xd88eab0246752ebd59a9db5e46fc097bcd31257884ab71e200073124979c327e",
+      "sourceDigest": "0x5092ee9567483461ed5ca3c49db821a0b8a3da09579fbdddac7a985fdd65d42e",
+      "compiler": {
+        "solc": "0.8.37",
+        "evmVersion": "paris",
+        "optimizer": {
+          "enabled": false
+        }
+      }
+    },
+    {
+      "contract": "RevocationRoots",
+      "address": "0x1fb289f7E77a2C9cAB906183dde5Bcd47955c714",
+      "deployTx": "0x3038a265574296d97a9af860c242ddcc0e89974f616ba345abbc72128b66ec98",
+      "blockNumber": 62323744,
+      "runtimeCodeHash": "0x5e191a9cf13db0b6459e6bd752289b77eae6a7bfc303bf4c1afbbeabee232551",
+      "sourceDigest": "0x4a730c9dc6794d16ae04a1bf6572d2fd4e188fc93c6d5ea42fbea3cef08cd946",
+      "compiler": {
+        "solc": "0.8.37",
+        "evmVersion": "paris",
+        "optimizer": {
+          "enabled": false
+        }
+      },
+      "administrator": "0x98770836EA0C26c7a2259B2b8F8E44Ee01D213ee"
+    },
+    {
+      "contract": "WorkspaceRegistryV2",
+      "address": "0x35C1Ef761C4d482F310f08483E6f4b579C6912aE",
+      "deployTx": "0xd1d77064a49cd44f16bb5f5e1103b3fcaa29d72a08392502c168eb928f2576c1",
+      "blockNumber": 62323757,
+      "runtimeCodeHash": "0x6d6f22fcf21dde18712e0dc4d51efd722c315e588071f41ef6e253ca4b917bff",
+      "sourceDigest": "0xddabcd912263721767230a5be23597f07c68f282456c2cd1ed2a01bf798a65fb",
+      "compiler": {
+        "solc": "0.8.37",
+        "evmVersion": "paris",
+        "optimizer": {
+          "enabled": true,
+          "runs": 200
+        }
+      },
+      "administrator": "0x98770836EA0C26c7a2259B2b8F8E44Ee01D213ee"
+    }
+  ]
+}

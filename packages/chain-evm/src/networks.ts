@@ -39,7 +39,8 @@ export type ContractName =
   | "DecisionLogAnchor"
   | "AssuranceAnchor"
   | "StatusRegistry"
-  | "RevocationRoots";
+  | "RevocationRoots"
+  | "WorkspaceRegistryV2";
 /** Deployed instances per contract, keyed by profile (for example an industry id) or "default". */
 export type ContractManifest = Readonly<Partial<Record<ContractName, Readonly<Record<string, Address>>>>>;
 
@@ -118,6 +119,7 @@ const sepoliaConfig = {
     DecisionLogAnchor: { default: "0x7020EE914B517Da8F7F8D42Dc436763898FaA8Ad" },
     StatusRegistry: { default: "0xCe5d1042f9fA72303e9F58e2962b620Dc57Ec181" },
     RevocationRoots: { default: "0x1fb289f7E77a2C9cAB906183dde5Bcd47955c714" },
+    WorkspaceRegistryV2: { default: "0x85c9c8a720bc7851EFC92A970B6177Da073367dd" },
   },
 } as const satisfies NetworkConfig;
 
@@ -141,7 +143,13 @@ const baseSepoliaConfig = {
   blockTimeSeconds: 0.2,
   explorer: { name: "Basescan", url: "https://sepolia.basescan.org" },
   unsupportedContracts: sepoliaOnlyContracts,
-  contracts: {},
+  contracts: {
+    // Pinned in contracts/deployments/84532.json (ATTE-26).
+    DecisionLogAnchor: { default: "0x7020EE914B517Da8F7F8D42Dc436763898FaA8Ad" },
+    StatusRegistry: { default: "0xCe5d1042f9fA72303e9F58e2962b620Dc57Ec181" },
+    RevocationRoots: { default: "0x1fb289f7E77a2C9cAB906183dde5Bcd47955c714" },
+    WorkspaceRegistryV2: { default: "0x35C1Ef761C4d482F310f08483E6f4b579C6912aE" },
+  },
 } as const satisfies NetworkConfig;
 
 const mainnetConfig = {

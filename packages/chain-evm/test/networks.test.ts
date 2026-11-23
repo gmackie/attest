@@ -24,7 +24,7 @@ describe("network configuration", () => {
       for (const r of n.rpcUrls) expect(r.url).toMatch(/^https:\/\/[^/@?]+\/?$/);
       expect(n.finality).toEqual({ kind: "finalized" });
       expect(n.explorer.url).toMatch(/^https:\/\//);
-      for (const instances of Object.values(n.contracts)) for (const a of Object.values(instances ?? {})) expect(isAddress(a)).toBe(true);
+      for (const instances of Object.values(n.contracts as Record<string, Record<string, string>>)) for (const a of Object.values(instances ?? {})) expect(isAddress(a)).toBe(true);
     }
     expect(networkConfigs["base-sepolia"].layer).toBe("op-stack-l2");
     expect(explorerTxUrl("base-sepolia", "0xabc")).toBe("https://sepolia.basescan.org/tx/0xabc");
@@ -57,6 +57,6 @@ describe("network configuration", () => {
       expect(sepoliaOnlyContracts).not.toContain(free);
     }
     expect(networkConfigs["base-sepolia"].unsupportedContracts).toEqual(sepoliaOnlyContracts);
-    expect(networkConfigs["base-sepolia"].contracts).toEqual({});
+    expect(Object.keys(networkConfigs["base-sepolia"].contracts).sort()).toEqual(["DecisionLogAnchor", "RevocationRoots", "StatusRegistry", "WorkspaceRegistryV2"]);
   });
 });

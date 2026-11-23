@@ -234,9 +234,26 @@ compiled runtime code.
 | DecisionLogAnchor | `0x7020EE914B517Da8F7F8D42Dc436763898FaA8Ad` | 12190829 |
 | StatusRegistry | `0xCe5d1042f9fA72303e9F58e2962b620Dc57Ec181` | 12190831 |
 | RevocationRoots | `0x1fb289f7E77a2C9cAB906183dde5Bcd47955c714` | 12190833 |
+| WorkspaceRegistryV2 | `0x85c9c8a720bc7851EFC92A970B6177Da073367dd` | 12191617 |
 
 Network readers built by `chainStatusReaderFor` now use code-reading endpoints, so
 `verifyPinnedDeployment` works on them. Contract creation on Sepolia currently costs about 1,700 gas
-per byte of runtime code (roughly 7–9× anvil 1.7's figures), so WorkspaceRegistryV2 (≈ 22.6M gas
-unoptimized) is not deployed yet. The administrator is a testnet hot key; rotate it to a Safe with
-the two-step handover before relying on it. Base Sepolia deployment waits on funding.
+per byte of runtime code (roughly 7–9× anvil 1.7's figures), so WorkspaceRegistryV2 (≈ 22.5M gas
+unoptimized) is compiled with the optimizer (200 runs; 7,337 runtime bytes, ≈ 11.8M gas) and
+deployed with that build; its manifest record says so. The administrator is a testnet hot key; rotate it to a Safe with
+the two-step handover before relying on it.
+
+## Base Sepolia trust-stack deployment (2026-11-22)
+
+Funded by bridging 0.0002 ETH from Sepolia through Base's L1StandardBridge
+(`0xfd0Bf71F60660E2f608ed56e1659C450eB113120`, tx `0xcf21875d6cc29249ec29269546109df3f2ce06d234f5b533c34ccf8c21288d59`),
+then deployed by the same script and deployer. Base prices contract creation normally (≈ 5.3M gas for all
+four at 0.006 gwei). The first three share their Sepolia addresses because the deployer's nonces matched.
+Pinned in `contracts/deployments/84532.json`.
+
+| Contract | Address | Block |
+| --- | --- | --- |
+| DecisionLogAnchor | `0x7020EE914B517Da8F7F8D42Dc436763898FaA8Ad` | 62323722 |
+| StatusRegistry | `0xCe5d1042f9fA72303e9F58e2962b620Dc57Ec181` | 62323733 |
+| RevocationRoots | `0x1fb289f7E77a2C9cAB906183dde5Bcd47955c714` | 62323744 |
+| WorkspaceRegistryV2 | `0x35C1Ef761C4d482F310f08483E6f4b579C6912aE` | 62323757 |

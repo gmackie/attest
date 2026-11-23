@@ -246,7 +246,7 @@ export function VendorPortal() {
     if (!anchorPending || busy || error || rechecks.current >= RECHECK_LIMIT) return;
     const timer = setTimeout(() => {
       rechecks.current += 1;
-      void loadReceipt();
+      loadReceipt();
     }, RECHECK_INTERVAL_MS);
     return () => clearTimeout(timer);
     // loadReceipt closes over the current session and decision; re-arm only when the state changes.

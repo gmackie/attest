@@ -229,12 +229,26 @@ export function verifyAnchoredInclusion(anchored: AnchoredEpoch, leaf: { seq: nu
  * Adapt viem clients for the publisher (keeps viem generics out of callers). The chain is read
  * from `publicClient.getChainId()` at anchor time; `chainId`, if given, is only a cross-check.
  */
+/** A locally held signer (viem LocalAccount): transactions are signed here and sent raw. */
+export interface LocalSigner { readonly address: Address; readonly type: "local" }
+
+/**
+ * Viem-backed publisher clients. Anchors are always signed by a local account and sent with
+ * eth_sendRawTransaction: a bare address would make viem ask the RPC node to sign
+ * (eth_sendTransaction), which public RPCs refuse and which anvil's unlocked keys hide in tests.
+ * Pass the LocalAccount itself, or a wallet client created with one; anything else fails closed with
+ * `local_account_required`.
+ */
 export function viemAnchorClients(publicClient: {
   getChainId(): Promise<number>;
   readContract(args: never): Promise<unknown>;
   simulateContract(args: never): Promise<{ request: unknown }>;
   waitForTransactionReceipt(args: never): Promise<{ status: "success" | "reverted"; blockNumber: bigint }>;
-}, walletClient: { writeContract(args: never): Promise<Hex>; getChainId?(): Promise<number> }, account: Address, chainId?: number): AnchorPublisherClients {
+}, walletClient: { writeContract(args: never): Promise<Hex>; getChainId?(): Promise<number>; account?: { address: Address; type?: string | undefined } | undefined },
+account: Address | LocalSigner, chainId?: number): AnchorPublisherClients {
+  const declared = typeof account === "string" ? account : account.address;
+  const signer = typeof account === "object" ? account
+    : walletClient.account?.type === "local" ? (walletClient.account as LocalSigner) : null;
   return {
     // Both transports must report the same chain: the gate checks the chain the transaction is sent on.
     getChainId: async () => {
@@ -245,8 +259,12 @@ export function viemAnchorClients(publicClient: {
     ...(chainId === undefined ? {} : { chainId }),
     readLatest: (a) => publicClient.readContract({ ...a, abi: decisionLogAnchorAbi } as never),
     simulateAndWrite: async (a) => {
-      const sim = await publicClient.simulateContract({ ...a, abi: decisionLogAnchorAbi, account } as never);
-      return walletClient.writeContract(sim.request as never);
+      if (!signer || signer.type !== "local") throw new ChainStatusError("local_account_required", "anchors must be signed by a local account");
+      if (signer.address.toLowerCase() !== declared.toLowerCase())
+        throw new ChainStatusError("account_mismatch", `declared ${declared}, signer ${signer.address}`);
+      const sim = await publicClient.simulateContract({ ...a, abi: decisionLogAnchorAbi, account: signer } as never);
+      // Override whatever account the simulation echoed so the write is always signed locally.
+      return walletClient.writeContract({ ...(sim.request as object), account: signer } as never);
     },
     waitForReceipt: (hash, confirmations) => publicClient.waitForTransactionReceipt({ hash, confirmations } as never),
   };

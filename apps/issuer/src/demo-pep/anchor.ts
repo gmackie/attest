@@ -132,7 +132,7 @@ export function publisherClients(config: AnchorConfig, key: Hex, options: {
     writeContract: (args: never) =>
       wallet.writeContract({ ...(args as object), account, maxFeePerGas, maxPriorityFeePerGas } as never),
   };
-  return viemAnchorClients(publicClient as never, capped as never, account.address, config.chainId);
+  return viemAnchorClients(publicClient as never, capped as never, account, config.chainId);
 }
 
 /** A stable, value-free error code: never a message that could carry request data or key material. */

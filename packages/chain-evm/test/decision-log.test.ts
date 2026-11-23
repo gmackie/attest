@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { createPublicClient, createWalletClient, http, type Address, type Hex } from "viem";
+import { generatePrivateKey, mnemonicToAccount, privateKeyToAccount } from "viem/accounts";
 import {
   anchorEpochArgs, decisionLogAnchorAbi, decisionLogAnchorAdapter, decisionLogId, inclusionProof, merkleRoot,
   readAnchoredEpoch, verifyAnchoredInclusion, verifyInclusion, viemAnchorClients, type SealedEpoch,
@@ -53,8 +54,14 @@ const statusReader = () => createChainStatusReader({
   chainId, endpoints: [publicClientEndpoint("a", reader), publicClientEndpoint("b", createPublicClient({ chain: network.chain, transport: http(url) }))],
   finality: { kind: "confirmations", confirmations: 1 }, maxBlockAgeMs: 3_600_000, now: () => Date.now(),
 });
+/** Anvil's default accounts as local signers (public test mnemonic): anchors are always signed locally. */
+const anvilMnemonic = "test test test test test test test test test test test junk";
+const localFor = (a: Address) => {
+  for (let i = 0; i < 10; i++) { const l = mnemonicToAccount(anvilMnemonic, { addressIndex: i }); if (l.address.toLowerCase() === a.toLowerCase()) return l; }
+  throw new Error(`no local key for ${a}`);
+};
 const adapter = (account: Address, adapterChainId: number = chainId) =>
-  decisionLogAnchorAdapter({ clients: viemAnchorClients(reader, wallet, account, adapterChainId), address, log, confirmations: 1 });
+  decisionLogAnchorAdapter({ clients: viemAnchorClients(reader, wallet, localFor(account), adapterChainId), address, log, confirmations: 1 });
 async function revertReason(account: Address, functionName: string, args: readonly unknown[]) {
   try {
     await reader.simulateContract({ address, abi: decisionLogAnchorAbi, account, functionName: functionName as never, args: args as never });
@@ -160,8 +167,43 @@ describe.skipIf(!available)("DecisionLogAnchor", () => {
     expect(await code(adapter(accounts[2]!, other).anchor(next.sealed))).toBe("chain_mismatch");
     expect(await reader.readContract({ address, abi: decisionLogAnchorAbi, functionName: "latestEpoch", args: [log] })).toBe(before);
     // Without a declared chain the RPC-reported one is used for the gate and the reference.
-    const undeclared = decisionLogAnchorAdapter({ clients: viemAnchorClients(reader, wallet, accounts[2]!), address, log, confirmations: 1 });
+    const undeclared = decisionLogAnchorAdapter({ clients: viemAnchorClients(reader, wallet, localFor(accounts[2]!)), address, log, confirmations: 1 });
     expect(await code(undeclared.anchor({ ...next.sealed, epoch: Number(before) + 2 }))).toBe("anchor_out_of_order");
+  });
+
+  it("never asks the node to sign: a bare address is refused before anything is sent (GATE-20)", async () => {
+    const before = await reader.readContract({ address, abi: decisionLogAnchorAbi, functionName: "latestEpoch", args: [log] });
+    const next = await span(Number(before) + 1, 1000, 1, randomHash());
+    // The JSON-RPC wallet has no local account; on anvil the node would sign, on public RPCs it is refused.
+    const bare = decisionLogAnchorAdapter({ clients: viemAnchorClients(reader, wallet, accounts[2]!, chainId), address, log, confirmations: 1 });
+    expect(await code(bare.anchor(next.sealed))).toBe("local_account_required");
+    // A declared address that differs from the wallet's local signer is refused too.
+    const signer = localFor(accounts[2]!);
+    const mismatched = decisionLogAnchorAdapter({
+      clients: viemAnchorClients(reader, createWalletClient({ chain: network.chain, transport: http(url), account: signer }), accounts[3]!, chainId),
+      address, log, confirmations: 1 });
+    expect(await code(mismatched.anchor(next.sealed))).toBe("account_mismatch");
+    expect(await reader.readContract({ address, abi: decisionLogAnchorAbi, functionName: "latestEpoch", args: [log] })).toBe(before);
+  });
+
+  it("anchors with a key the node does not hold, signed locally and sent raw (GATE-20)", async () => {
+    const fresh = privateKeyToAccount(generatePrivateKey());
+    await reader.request({ method: "anvil_setBalance" as never, params: [fresh.address, "0x8ac7230489e80000"] as never });
+    const freshLog = await decisionLogId(`gate-20-${fresh.address}`);
+    // An earlier test hands the administrator role on; use whoever holds it now.
+    const admin = (await reader.readContract({ address, abi: decisionLogAnchorAbi, functionName: "administrator" })) as Address;
+    await send(admin, "setPublisher", [freshLog, fresh.address]);
+    // Either form works: the LocalAccount itself, or a wallet client created with it plus its address.
+    const direct = decisionLogAnchorAdapter({ clients: viemAnchorClients(reader, wallet, fresh, chainId), address, log: freshLog, confirmations: 1 });
+    const first = await span(1, 1, 2, "0".repeat(64));
+    const receipt = await direct.anchor(first.sealed);
+    expect(receipt.ref).toContain(`eip155:${chainId}:`);
+    const viaWallet = decisionLogAnchorAdapter({
+      clients: viemAnchorClients(reader, createWalletClient({ chain: network.chain, transport: http(url), account: fresh }), fresh.address, chainId),
+      address, log: freshLog, confirmations: 1 });
+    const second = await span(2, 3, 1, first.sealed.lastLeafHash);
+    await viaWallet.anchor(second.sealed);
+    expect(await reader.readContract({ address, abi: decisionLogAnchorAbi, functionName: "latestEpoch", args: [freshLog] })).toBe(2n);
   });
 
   it("deploy-network refuses a signer whose RPC reports another chain", async () => {

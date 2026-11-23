@@ -159,7 +159,8 @@ async function api(route: string, body: unknown, label: string, accept: number[]
     log(`${label}: HTTP ${r.status}`, data.code ?? "", data.retryAfterSeconds ?? "", data.error ?? "");
     if (r.status === 409 && data.code === "awaiting_confirmations" && attempt < 12) {
       const seconds = Math.min(60, Math.max(5, Number(data.retryAfterSeconds) || 15));
-      log(`waiting ${seconds}s for ${data.confirmations ?? 3} confirmations`);
+      const confirmations = typeof data.confirmations === "number" ? data.confirmations : 3;
+      log(`waiting ${seconds}s for ${confirmations} confirmations`);
       await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
       continue;
     }

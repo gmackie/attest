@@ -3,6 +3,16 @@ packages:
   - packages/*
   - contracts
 
-onlyBuiltDependencies:
-  - esbuild
-  - '@tailwindcss/oxide'
+allowBuilds:
+  # Reviewed 2026-11-22: each script only selects or verifies its platform binary,
+  # falling back to an integrity-checked download from registry.npmjs.org.
+  '@foundry-rs/anvil': true
+  '@tailwindcss/oxide': true
+  esbuild: true
+  workerd: true
+
+minimumReleaseAge: 5760
+trustPolicy: no-downgrade
+trustPolicyIgnoreAfter: 525600
+strictDepBuilds: true
+blockExoticSubdeps: true

@@ -59,7 +59,7 @@ describe("issuer confirmed reads (ATTE-27)", () => {
 describe("transient provider failures", () => {
   it("retries once on endpoint_unavailable, but never retries disagreement", async () => {
     let calls = 0;
-    const good = (n: bigint) => ["0xabc", false];
+    const good = (_n: bigint) => ["0xabc", false];
     const flaky: ChainReadClient = { ...chain(100n, good), getChainId: async () => { if (calls++ === 0) throw new Error("ECONNRESET"); return 11155111; } };
     const a = chain(100n, good);
     expect(await code(confirmedRead(decisionReader(endpoints(a, flaky)), a, read))).toBe("ok");

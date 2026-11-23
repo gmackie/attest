@@ -12,11 +12,11 @@
     "@attest/mandates": "workspace:*",
     "@attest/proofs": "workspace:*",
     "@pcd/pod": "0.5.1",
-    "effect": "4.0.2"
+    "effect": "4.1.4"
   },
   "devDependencies": {
     "@pcd/proto-pod-gpc-artifacts": "0.13.0",
-    "tsx": "^4.20.6"
+    "tsx": "4.23.15"
   },
   "scripts": {
     "fixture": "tsx scripts/fixture.ts"

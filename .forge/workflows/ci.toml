@@ -2,7 +2,7 @@ version = 1
 template = "vinext-cloudflare-worker"
 
 [environment]
-node = "24"
+node = "26"
 
 [build]
 command = "pnpm install --frozen-lockfile && pnpm exec anvil --version && pnpm --filter @attest/contracts build && pnpm typecheck && pnpm build"

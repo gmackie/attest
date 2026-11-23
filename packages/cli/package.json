@@ -3,5 +3,5 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "dependencies": { "@attest/demo": "workspace:*", "effect": "4.0.2" }
+  "dependencies": { "@attest/demo": "workspace:*", "effect": "4.1.4" }
 }

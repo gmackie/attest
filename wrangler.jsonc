@@ -2,7 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "attest-demo",
   "account_id": "c07a7e704db1808e1fff91bed2b1cd49",
-  "compatibility_date": "2026-10-08",
+  "compatibility_date": "2026-11-17",
   "main": "apps/issuer/src/index.ts",
   "alias": {
     "snarkjs": "./apps/issuer/src/groth16-worker.ts",

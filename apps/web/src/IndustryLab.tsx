@@ -29,7 +29,6 @@ import {
   advanceIndustryRun,
   createIndustryRun,
   defaultIndustryInputs,
-  industries,
   industrySteps,
   type Industry,
   type IndustryInputs,

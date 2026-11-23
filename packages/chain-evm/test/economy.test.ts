@@ -4,8 +4,8 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { homedir } from "node:os";
 import path from "node:path";
 import {
-  createPublicClient, createWalletClient, http, parseEther, stringToHex,
-  keccak256, type Address, type Hex,
+  createPublicClient, createWalletClient, http, parseEther,
+  type Address, type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { sepolia } from "viem/chains";

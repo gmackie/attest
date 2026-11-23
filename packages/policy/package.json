@@ -4,5 +4,5 @@
   "private": true,
   "type": "module",
   "exports": { ".": "./src/index.ts" },
-  "dependencies": { "@attest/authority": "workspace:*", "@attest/domain": "workspace:*", "effect": "4.0.2" }
+  "dependencies": { "@attest/authority": "workspace:*", "@attest/domain": "workspace:*", "effect": "4.1.4" }
 }

@@ -8,7 +8,6 @@ import {
   InputGroup,
   LayerCard,
   LinkButton,
-  Textarea,
 } from "@cloudflare/kumo";
 import { Effect } from "effect";
 import { commitValue } from "@attest/core";
@@ -18,13 +17,9 @@ import {
   checkedHash,
   clients,
   assertContext,
-  institutionAbi,
   deployInstitutions,
   validateInstitutions,
-  journeyDeploy,
-  journeyWrite,
   journeyRecords,
-  validateJourneyRegistry,
   type Address,
   type EIP1193Provider,
   type Hex,
@@ -37,7 +32,6 @@ import {
   institutionSigningKeys,
   institutionCommandSchema,
   commandMessage,
-  type InstitutionCommand,
   journeyVaultSchema,
   journeyHolderKey,
   journeyNamespace,
@@ -1182,7 +1176,7 @@ export function TestnetJourney() {
                 variant="secondary"
                 onClick={() =>
                   run("Review revocation in your wallet…", async (check) => {
-                    const c = context();
+                    context(); // guard: requires a connected wallet
                     const data = await authorize(
                       active.id,
                       "revoke",
@@ -1384,7 +1378,7 @@ export function TestnetJourney() {
                           throw new Error(
                             "Status changed; receipt not submitted",
                           );
-                        const c = context();
+                        context(); // guard: requires a connected wallet
                         const data = await api("/api/v2/decisions", {
                           request,
                           presentation,

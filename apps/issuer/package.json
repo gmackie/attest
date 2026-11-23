@@ -9,14 +9,14 @@
     "@attest/mandates": "workspace:*",
     "@attest/proofs": "workspace:*",
     "@attest/verifier": "workspace:*",
-    "@noble/curves": "1.9.7",
+    "@noble/curves": "2.4.0",
     "@pcd/pod": "0.5.1",
-    "effect": "4.0.2",
-    "viem": "^2.57.4",
-    "zod": "^4.6.5"
+    "effect": "4.1.4",
+    "viem": "2.58.0",
+    "zod": "4.6.7"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20261009.1"
+    "@cloudflare/workers-types": "5.20261118.1"
   },
   "scripts": {
     "new-demo-pep-key": "node scripts/new-demo-pep-key.mjs"

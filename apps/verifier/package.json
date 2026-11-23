@@ -16,10 +16,10 @@
     "@attest/mandates": "workspace:*",
     "@attest/proofs": "workspace:*",
     "@attest/verifier": "workspace:*",
-    "@noble/curves": "1.9.7",
+    "@noble/curves": "2.4.0",
     "@pcd/pod": "0.5.1",
-    "effect": "4.0.2",
-    "viem": "^2.57.4"
+    "effect": "4.1.4",
+    "viem": "2.58.0"
   },
   "devDependencies": {
     "@pcd/proto-pod-gpc-artifacts": "0.13.0"

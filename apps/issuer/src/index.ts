@@ -319,7 +319,7 @@ export class InstitutionService {
       );
     }
   }
-  private async budget(account: string, id: number) {
+  private async budget(account: string, _id: number) {
     const day = new Date().toISOString().slice(0, 10),
       daily = `budget:${day}`,
       user = `user:${day}:${account}`;

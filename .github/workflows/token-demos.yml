@@ -19,19 +19,16 @@ permissions:
 
 jobs:
   token-animation:
-    runs-on: apps
+    runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-      # Node 26.13.1 + pnpm (packageManager), the runner's /pnpm-store mount,
-      # `pnpm install --frozen-lockfile` with retries (no setup-node cache).
-      - name: Setup toolchain and install
-        uses: https://git.forgegraf.com/gmackie/ci-actions/fleet/setup@ddd693744c0254b1cb078eec0e4d5a1bc38f57eb
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 26.13.1
-          registry-token: ${{ secrets.FG_REGISTRY_TOKEN }}
-          turbo-token: ${{ secrets.TURBO_TOKEN }}
-          turbo-team: ci
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - name: Compile reference contract artifacts for the UI
         run: pnpm --filter @attest/contracts build
       - name: Typecheck interactive React/Kumo demos

@@ -1,0 +1,74 @@
+name: Native ATTEST ZK (experimental)
+
+on:
+  pull_request:
+    paths:
+      - "zk/**"
+      - "contracts/src/AttestZkMinter.sol"
+      - "contracts/src/PresentationReceipts.sol"
+      - "packages/chain-evm/src/receipts.ts"
+      - "packages/chain-evm/test/presentation-receipts.test.ts"
+      - "packages/chain-evm/test/zk-ceremony.test.ts"
+      - "contracts/src/AttestEconomy.sol"
+      - "contracts/scripts/compile.mjs"
+      - "contracts/scripts/compile-zk.mjs"
+      - "packages/chain-evm/src/economy.ts"
+      - ".github/workflows/native-zk.yml"
+      - ".forgejo/workflows/native-zk.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  native-zk:
+    runs-on: apps
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+      # Node 26.13.1 + pnpm (packageManager), the runner's /pnpm-store mount,
+      # `pnpm install --frozen-lockfile` with retries (no setup-node cache).
+      - name: Setup toolchain and install
+        uses: https://git.forgegraf.com/gmackie/ci-actions/fleet/setup@ddd693744c0254b1cb078eec0e4d5a1bc38f57eb
+        with:
+          node-version: 26.13.1
+          registry-token: ${{ secrets.FG_REGISTRY_TOKEN }}
+          turbo-token: ${{ secrets.TURBO_TOKEN }}
+          turbo-team: ci
+      - name: Install isolated circuit toolchain (TEST ONLY)
+        run: |
+          mkdir -p /tmp/attest-zk-toolchain
+          npm install --prefix /tmp/attest-zk-toolchain --no-save --no-package-lock --no-audit --no-fund \
+            circom2@0.2.23 circomlib@2.0.5 circomlibjs@0.1.7 snarkjs@0.7.5
+      - name: Compile Circom and generate ephemeral, INSECURE test proving keys
+        # Uses a pinned, digest-checked phase 1 when downloadable; otherwise the
+        # explicit flag allows an UNSAFE local phase 1 for these test keys only.
+        run: node zk/scripts/build-test-fixture.mjs --synthetic-test-only
+      - name: Compile generated Groth16 verifier and token contracts
+        run: |
+          pnpm --filter @attest/contracts build
+          node contracts/scripts/compile-zk.mjs
+      - name: Typecheck workspace
+        run: pnpm typecheck
+      - name: Native proof and Anvil end-to-end verification
+        run: pnpm exec vitest run packages/chain-evm/test/economy-native-zk.test.ts
+      - name: Presentation receipts verified on-chain (Anvil, synthetic keys)
+        run: pnpm exec vitest run packages/chain-evm/test/presentation-receipts.test.ts
+      - name: Phase-2 ceremony tooling dry run (3 simulated contributors)
+        run: pnpm exec vitest run packages/chain-evm/test/zk-ceremony.test.ts
+      - name: Print experimental verifier fingerprints
+        if: always()
+        run: |
+          if [ -f zk/.generated/manifest.json ]; then
+            cat zk/.generated/manifest.json
+          fi
+          if [ -f zk/.generated/presentation-receipt-v1/transcript.json ]; then
+            node zk/ceremony/ceremony.mjs transcript --dir zk/.generated/presentation-receipt-v1
+          fi

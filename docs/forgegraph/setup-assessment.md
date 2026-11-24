@@ -4,6 +4,8 @@ Attest is registered as `attest` in the `gmacko` workspace. Its native repositor
 
 ## Checks and publication
 
+Forgejo Actions reads `.forgejo/workflows` and runs on the `apps` pool. GitHub Actions reads `.github/workflows` and uses GitHub-hosted Ubuntu runners. Keep the validation commands and triggers in sync when editing either set.
+
 `.forge/workflows/ci.toml` runs the checked-in Node 24/pnpm toolchain, contract compilation, strict TypeScript, web build and the full test suite. Anvil is pinned as a workspace development dependency; the build explicitly checks it exists so contract integration tests cannot silently skip because the runner lacks Foundry.
 
 Use the `forge` remote to publish native changesets and PRs. Include the owning Kanbanger issue in the branch and PR; link every PR with `kanbanger issue link` and the current T3 thread. Keep GitHub Actions for the existing GitHub checkout; native CI supplies ForgeGraph revision evidence independently of GitHub Actions quotas.

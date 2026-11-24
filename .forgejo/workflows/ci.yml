@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: apps
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+      # Node 26.13.1 + pnpm (packageManager), the runner's /pnpm-store mount,
+      # `pnpm install --frozen-lockfile` with retries (no setup-node cache).
+      - name: Setup toolchain and install
+        uses: https://git.forgegraf.com/gmackie/ci-actions/fleet/setup@ddd693744c0254b1cb078eec0e4d5a1bc38f57eb
+        with:
+          node-version: 26.13.1
+          registry-token: ${{ secrets.FG_REGISTRY_TOKEN }}
+          turbo-token: ${{ secrets.TURBO_TOKEN }}
+          turbo-team: ci
+      - run: pnpm check
